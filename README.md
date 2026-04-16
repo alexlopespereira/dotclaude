@@ -113,36 +113,268 @@ This copies everything to `~/.claude/`, making all commands and skills globally 
 
 After installation, these slash commands are available in any Claude Code project:
 
-| Command | What it does |
-|---------|-------------|
-| `/planejar [problem]` | Produces a technical plan using the full ReAct + Feynman protocol |
-| `/revisar-adversario [plan]` | Red Team review of an existing plan |
-| `/ciclo-completo [problem]` | Plans + self-reviews in sequence (both agents) |
-| `/adversarial-research [topic]` | Deep research with 3 providers (Gemini + Perplexity + OpenAI) |
-| `/research-status` | Lists all research sessions and their status |
-| `/research-synthesize [path]` | Synthesizes final report from completed research |
-| `/pr` | Creates a Pull Request and auto-merges |
-| `/export-report` | Exports the last response as a Markdown file |
+| Command | Category | What it does |
+|---------|----------|-------------|
+| `/planejar` | Planning | Technical plan with ReAct + Feynman |
+| `/revisar-adversario` | Review | Red Team attack on an existing plan |
+| `/ciclo-completo` | Planning + Review | Both agents in sequence |
+| `/adversarial-research` | Research | Deep research with 3 AI providers |
+| `/research-status` | Research | Lists all research sessions |
+| `/research-synthesize` | Research | Synthesizes a completed research |
+| `/pr` | Git workflow | Creates PR and auto-merges |
+| `/export-report` | Utility | Exports last response as Markdown |
 
-### Example: Full Cycle
+---
 
+### `/planejar [problem description]`
+
+**Purpose:** Produces a complete technical plan using the ReAct + Feynman protocol.
+
+**What happens when you run it:**
+
+1. Claude assumes the role of **Planner Agent**
+2. Reads the ReAct + Feynman skill templates
+3. Executes the ReAct cycle — iterating Thought/Action/Observation until it has enough evidence
+4. Produces a structured plan with: Context, Technical Decisions table, Assumptions to Validate, Open Questions, and Next Slice
+5. Every claim is classified as `[FACT]`, `[INFERENCE]`, or `[ASSUMPTION]`
+6. The Feynman Test is applied: mechanisms are explained, not just pattern names
+
+**Output format:**
+
+```markdown
+## Plan: [Title]
+**Overall Confidence:** [HIGH / MEDIUM / LOW] — [one-line justification]
+
+### Context and Objective
+### ReAct Cycle (Thought/Action/Observation iterations)
+### Technical Decisions
+| # | Decision | Alternatives | Justification (mechanism, not name) |
+### Assumptions to Validate
+- [ ] [ASSUMPTION] ...
+### Open Questions
+### Next Slice (smallest implementable increment)
 ```
-> /ciclo-completo migrate authentication from JWT to session-based tokens
+
+**Example:**
+```
+> /planejar migrate the database from MySQL 5.7 to PostgreSQL 16
+```
+
+---
+
+### `/revisar-adversario [path to plan or "last plan"]`
+
+**Purpose:** Performs a Red Team review of an existing plan. Claude switches from Planner to Adversary — its goal becomes **finding flaws**, not confirming the plan.
+
+**What happens when you run it:**
+
+1. Claude assumes the role of **Adversary Reviewer Agent**
+2. Loads the plan specified (a file path, or "last plan" to find the most recent one in `.claude/plans/`)
+3. For each technical decision in the plan:
+   - Applies ReAct to reason about the decision and test contrary hypotheses
+   - Tries to **refute** each listed `[ASSUMPTION]`
+   - Applies the Feynman Test — flags any pattern named without explaining its mechanism
+4. Produces a structured adversarial review with a verdict
+
+**Output format:**
+
+```markdown
+## Adversarial Review: [Plan Title]
+**Verdict:** [APPROVED / APPROVED WITH CAVEATS / REJECTED]
+
+### Flaws Found
+| # | Type | Description | Severity | Suggestion |
+| 1 | [Logic / Assumption / Gap / Risk] | ... | [Critical / High / Medium / Low] | ... |
+
+### Refuted Assumptions
+### Feynman Test (violations found)
+### Questions the Planner Should Have Asked
+### Recommendation (specific changes needed)
+```
+
+**Example:**
+```
+> /revisar-adversario .claude/plans/migrate-mysql-to-postgres.md
+```
+
+---
+
+### `/ciclo-completo [problem description]`
+
+**Purpose:** Runs the full pipeline — planning followed by adversarial self-review — in a single command. This is the recommended way to start any non-trivial task.
+
+**What happens when you run it:**
+
+1. **Phase 1 — Planning:** Claude acts as the Planner Agent, executes the full ReAct cycle, and produces a plan. The plan is saved to `.claude/plans/[slug].md`
+2. **Phase 2 — Adversarial Review:** Claude switches to the Adversary Agent role, re-reads the plan with fresh eyes, and attacks it. The review is appended to the same file under a `---` separator
+3. **Phase 3 — Synthesis:**
+   - If **APPROVED** or **APPROVED WITH CAVEATS**: lists immediate actions for the next implementation slice
+   - If **REJECTED**: highlights the 3 most critical issues and escalates to the human. Does **not** attempt to auto-fix — the human decides
+
+**Guardrails:** Maximum 3 review cycles. After 3, the divergence is escalated to the human with a summary. No production code is written before approval.
+
+**Example:**
+```
+> /ciclo-completo implement real-time notifications with WebSocket
 
 Phase 1 — Planning (ReAct + Feynman)
-  Thought #1: I need to understand the current JWT implementation...
-  Action #1: Read src/auth/...
+  Thought #1: I need to understand the current notification system...
+  Action #1: Read src/notifications/...
   ...
   Plan produced with 3 [ASSUMPTIONS] flagged.
+  Saved to .claude/plans/real-time-notifications-websocket.md
 
 Phase 2 — Adversarial Review
-  [ASSUMPTION] "Redis is available in all environments" → REFUTED: staging uses in-memory store.
-  Feynman violation: "Use the Adapter pattern" without explaining the mechanism.
+  [ASSUMPTION] "Redis Pub/Sub is available" → REFUTED: staging uses in-memory store.
+  Feynman violation: "Use the Observer pattern" without explaining the mechanism.
   Verdict: APPROVED WITH CAVEATS — 2 items need revision.
 
 Phase 3 — Synthesis
-  Immediate actions for next slice listed.
+  Next slice: implement WebSocket handshake + heartbeat (no business logic yet).
   Human decides whether to proceed.
+```
+
+---
+
+### `/adversarial-research [topic in natural language]`
+
+**Purpose:** Conducts deep research on any topic using three independent AI providers in an adversarial pipeline, producing a high-reliability report with a confidence map.
+
+**What happens when you run it:**
+
+1. **Verifies** that all 3 API keys are set (`GEMINI_API_KEY`, `PERPLEXITY_API_KEY`, `OPENAI_API_KEY`)
+2. **Gemini Deep Research** (Elaborator): conducts 80–160 autonomous web searches and produces a comprehensive report (V1)
+3. **Perplexity Sonar DR** (Fact-Checker): independently verifies every factual claim, checks citations, finds counter-evidence, flags fabricated data
+4. **OpenAI + Web Search** (Logic Reviewer): analyzes internal consistency, methodology, logical gaps, biases, and conclusion robustness
+5. **Iteration:** if the logic reviewer rejects the report, Gemini corrects it incorporating both reviews, and the reviewers re-check (max 3 cycles)
+6. **Claude synthesizes** the final report with a confidence map per section
+
+**Artifacts produced** (saved to `.claude/research/[timestamp]_[topic]/`):
+
+| File | Content |
+|------|---------|
+| `meta.json` | Topic, providers, timestamps, cycle count |
+| `report-v1.md` ... `report-v3.md` | Gemini's report versions |
+| `factcheck-1.md` ... `factcheck-3.md` | Perplexity's fact-check reviews |
+| `logic-review-1.md` ... `logic-review-3.md` | OpenAI's logic reviews |
+| `synthesis.md` | Final synthesis with confidence map |
+
+**Output — Synthesis format:**
+
+```markdown
+# Synthesis: [Topic]
+**Date / Cycles / Final Verdict**
+**Providers:** Gemini (elaborator) | Perplexity (fact-check) | OpenAI (logic)
+
+## Executive Summary
+## Confidence Map
+| Section | Facts (Perplexity) | Logic (OpenAI) | Overall Confidence |
+## Unverified Claims
+## Relevant Counter-Evidence
+## Corrections V1 → Vfinal
+## Recommendations for Manual Investigation
+```
+
+**Example:**
+```
+> /adversarial-research impact of microservices migration on team velocity in companies with fewer than 50 engineers
+```
+
+**Cost per session (2 cycles):** ~$1.50–4.50
+
+---
+
+### `/research-status`
+
+**Purpose:** Lists all adversarial research sessions conducted in the current project, showing which ones are complete and which are pending synthesis.
+
+**What happens when you run it:**
+
+1. Scans `.claude/research/` for research directories
+2. Reads `meta.json` from each one (topic, date, cycle count, providers)
+3. Checks if `synthesis.md` exists (completed) or not (pending)
+4. Produces a summary table
+
+**Output:**
+
+```
+| #  | Date       | Topic                            | Cycles | Status    |
+|----|------------|----------------------------------|--------|-----------|
+| 1  | 2026-04-10 | Impact of LLMs on education      | 2      | Completed |
+| 2  | 2026-04-15 | Microservices vs monolith         | 3      | Pending   |
+
+Research #2 is pending synthesis. Run /research-synthesize to generate it.
+```
+
+---
+
+### `/research-synthesize [path or "last"]`
+
+**Purpose:** Generates the final synthesis report for an adversarial research session that has completed all provider cycles but hasn't been synthesized yet.
+
+**What happens when you run it:**
+
+1. If argument is `"last"` or `"última"`: picks the most recent directory in `.claude/research/`
+2. Reads all artifacts: `meta.json`, all `report-v*.md`, `factcheck-*.md`, `logic-review-*.md`
+3. Produces the final synthesis with confidence map, corrections applied, and recommendations
+4. Saves as `synthesis.md` in the research directory
+
+**Example:**
+```
+> /research-synthesize last
+```
+
+---
+
+### `/pr`
+
+**Purpose:** Creates a Pull Request on GitHub and auto-merges it — a complete git workflow in one command.
+
+**What happens when you run it:**
+
+1. **Checks state:** `git status` to detect uncommitted changes
+2. **Commits** if needed (following the repo's commit convention)
+3. **Creates branch** if currently on `main` (descriptive name based on changes)
+4. **Pushes** the branch to origin
+5. **Creates the PR** via `gh pr create` with a structured summary
+6. **Waits for CI** checks to pass (if configured), otherwise proceeds
+7. **Merges** the PR with `--merge --delete-branch`
+8. **Returns to main** and pulls latest
+
+**Guardrails:** If merge fails due to branch protection or pending reviews, it reports the status instead of forcing. The human decides next steps.
+
+**Example:**
+```
+> /pr
+
+Created branch: fix/update-auth-middleware
+Pushed to origin.
+PR #42 created: "Fix auth middleware token expiry handling"
+CI checks passed.
+PR #42 merged. Branch deleted.
+Returned to main.
+```
+
+---
+
+### `/export-report`
+
+**Purpose:** Exports Claude's last response as a standalone Markdown file — useful for preserving research results, plans, or analysis outside the conversation context.
+
+**What happens when you run it:**
+
+1. Identifies the last response in the conversation (immediately before this command)
+2. Creates a file named `report-YYYY-MM-DD-HHmmss.md` in the current working directory
+3. Content includes: H1 title (inferred from the response topic), export timestamp, and the **complete** response with all original formatting preserved (tables, code blocks, lists)
+4. Reports the full path of the created file
+
+**Guarantees:** No content is summarized, altered, or omitted. The export is an exact copy.
+
+**Example:**
+```
+> /export-report
+
+Exported to: /Users/you/project/report-2026-04-16-143022.md
 ```
 
 ## Project Structure
