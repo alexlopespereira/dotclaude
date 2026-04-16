@@ -98,6 +98,46 @@ For research tasks that demand high reliability, `/adversarial-research` orchest
 
 Each provider has a structural advantage at its role: Gemini excels at broad research, Perplexity at citation verification, and OpenAI at logical reasoning. Using three different providers prevents correlated hallucination.
 
+### Bonus: Ralph Adversarial Implementation Loop
+
+Once a plan is approved by `/ciclo-completo`, the `/ralph-adversarial` loop carries it to production code without sacrificing rigor. It's the [Ralph pattern](https://ghuntley.com/ralph/) — one story per iteration with a fresh context window — extended with **cross-agent code review**: Claude Code implements, Codex reviews.
+
+```
+  APPROVED PLAN (.claude/plans/*.md)
+          │
+          ▼
+   /prd-convert ─── Slices the plan into user stories with testable AC
+          │
+          ▼
+    prd.json (root of repo)
+          │
+          ▼
+   /ralph-adversarial ─── bash loop: one story per iteration
+          │
+          ▼
+    ┌──────────────────────────────────┐
+    │ Fresh Claude Code context        │
+    │   reads prd.json + progress.txt  │
+    │   implements 1 story             │
+    │   runs checks + commits ac_trace │
+    └──────────────────────────────────┘
+          │
+          ▼
+    ┌──────────────────────────────────┐
+    │ Codex reviews the diff           │
+    │   applies CODE_REVIEW.md rubric  │
+    │   verdict: MERGE / BLOCK / CHANGES │
+    └──────────────────────────────────┘
+          │
+          ▼
+    Passed? → next story   Failed? → feedback to progress.txt, retry
+    2 consecutive failures on same story → escalate to human
+```
+
+The review rubric (in `skills/ralph-adversarial/CODE_REVIEW.md`) enforces six dimensions — AC compliance, correctness, security, reliability, maintainability (with Karpathy's simplicity and surgical-change principles), and testing — with P0–P3 severity and explicit block rules. State lives on disk (prd.json, progress.txt, git history) so each iteration starts fresh.
+
+> **Why it matters:** A planner LLM reviewing its own code has the same blind spots that produced the code. Using a different provider (Codex) as the reviewer is the cheapest form of cross-model adversarial review for implementation — the same principle as the research loop, applied to patches.
+
 ## Installation
 
 ```bash
@@ -123,6 +163,8 @@ After installation, these slash commands are available in any Claude Code projec
 | `/research-synthesize` | Research | Synthesizes a completed research |
 | `/pr` | Git workflow | Creates PR and auto-merges |
 | `/export-report` | Utility | Exports last response as Markdown |
+| `/prd-convert` | Implementation | Converts an approved plan into prd.json (Ralph format) |
+| `/ralph-adversarial` | Implementation | Runs the Ralph loop with Codex code review |
 
 ---
 
@@ -377,6 +419,108 @@ Returned to main.
 Exported to: /Users/you/project/report-2026-04-16-143022.md
 ```
 
+---
+
+### `/prd-convert [plan path or "last"]`
+
+**Purpose:** Converts an approved plan (from `.claude/plans/`) into a `prd.json` file — the machine-readable task list consumed by the Ralph loop.
+
+**What happens when you run it:**
+
+1. Reads the `prd` skill (`skills/prd/SKILL.md`)
+2. Locates the plan — either the path you pass or the most recent file in `.claude/plans/` when you pass `last`
+3. Slices the plan into user stories following these rules:
+   - **One slice of the plan = one user story**
+   - **Each story is completable in a single context window** (rule of thumb: ≤5 files and ≤200 lines of new code — otherwise split)
+   - **Acceptance criteria must be testable** — no "works correctly" — verifiable conditions only
+   - **Each [ASSUMPTION] in the plan becomes a validation AC** (e.g., "Validate that X is true before implementing")
+   - **Priority follows plan order** (the "Next Slice" is priority 1)
+4. Writes `prd.json` at the repo root, preserving `sourcePlan` for traceability
+5. Shows the result and asks whether you want to adjust any story before running the Ralph loop
+
+**Output format (prd.json):**
+```json
+{
+  "projectName": "...",
+  "branchName": "feat/...",
+  "sourcePlan": ".claude/plans/....md",
+  "userStories": [
+    {
+      "id": "US-01",
+      "title": "...",
+      "description": "...",
+      "acceptanceCriteria": ["AC1: ...", "AC2: ..."],
+      "priority": 1,
+      "passes": false
+    }
+  ]
+}
+```
+
+**Example:**
+```
+> /prd-convert last
+```
+
+---
+
+### `/ralph-adversarial [max_iterations, default 10]`
+
+**Purpose:** Runs an autonomous implementation loop: Claude Code implements one user story per iteration with a fresh context window, and OpenAI Codex reviews every commit using a strict code-review rubric.
+
+**What happens when you run it:**
+
+1. Verifies prerequisites: `prd.json` at the repo root, `jq`, `claude` CLI, `codex` CLI, and the rubric at `~/.claude/skills/ralph-adversarial/CODE_REVIEW.md`
+2. If `prd.json` doesn't exist but an approved plan does, it offers to run `/prd-convert` first
+3. Creates (or checks out) the branch declared in `prd.json` → `branchName`
+4. Iterates until all stories pass or `max_iterations` is reached:
+   - **(A) Claude Code** spawns with a fresh context, reads `prd.json`, `progress.txt`, and recent git history, picks the next pending story (lowest priority number), implements it, runs project quality checks, and commits with an `ac_trace` block in the commit message
+   - **(B) Codex** is spawned to review the diff against the rubric in `CODE_REVIEW.md` and produces a JSON verdict: `MERGE`, `REQUEST_CHANGES`, or `BLOCK`
+   - **(C) Verdict handling:**
+     - `MERGE` → story marked `passes: true`, next iteration
+     - `BLOCK` / `REQUEST_CHANGES` → review saved to `.claude/research/review-*.txt`, feedback appended to `progress.txt`, story retried
+     - 2 consecutive failures on the same story → escalate to human (`passes: "ESCALATED"`)
+
+**The review rubric enforces 6 dimensions:**
+
+| Dimension | Checks |
+|-----------|--------|
+| `AC_COMPLIANCE` | Every acceptance criterion maps to code + test. Missing impl = P0. Missing test = P1. |
+| `CORRECTNESS` | Edge cases, off-by-one, null/undefined, silent type coercion |
+| `SECURITY` | Injection, hardcoded secrets, missing authn/authz, input validation, PII in logs |
+| `RELIABILITY` | Error handling, race conditions, resource cleanup, dependency failure behavior |
+| `MAINTAINABILITY` | Karpathy principles: no speculative abstraction, every line traces to an AC |
+| `TESTING` | Positive + at least one negative case per new behavior; existing tests still valid |
+
+**Severity:** P0 blocks merge; P1 requests changes; P2/P3 are informational.
+
+**Memory between iterations lives on disk:**
+- `prd.json` — which stories are pending vs done
+- `progress.txt` — accumulated feedback, gotchas, lessons
+- git history — what's already been implemented
+- `AGENTS.md` — conventions discovered during implementation
+
+**Prerequisites:** OpenAI Codex CLI installed and authenticated (`codex` in PATH), plus `jq`.
+
+**Example:**
+```
+> /ralph-adversarial 15
+
+RALPH ADVERSARIAL LOOP
+Project:    payment-refactor
+Branch:     feat/payment-refactor
+Iterations: max 15
+Rubric:     ~/.claude/skills/ralph-adversarial/CODE_REVIEW.md
+
+--- Iteration 1/15 ---
+Story: US-01 - Add idempotency key to charge endpoint
+[A] Claude Code — Implementing...
+  Commit: [US-01] Add idempotency key to charge endpoint
+[B] Codex — Reviewing code...
+  Verdict: MERGE
+  Story US-01 APPROVED
+```
+
 ## Project Structure
 
 ```
@@ -391,12 +535,19 @@ dotclaude/
 │   ├── research-status.md             #   /research-status
 │   ├── research-synthesize.md         #   /research-synthesize
 │   ├── pr.md                          #   /pr
-│   └── export-report.md              #   /export-report
+│   ├── export-report.md               #   /export-report
+│   ├── prd-convert.md                 #   /prd-convert
+│   └── ralph-adversarial.md           #   /ralph-adversarial
 ├── skills/                            # Skills (installed to ~/.claude/skills/)
 │   ├── react-feynman/SKILL.md         #   ReAct + Feynman templates
-│   └── adversarial-research/          #   Multi-provider research
+│   ├── adversarial-research/          #   Multi-provider research
+│   │   ├── SKILL.md
+│   │   └── runner.py
+│   ├── prd/SKILL.md                   #   Plan → prd.json conversion rules
+│   └── ralph-adversarial/              #   Implementation loop
 │       ├── SKILL.md
-│       └── runner.py
+│       ├── CODE_REVIEW.md             #   V2 review rubric (used by Codex)
+│       └── ralph-adversarial.sh       #   Orchestration script
 └── sync.sh                            # Sync script (repo ↔ ~/.claude/)
 ```
 
@@ -445,6 +596,8 @@ The protocols here aren't arbitrary ceremony — each one addresses a specific, 
 | Same-provider bias in review | Cross-provider research (Gemini + Perplexity + OpenAI) |
 | Plans skip straight to code | No production code before adversarial approval |
 | Complexity hides behind jargon | Feynman Test: explain mechanism, not just name the pattern |
+| Self-review of own code misses introduced bugs | Ralph loop: Claude implements, Codex (different provider) reviews each commit |
+| Long implementations drift from the plan | Fresh context per story + `ac_trace` in every commit forces traceability |
 
 ## License
 
