@@ -30,3 +30,11 @@ Se o veredicto for APROVADO ou APROVADO COM RESSALVAS:
 Se REPROVADO:
 - Destaque os 3 pontos mais críticos que precisam de revisão humana.
 - NÃO tente resolver automaticamente — escale para o humano.
+
+## Fase 4 — Conversão para Implementação (opcional)
+
+Se o veredicto for APROVADO:
+1. Pergunte ao usuário: "Plano aprovado. Deseja converter em prd.json e iniciar implementação Ralph?"
+2. Se sim: use a skill `prd` para converter o plano em prd.json.
+3. Após conversão, informe: "prd.json criado. Execute /ralph-adversarial para iniciar."
+4. NÃO inicie o Ralph automaticamente — deixe o usuário revisar o prd.json primeiro.
