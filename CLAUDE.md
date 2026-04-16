@@ -18,9 +18,13 @@ Use `/research-status` para listar pesquisas.
 Use `/research-synthesize` para sintetizar pesquisa pendente.
 Use `/pr` para criar Pull Request e fazer merge automaticamente.
 Use `/export-report` para exportar a última resposta como arquivo Markdown.
+Use `/prd-convert` para converter plano aprovado em prd.json (formato Ralph).
+Use `/ralph-adversarial` para executar loop de implementação com revisão Codex.
 
 ## Referência rápida
 
 - Templates completos: `~/.claude/skills/react-feynman/SKILL.md`
 - Adversarial research: `~/.claude/skills/adversarial-research/SKILL.md`
+- Ralph adversarial: `~/.claude/skills/ralph-adversarial/SKILL.md`
+- Rubrica de code review: `~/.claude/skills/ralph-adversarial/CODE_REVIEW.md`
 - Workflow integrado: `~/.claude/WORKFLOW.md`
