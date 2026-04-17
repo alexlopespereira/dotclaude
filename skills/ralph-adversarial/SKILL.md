@@ -30,8 +30,8 @@ Cada iteração do loop:
 - AGENTS.md: convenções descobertas durante implementação
 
 ## Integração com o sistema ReAct+Feynman
-O plano aprovado no ciclo-completo é a FONTE do prd.json.
+O plano aprovado no full-cycle é a FONTE do prd.json.
 O fluxo completo é:
-  /ciclo-completo → plano aprovado
+  /full-cycle → plano aprovado
   → /prd-convert → prd.json
   → /ralph-adversarial → implementação com revisão
