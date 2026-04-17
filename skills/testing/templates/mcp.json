@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--headless",
+        "--isolated",
+        "--image-responses=omit",
+        "--output-mode=file",
+        "--output-dir=./.pw",
+        "--snapshot-mode=incremental",
+        "--console-level=error",
+        "--viewport-size=1024x768"
+      ]
+    }
+  }
+}

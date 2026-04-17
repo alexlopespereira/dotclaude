@@ -19,6 +19,7 @@ FILES=(
 DIRS=(
     "commands"
     "skills"
+    "agents"
 )
 
 usage() {
