@@ -138,6 +138,38 @@ The review rubric (in `skills/ralph-adversarial/CODE_REVIEW.md`) enforces six di
 
 > **Why it matters:** A planner LLM reviewing its own code has the same blind spots that produced the code. Using a different provider (Codex) as the reviewer is the cheapest form of cross-model adversarial review for implementation — the same principle as the research loop, applied to patches.
 
+### Bonus: Testing for Agentic Coding
+
+Agents ship code that passes its own tests — but its own tests are precisely the ones the agent wrote. Without discipline, the suite becomes a coat of paint: green, pretty, and useless. The `testing` skill plus the `/e2e` command and `test-runner` subagent wire this discipline into the harness:
+
+```
+  BEFORE CODE             DURING CODE              BEFORE COMMIT
+  ───────────             ───────────              ─────────────
+  TDD RED                 test-runner subagent     PreToolUse hook
+  fails for right reason  runs after changes       blocks if playwright.config.*
+  (not syntax error)      repairs selector drift   exists AND tests fail
+        │                        │                        │
+        ▼                        ▼                        ▼
+  Implementation            Cross-cuts target       exit 2 → deterministic
+  writes minimum code       specs via --reporter    block; stderr surfaces
+  to turn it GREEN          line --last-failed      to the model
+```
+
+The central rule: **a test must be able to fail for a real defect**. If it can't, delete it. The skill codifies six more:
+
+- Strong assertions (`toEqual(expected)` > `toBeTruthy()`)
+- No magic literals, no `.skip` / `.only` / `@ignore` to hide failures
+- Bug fix always ships with the regression test that failed before the fix
+- Prefer Playwright CLI over MCP (it avoids dumping tool schemas and a11y trees into context)
+- `getByRole` / `getByTestId` selectors only — never CSS descendants
+- Watch for **agent cheating**: a test edited in the same commit as the feature, with no change to the expected assertion, is a red flag
+
+The test-runner subagent is read-mostly: it edits `tests/**` and `playwright.config.ts`, never product code. If a previously-green test fails after a change, it escalates instead of "fixing" it.
+
+Bootstrap templates live in `skills/testing/templates/` — `playwright.config.ts` (agent-aware reporter, maxFailures, trace-on-first-retry), `mcp.json` (token-efficient MCP settings), `settings.hooks.json` (pre-commit hook with `playwright.config.*` guard so projects without Playwright aren't blocked), and `gitignore.testing`.
+
+> **Why it matters:** LLMs naturally optimize for "the test passes," not "the test catches defects." Making the failure-first cycle structural — RED before GREEN, hook before commit, subagent after every change — is the only way to keep the suite honest.
+
 ## Installation
 
 ```bash
@@ -165,6 +197,7 @@ After installation, these slash commands are available in any Claude Code projec
 | `/export-report` | Utility | Exports last response as Markdown |
 | `/prd-convert` | Implementation | Converts an approved plan into prd.json (Ralph format) |
 | `/ralph-adversarial` | Implementation | Runs the Ralph loop with Codex code review |
+| `/e2e` | Testing | Generates or runs Playwright E2E tests for a flow |
 
 ---
 
@@ -464,6 +497,31 @@ Exported to: /Users/you/project/report-2026-04-16-143022.md
 
 ---
 
+### `/e2e <route or flow description>`
+
+**Purpose:** Generates or runs a Playwright E2E test for a specific route or user flow.
+
+**What happens when you run it:**
+
+1. Runs a preflight that shows `git status`, existing specs in `tests/e2e/`, and the `playwright.config.ts` header
+2. Discovers any existing specs that already cover the described flow
+3. Plans coverage as an explicit checklist: **happy path + 2 error cases + 1 edge case**
+4. Writes a new spec at `tests/e2e/<slug>.spec.ts` using `data-testid` or role selectors, `test.describe` per flow, `test.step` per action, and web-first assertions
+5. Runs it targeted: `npx playwright test tests/e2e/<slug>.spec.ts --reporter=line`
+6. **Repair loop (max 3):** on failure, reads the trace + screenshot in `test-results/`. If a selector is wrong, uses `playwright mcp browser_snapshot` to fix it. Re-runs. Never uses `--update-snapshots` without permission.
+7. Reports a PASS/FAIL table and the list of files touched
+
+**Restrictions:**
+- Does not start the dev server — assumes `localhost:3000` is already live
+- Does not commit — the human reviews first
+
+**Example:**
+```
+> /e2e checkout with invalid CEP
+```
+
+---
+
 ### `/ralph-adversarial [max_iterations, default 10]`
 
 **Purpose:** Runs an autonomous implementation loop: Claude Code implements one user story per iteration with a fresh context window, and OpenAI Codex reviews every commit using a strict code-review rubric.
@@ -537,17 +595,27 @@ dotclaude/
 │   ├── pr.md                          #   /pr
 │   ├── export-report.md               #   /export-report
 │   ├── prd-convert.md                 #   /prd-convert
-│   └── ralph-adversarial.md           #   /ralph-adversarial
+│   ├── ralph-adversarial.md           #   /ralph-adversarial
+│   └── e2e.md                         #   /e2e
+├── agents/                            # Subagents (installed to ~/.claude/agents/)
+│   └── test-runner.md                 #   Proactive test runner (read-mostly)
 ├── skills/                            # Skills (installed to ~/.claude/skills/)
 │   ├── react-feynman/SKILL.md         #   ReAct + Feynman templates
 │   ├── adversarial-research/          #   Multi-provider research
 │   │   ├── SKILL.md
 │   │   └── runner.py
 │   ├── prd/SKILL.md                   #   Plan → prd.json conversion rules
-│   └── ralph-adversarial/              #   Implementation loop
+│   ├── ralph-adversarial/              #   Implementation loop
+│   │   ├── SKILL.md
+│   │   ├── CODE_REVIEW.md             #   V2 review rubric (used by Codex)
+│   │   └── ralph-adversarial.sh       #   Orchestration script
+│   └── testing/                       #   TDD + Playwright discipline
 │       ├── SKILL.md
-│       ├── CODE_REVIEW.md             #   V2 review rubric (used by Codex)
-│       └── ralph-adversarial.sh       #   Orchestration script
+│       └── templates/                 #   Bootstrap files for new projects
+│           ├── playwright.config.ts
+│           ├── mcp.json
+│           ├── settings.hooks.json    #   PreToolUse hook (guarded)
+│           └── gitignore.testing
 └── sync.sh                            # Sync script (repo ↔ ~/.claude/)
 ```
 
@@ -598,6 +666,8 @@ The protocols here aren't arbitrary ceremony — each one addresses a specific, 
 | Complexity hides behind jargon | Feynman Test: explain mechanism, not just name the pattern |
 | Self-review of own code misses introduced bugs | Ralph loop: Claude implements, Codex (different provider) reviews each commit |
 | Long implementations drift from the plan | Fresh context per story + `ac_trace` in every commit forces traceability |
+| Agents pass their own tests (which they wrote) | TDD RED-before-GREEN + pre-commit hook + test-runner subagent |
+| Playwright MCP floods context with a11y trees | CLI-first policy in the `testing` skill; MCP only for explicit cases |
 
 ## License
 

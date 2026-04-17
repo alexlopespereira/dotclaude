@@ -20,6 +20,20 @@ Use `/pr` para criar Pull Request e fazer merge automaticamente.
 Use `/export-report` para exportar a última resposta como arquivo Markdown.
 Use `/prd-convert` para converter plano aprovado em prd.json (formato Ralph).
 Use `/ralph-adversarial` para executar loop de implementação com revisão Codex.
+Use `/e2e [fluxo]` para gerar/rodar testes E2E Playwright.
+
+## Testing (sempre ativo)
+
+TDD red-green-refactor obrigatório. Nunca implemente antes do teste.
+Playwright CLI > MCP (token-efficient). Detalhes: skill `testing`.
+
+Comandos:
+- Fast:   npx playwright test --reporter=line --max-failures=3
+- Last:   npx playwright test --last-failed --reporter=line
+- Single: npx playwright test <path> --reporter=line
+
+Subagente `test-runner` roda proativamente após mudanças de código.
+Templates de bootstrap em `~/.claude/skills/testing/templates/`.
 
 ## Referência rápida
 
@@ -27,4 +41,5 @@ Use `/ralph-adversarial` para executar loop de implementação com revisão Code
 - Adversarial research: `~/.claude/skills/adversarial-research/SKILL.md`
 - Ralph adversarial: `~/.claude/skills/ralph-adversarial/SKILL.md`
 - Rubrica de code review: `~/.claude/skills/ralph-adversarial/CODE_REVIEW.md`
+- Testing (TDD + Playwright): `~/.claude/skills/testing/SKILL.md`
 - Workflow integrado: `~/.claude/WORKFLOW.md`
