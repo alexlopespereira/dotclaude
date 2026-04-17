@@ -69,7 +69,7 @@ The adversary specifically:
 - Asks **questions the planner should have asked**
 - Gives a verdict: **APPROVED**, **APPROVED WITH CAVEATS**, or **REJECTED**
 
-The full cycle (`/ciclo-completo`) runs both agents in sequence. For external validation, the plan can also be reviewed by OpenAI Codex as an independent adversary — a different model from a different provider, eliminating correlated bias.
+The full cycle (`/full-cycle`) runs both agents in sequence. For external validation, the plan can also be reviewed by OpenAI Codex as an independent adversary — a different model from a different provider, eliminating correlated bias.
 
 > **Why it matters:** Self-review doesn't work — the same model that produced a flawed plan will approve it. Adversarial review forces genuine challenge. Cross-provider review (Claude vs. Codex) eliminates the shared blind spots that same-model review preserves.
 
@@ -100,7 +100,7 @@ Each provider has a structural advantage at its role: Gemini excels at broad res
 
 ### Bonus: Ralph Adversarial Implementation Loop
 
-Once a plan is approved by `/ciclo-completo`, the `/ralph-adversarial` loop carries it to production code without sacrificing rigor. It's the [Ralph pattern](https://ghuntley.com/ralph/) — one story per iteration with a fresh context window — extended with **cross-agent code review**: Claude Code implements, Codex reviews.
+Once a plan is approved by `/full-cycle`, the `/ralph-adversarial` loop carries it to production code without sacrificing rigor. It's the [Ralph pattern](https://ghuntley.com/ralph/) — one story per iteration with a fresh context window — extended with **cross-agent code review**: Claude Code implements, Codex reviews.
 
 ```
   APPROVED PLAN (.claude/plans/*.md)
@@ -187,9 +187,9 @@ After installation, these slash commands are available in any Claude Code projec
 
 | Command | Category | What it does |
 |---------|----------|-------------|
-| `/planejar` | Planning | Technical plan with ReAct + Feynman |
-| `/revisar-adversario` | Review | Red Team attack on an existing plan |
-| `/ciclo-completo` | Planning + Review | Both agents in sequence |
+| `/plan` | Planning | Technical plan with ReAct + Feynman |
+| `/adversarial-review` | Review | Red Team attack on an existing plan |
+| `/full-cycle` | Planning + Review | Both agents in sequence |
 | `/adversarial-research` | Research | Deep research with 3 AI providers |
 | `/research-status` | Research | Lists all research sessions |
 | `/research-synthesize` | Research | Synthesizes a completed research |
@@ -201,7 +201,7 @@ After installation, these slash commands are available in any Claude Code projec
 
 ---
 
-### `/planejar [problem description]`
+### `/plan [problem description]`
 
 **Purpose:** Produces a complete technical plan using the ReAct + Feynman protocol.
 
@@ -232,12 +232,12 @@ After installation, these slash commands are available in any Claude Code projec
 
 **Example:**
 ```
-> /planejar migrate the database from MySQL 5.7 to PostgreSQL 16
+> /plan migrate the database from MySQL 5.7 to PostgreSQL 16
 ```
 
 ---
 
-### `/revisar-adversario [path to plan or "last plan"]`
+### `/adversarial-review [path to plan or "last plan"]`
 
 **Purpose:** Performs a Red Team review of an existing plan. Claude switches from Planner to Adversary — its goal becomes **finding flaws**, not confirming the plan.
 
@@ -269,12 +269,12 @@ After installation, these slash commands are available in any Claude Code projec
 
 **Example:**
 ```
-> /revisar-adversario .claude/plans/migrate-mysql-to-postgres.md
+> /adversarial-review .claude/plans/migrate-mysql-to-postgres.md
 ```
 
 ---
 
-### `/ciclo-completo [problem description]`
+### `/full-cycle [problem description]`
 
 **Purpose:** Runs the full pipeline — planning followed by adversarial self-review — in a single command. This is the recommended way to start any non-trivial task.
 
@@ -290,7 +290,7 @@ After installation, these slash commands are available in any Claude Code projec
 
 **Example:**
 ```
-> /ciclo-completo implement real-time notifications with WebSocket
+> /full-cycle implement real-time notifications with WebSocket
 
 Phase 1 — Planning (ReAct + Feynman)
   Thought #1: I need to understand the current notification system...
@@ -586,9 +586,9 @@ dotclaude/
 ├── CLAUDE.md                          # Global instructions (ReAct + Feynman protocol)
 ├── WORKFLOW.md                        # Command reference and workflow guide
 ├── commands/                          # Slash commands (installed to ~/.claude/commands/)
-│   ├── planejar.md                    #   /planejar
-│   ├── revisar-adversario.md          #   /revisar-adversario
-│   ├── ciclo-completo.md              #   /ciclo-completo
+│   ├── plan.md                        #   /plan
+│   ├── adversarial-review.md          #   /adversarial-review
+│   ├── full-cycle.md                  #   /full-cycle
 │   ├── adversarial-research.md        #   /adversarial-research
 │   ├── research-status.md             #   /research-status
 │   ├── research-synthesize.md         #   /research-synthesize

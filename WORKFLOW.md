@@ -4,21 +4,21 @@
 
 | Comando | Uso |
 |---------|-----|
-| `/planejar [problema]` | Produz plano técnico com ReAct + Feynman |
-| `/revisar-adversario [plano]` | Revisão adversária de um plano existente |
-| `/ciclo-completo [problema]` | Planejamento + auto-revisão em sequência |
+| `/plan [problema]` | Produz plano técnico com ReAct + Feynman |
+| `/adversarial-review [plano]` | Revisão adversária de um plano existente |
+| `/full-cycle [problema]` | Planejamento + auto-revisão em sequência |
 | `/adversarial-research [tema]` | Deep research com 3 provedores |
 | `/pr` | Cria PR e faz merge automaticamente |
 | `/export-report` | Exporta última resposta como Markdown |
 
 ## Fluxo de Planejamento
 
-1. `/planejar [problema]` → salva em `.claude/plans/`
-2. `/revisar-adversario .claude/plans/[arquivo].md` → parecer adversário
+1. `/plan [problema]` → salva em `.claude/plans/`
+2. `/adversarial-review .claude/plans/[arquivo].md` → parecer adversário
 3. Iterar até aprovação (máx. 3 ciclos)
 4. Implementar a Próxima Fatia
 
-Ou use `/ciclo-completo [problema]` para executar as duas fases em sequência.
+Ou use `/full-cycle [problema]` para executar as duas fases em sequência.
 
 ## Dicas
 

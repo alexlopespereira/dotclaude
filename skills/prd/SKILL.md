@@ -6,7 +6,7 @@ description: Converte um plano aprovado (de .claude/plans/) em prd.json no forma
 # Skill: Conversão Plano → prd.json
 
 ## Quando usar
-- Após aprovação de um plano pelo ciclo-completo ou pelo revisar-adversario
+- Após aprovação de um plano pelo full-cycle ou pelo adversarial-review
 - Quando o usuário pedir para converter um plano em tarefas executáveis
 
 ## Entrada
