@@ -12,19 +12,19 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["ac_id", "verdict"],
+        "required": ["ac_id", "code", "test", "verdict"],
         "properties": {
           "ac_id": {
             "type": "string",
             "description": "Identifier of the acceptance criterion (e.g., US-42.AC1)."
           },
           "code": {
-            "type": "string",
-            "description": "File:line range implementing the AC (e.g., src/auth.ts:88-104)."
+            "type": ["string", "null"],
+            "description": "File:line range implementing the AC (e.g., src/auth.ts:88-104). Null if missing."
           },
           "test": {
-            "type": "string",
-            "description": "File:line of the test that covers this AC."
+            "type": ["string", "null"],
+            "description": "File:line of the test that covers this AC. Null if missing."
           },
           "verdict": {
             "type": "string",
