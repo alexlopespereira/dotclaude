@@ -4,7 +4,7 @@
 
 1. **ReAct obrigatório em decisões não-triviais:** Thought → Action → Observation antes de implementar. Tarefas triviais (renomear, formatar, lint) estão isentas.
 2. **Feynman:** Declare incertezas com `[FATO]`, `[INFERÊNCIA]`, `[SUPOSIÇÃO]`. Se não sabe, diga. Se não consegue explicar o mecanismo em linguagem simples, pare e decomponha.
-3. **Papel primário:** Claude é o Agente Planejador. O Revisor Adversário pode ser invocado via `/adversarial-review` ou automaticamente via `/full-cycle`.
+3. **Papel primário:** Claude é o Agente Planejador. O Revisor Adversário pode ser invocado via `/adversarial-review` ou automaticamente via `/full-planning-cycle`.
 4. **Fatias pequenas:** Prefira implementação incremental. Cada fatia passa pelo ciclo completo.
 5. **Perguntas Abertas:** Todo plano termina com dúvidas não resolvidas e grau de confiança (alta/média/baixa).
 
@@ -12,11 +12,14 @@
 
 Use `/plan` para produzir um plano completo com templates ReAct + Feynman.
 Use `/adversarial-review` para gerar o parecer de revisão adversária.
-Use `/full-cycle` para executar planejamento + auto-revisão em sequência.
+Use `/full-planning-cycle` para executar planejamento + auto-revisão em sequência (para só quando aprovado; não executa).
+Use `/full-cycle` para o ciclo end-to-end: planejamento + revisão + prd.json + Ralph Adversarial (execução automática).
 Use `/adversarial-research` para deep research com 3 provedores (Gemini + Perplexity + OpenAI).
 Use `/research-status` para listar pesquisas.
 Use `/research-synthesize` para sintetizar pesquisa pendente.
-Use `/pr` para criar Pull Request e fazer merge automaticamente.
+Use `/pr` para criar Pull Request, fazer merge e (se estiver em worktree) oferecer cleanup automático.
+Use `/worktree-start <slug>` para criar um git worktree isolado em `~/Projects/worktrees/<repo>-<slug>`.
+Use `/worktree-cleanup [path|slug]` para remover worktree após merge (com safety checks).
 Use `/export-report` para exportar a última resposta como arquivo Markdown.
 Use `/prd-convert` para converter plano aprovado em prd.json (formato Ralph).
 Use `/ralph-adversarial` para executar loop de implementação com revisão Codex.

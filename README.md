@@ -267,11 +267,14 @@ After installation, these slash commands are available in any Claude Code projec
 |---------|----------|-------------|
 | `/plan` | Planning | Technical plan with ReAct + Feynman |
 | `/adversarial-review` | Review | Red Team attack on an existing plan |
-| `/full-cycle` | Planning + Review | Both agents in sequence |
+| `/full-planning-cycle` | Planning + Review | Both agents in sequence (no execution) |
+| `/full-cycle` | End-to-end delivery | Worktree + plan + review + PRD + Ralph + PR/merge + cleanup |
+| `/worktree-start` | Git workflow | Creates isolated git worktree at `~/Projects/worktrees/` |
+| `/worktree-cleanup` | Git workflow | Removes worktree after merge (with safety checks) |
 | `/adversarial-research` | Research | Deep research with 3 AI providers |
 | `/research-status` | Research | Lists all research sessions |
 | `/research-synthesize` | Research | Synthesizes a completed research |
-| `/pr` | Git workflow | Creates PR and auto-merges |
+| `/pr` | Git workflow | Creates PR, auto-merges, and offers worktree cleanup |
 | `/export-report` | Utility | Exports last response as Markdown |
 | `/prd-convert` | Implementation | Converts an approved plan into prd.json (Ralph format) |
 | `/ralph-adversarial` | Implementation | Runs the Ralph loop with Codex code review |
@@ -354,37 +357,100 @@ After installation, these slash commands are available in any Claude Code projec
 
 ### `/full-cycle [problem description]`
 
-**Purpose:** Runs the full pipeline — planning followed by adversarial self-review — in a single command. This is the recommended way to start any non-trivial task.
+**Purpose:** Runs the complete end-to-end delivery pipeline — creates an isolated git worktree, plans, reviews, converts to PRD, executes Ralph Adversarial, runs tests, opens and merges a PR, and finally removes the worktree. All production work happens in isolation from the main checkout.
 
 **What happens when you run it:**
 
-1. **Phase 1 — Planning:** Claude acts as the Planner Agent, executes the full ReAct cycle, and produces a plan. The plan is saved to `.claude/plans/[slug].md`
-2. **Phase 2 — Adversarial Review:** Claude switches to the Adversary Agent role, re-reads the plan with fresh eyes, and attacks it. The review is appended to the same file under a `---` separator
-3. **Phase 3 — Synthesis:**
-   - If **APPROVED** or **APPROVED WITH CAVEATS**: lists immediate actions for the next implementation slice
-   - If **REJECTED**: highlights the 3 most critical issues and escalates to the human. Does **not** attempt to auto-fix — the human decides
+1. **Phase 0 — Worktree:** derives a slug from the description and creates `~/Projects/worktrees/<repo>-<slug>` with a new branch based on `origin/main`. All subsequent phases operate inside this path
+2. **Phase 1 — Planning:** Claude acts as the Planner Agent, executes the full ReAct cycle, and saves a plan to `<worktree>/.claude/plans/<slug>.md`
+3. **Phase 2 — Adversarial Review:** Claude switches to the Adversary Agent role, re-reads the plan with fresh eyes, and attacks it. The review is appended to the same file under a `---` separator
+4. **Phase 3 — Approval gate:**
+   - **APPROVED** → proceeds to PRD
+   - **APPROVED WITH CAVEATS** → asks the human whether to proceed
+   - **REJECTED** → stops. Worktree is preserved for human review
+5. **Phase 4 — PRD conversion:** slices the plan into `<worktree>/prd.json` following the `prd` skill rules
+6. **Phase 5 — Ralph Adversarial:** runs the implementation loop (Claude implements, Codex reviews) inside the worktree until all stories pass or the budget is exhausted
+7. **Phase 6 — Final tests:** runs the project test suite inside the worktree; fails here stop the flow (no PR opened)
+8. **Phase 7 — PR + Merge:** pushes the branch, opens a PR, waits for CI, merges with `--delete-branch`
+9. **Phase 8 — Cleanup:** removes the worktree and deletes the local branch. Returns to the main repo
 
-**Guardrails:** Maximum 3 review cycles. After 3, the divergence is escalated to the human with a summary. No production code is written before approval.
+**Guardrails:** No production code is written before adversarial approval. The worktree is **preserved** on any interruption (rejection, escalated stories, P0 findings, failing tests, blocked merge) — it is only removed after Phase 7 succeeds. For planning-only without execution or PR, use `/full-planning-cycle`.
 
 **Example:**
 ```
 > /full-cycle implement real-time notifications with WebSocket
 
+Phase 0 — Worktree
+  Created ~/Projects/worktrees/myapp-realtime-notifications-websocket
+  Branch: realtime-notifications-websocket (from origin/main)
+
 Phase 1 — Planning (ReAct + Feynman)
-  Thought #1: I need to understand the current notification system...
-  Action #1: Read src/notifications/...
   ...
-  Plan produced with 3 [ASSUMPTIONS] flagged.
-  Saved to .claude/plans/real-time-notifications-websocket.md
+  Plan saved to .claude/plans/realtime-notifications-websocket.md
 
 Phase 2 — Adversarial Review
-  [ASSUMPTION] "Redis Pub/Sub is available" → REFUTED: staging uses in-memory store.
-  Feynman violation: "Use the Observer pattern" without explaining the mechanism.
-  Verdict: APPROVED WITH CAVEATS — 2 items need revision.
+  Verdict: APPROVED WITH CAVEATS — proceed? y
 
-Phase 3 — Synthesis
-  Next slice: implement WebSocket handshake + heartbeat (no business logic yet).
-  Human decides whether to proceed.
+Phase 4 — PRD with 4 stories
+Phase 5 — Ralph: 4/4 passed (Codex verdicts: MERGE MERGE MERGE MERGE)
+Phase 6 — Tests green
+Phase 7 — PR #128 merged
+Phase 8 — Worktree removed, branch deleted. Back on main.
+```
+
+---
+
+### `/worktree-start <slug> [base-branch]`
+
+**Purpose:** Creates an isolated git worktree so feature work never pollutes the main checkout.
+
+**What happens when you run it:**
+
+1. Validates the slug (`^[a-z0-9][a-z0-9-]*$`) and that the base branch exists
+2. Fetches `origin/<base>` (default `main`) to ensure the worktree starts from the latest remote state
+3. Creates `~/Projects/worktrees/<repo-name>-<slug>` with a new branch `<slug>`
+4. Reports the path so subsequent work (`cd`, `git -C`, file operations) targets it
+
+**Layout convention:** all worktrees live under `~/Projects/worktrees/` and are named `<repo-name>-<slug>` to disambiguate across repos.
+
+**Guardrails:** refuses to overwrite an existing worktree path (use `/worktree-cleanup` first). Never creates a worktree on top of uncommitted changes in the source branch without warning.
+
+**Example:**
+```
+> /worktree-start fix-auth-bug
+
+Worktree created:
+  path:   /Users/you/Projects/worktrees/myapp-fix-auth-bug
+  branch: fix-auth-bug
+  base:   main
+```
+
+---
+
+### `/worktree-cleanup [path-or-slug] [--force]`
+
+**Purpose:** Removes a worktree after the work has been merged. Runs safety checks before deleting anything.
+
+**What happens when you run it:**
+
+1. Resolves the target — explicit path, slug (mapped to `~/Projects/worktrees/<repo>-<slug>`), or the current working directory if it's inside `~/Projects/worktrees/`
+2. Verifies the path is a real worktree via `git worktree list` — refuses to touch the main repo
+3. **Safety checks** (skipped only with `--force`):
+   - No uncommitted changes in the worktree
+   - Branch is merged — verified via `gh pr list --state all` (preferred) or `git merge-base --is-ancestor` as fallback
+4. Runs `git worktree remove` + `git worktree prune`
+5. Deletes the local branch with `git branch -d` (safe delete — refuses unmerged work)
+
+**Guardrails:** never deletes the main repository. Never force-deletes a branch that wasn't merged, even with `--force` — the flag only bypasses the safety checks, not the branch-safety of `git branch -d`.
+
+**Example:**
+```
+> /worktree-cleanup fix-auth-bug
+
+Worktree removed:
+  path:   /Users/you/Projects/worktrees/myapp-fix-auth-bug
+  branch: fix-auth-bug (local deleted)
+  merged: true
 ```
 
 ---
@@ -481,31 +547,34 @@ Research #2 is pending synthesis. Run /research-synthesize to generate it.
 
 ### `/pr`
 
-**Purpose:** Creates a Pull Request on GitHub and auto-merges it — a complete git workflow in one command.
+**Purpose:** Creates a Pull Request on GitHub, auto-merges it, and offers to clean up the worktree if you're working inside one — a complete git workflow in one command.
 
 **What happens when you run it:**
 
-1. **Checks state:** `git status` to detect uncommitted changes
+1. **Checks state:** `git status` to detect uncommitted changes; detects whether the cwd is inside `~/Projects/worktrees/`
 2. **Commits** if needed (following the repo's commit convention)
 3. **Creates branch** if currently on `main` (descriptive name based on changes)
 4. **Pushes** the branch to origin
 5. **Creates the PR** via `gh pr create` with a structured summary
 6. **Waits for CI** checks to pass (if configured), otherwise proceeds
 7. **Merges** the PR with `--merge --delete-branch`
-8. **Returns to main** and pulls latest
+8. **Returns** to the main repo and pulls latest (resolves the main checkout via `git-common-dir` when called from a worktree)
+9. **Offers cleanup** when the run started inside a worktree: prompts before running `git worktree remove` + `git worktree prune` + local-branch delete
 
-**Guardrails:** If merge fails due to branch protection or pending reviews, it reports the status instead of forcing. The human decides next steps.
+**Guardrails:** If merge fails due to branch protection or pending reviews, it reports the status and **stops** — no cleanup is attempted on a failed merge. Never touches the worktree without explicit confirmation.
 
 **Example:**
 ```
 > /pr
 
-Created branch: fix/update-auth-middleware
+Detected worktree: ~/Projects/worktrees/myapp-fix-auth
+Created branch: fix-auth
 Pushed to origin.
 PR #42 created: "Fix auth middleware token expiry handling"
-CI checks passed.
-PR #42 merged. Branch deleted.
-Returned to main.
+CI checks passed. PR #42 merged. Branch deleted on remote.
+Returned to main repo.
+Remove worktree ~/Projects/worktrees/myapp-fix-auth? (Y/n) y
+Worktree removed. Local branch deleted.
 ```
 
 ---
@@ -671,6 +740,8 @@ dotclaude/
 │   ├── research-status.md             #   /research-status
 │   ├── research-synthesize.md         #   /research-synthesize
 │   ├── pr.md                          #   /pr
+│   ├── worktree-start.md              #   /worktree-start
+│   ├── worktree-cleanup.md            #   /worktree-cleanup
 │   ├── export-report.md               #   /export-report
 │   ├── prd-convert.md                 #   /prd-convert
 │   ├── ralph-adversarial.md           #   /ralph-adversarial
@@ -753,6 +824,7 @@ The protocols here aren't arbitrary ceremony — each one addresses a specific, 
 | Self-review of own code misses introduced bugs | Ralph loop: Claude implements, Codex (different provider) reviews each commit |
 | Long implementations drift from the plan | Fresh context per story + `ac_trace` in every commit forces traceability |
 | Agents pass their own tests (which they wrote) | TDD RED-before-GREEN + pre-commit hook + test-runner subagent |
+| Autonomous loops contaminate the working checkout | `/full-cycle` runs every delivery inside an isolated git worktree; cleanup is gated on successful merge |
 | Playwright MCP floods context with a11y trees | CLI-first policy in the `testing` skill; MCP only for explicit cases |
 | Docs drift from code as the repo evolves | LLM Wiki Bootstrap: YAML frontmatter ties every page to `source_files` + `last_verified_commit`; CI fails on stale `high`-confidence claims |
 

@@ -51,8 +51,25 @@ echo "Rubrica:    $REVIEW_FILE"
 echo "=========================================="
 
 # ─── Retry tracker ──────────────────────────────────────────
+# Bash 3.2 compat: usar arquivo em vez de array associativo
 
-declare -A RETRY_COUNT
+RETRY_FILE="$(mktemp -t ralph-retry.XXXXXX)"
+trap 'rm -f "$RETRY_FILE"' EXIT
+
+get_retry_count() {
+    local story_id="$1"
+    local count
+    count=$(grep "^${story_id}:" "$RETRY_FILE" 2>/dev/null | tail -1 | cut -d: -f2)
+    echo "${count:-0}"
+}
+
+set_retry_count() {
+    local story_id="$1"
+    local count="$2"
+    grep -v "^${story_id}:" "$RETRY_FILE" > "${RETRY_FILE}.tmp" 2>/dev/null || true
+    echo "${story_id}:${count}" >> "${RETRY_FILE}.tmp"
+    mv "${RETRY_FILE}.tmp" "$RETRY_FILE"
+}
 
 # ─── Loop Principal ─────────────────────────────────────────
 
@@ -80,7 +97,7 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
     echo "Pendentes: $PENDING"
 
     # Checar retries
-    CURRENT_RETRIES=${RETRY_COUNT[$STORY_ID]:-0}
+    CURRENT_RETRIES=$(get_retry_count "$STORY_ID")
     if [ "$CURRENT_RETRIES" -ge "$MAX_RETRIES_PER_STORY" ]; then
         echo "ESCALAÇÃO: Story $STORY_ID falhou $MAX_RETRIES_PER_STORY vezes consecutivas."
         echo "Intervenção humana necessária."
@@ -123,7 +140,7 @@ PRINCÍPIOS KARPATHY:
 - Sem refactoring drive-by. Sem abstração especulativa.
 - Verifique a cada passo. Rode testes após cada mudança significativa."
 
-    claude --print "$CLAUDE_PROMPT" 2>&1 | tail -20
+    claude --print --permission-mode bypassPermissions "$CLAUDE_PROMPT" 2>&1 | tail -20 || true
 
     # Verificar se houve commit
     LAST_COMMIT=$(git log -1 --format="%H" 2>/dev/null)
@@ -132,7 +149,7 @@ PRINCÍPIOS KARPATHY:
     if [[ "$LAST_MSG" != *"$STORY_ID"* ]]; then
         echo "  AVISO: Claude não commitou com $STORY_ID no message."
         echo "$(date -Iseconds) | FALHA_COMMIT | $STORY_ID | Claude não produziu commit válido" >> progress.txt
-        RETRY_COUNT[$STORY_ID]=$((CURRENT_RETRIES + 1))
+        set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
         continue
     fi
 
@@ -143,18 +160,10 @@ PRINCÍPIOS KARPATHY:
     echo ""
     echo "[B] Codex — Revisando código..."
 
-    REVIEW_PROMPT="Revise o último commit deste repositório.
-
-LEIA PRIMEIRO:
-- $REVIEW_FILE (sua rubrica de revisão — siga-a estritamente)
-- O diff do último commit: git diff HEAD~1
-- A story no prd.json com id=$STORY_ID (seus acceptance criteria)
-
-Aplique a rubrica em $REVIEW_FILE.
-Produza o JSON de saída conforme o schema especificado na rubrica.
-Se não encontrar issues reais, retorne verdict: MERGE."
-
-    REVIEW_RESULT=$(codex exec --ask-for-approval never "$REVIEW_PROMPT" 2>&1)
+    # Codex 0.120+: "exec review --commit SHA --full-auto" não aceita PROMPT customizado.
+    # Usamos o modo review padrão, que o Codex executa com sua rubrica interna.
+    # A rubrica customizada CODE_REVIEW.md fica como guidance no repo (AGENTS.md pode referenciar).
+    REVIEW_RESULT=$(codex exec review --commit HEAD --full-auto 2>&1 || echo '{"verdict":"BLOCK","error":"codex_exec_failed"}')
 
     echo "$REVIEW_RESULT" | tail -30
 
@@ -181,17 +190,17 @@ Se não encontrar issues reais, retorne verdict: MERGE."
             jq --arg id "$STORY_ID" '(.userStories[] | select(.id == $id)).passes = true' prd.json > prd.tmp && mv prd.tmp prd.json
             git add prd.json
             git commit -m "[$STORY_ID] Marcada como passes:true após review" --allow-empty
-            RETRY_COUNT[$STORY_ID]=0
+            set_retry_count "$STORY_ID" 0
             ;;
         BLOCK|REQUEST_CHANGES)
             echo "  Story $STORY_ID REJEITADA — feedback salvo em progress.txt"
             echo "$(date -Iseconds) | REVIEW_$VERDICT | $STORY_ID | $(echo "$REVIEW_RESULT" | grep -o '"evidence":[^,]*' | head -3)" >> progress.txt
-            RETRY_COUNT[$STORY_ID]=$((CURRENT_RETRIES + 1))
+            set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
             ;;
         *)
             echo "  Veredicto não identificado — tratando como REQUEST_CHANGES"
             echo "$(date -Iseconds) | REVIEW_UNKNOWN | $STORY_ID | Veredicto não parseado" >> progress.txt
-            RETRY_COUNT[$STORY_ID]=$((CURRENT_RETRIES + 1))
+            set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
             ;;
     esac
 done
