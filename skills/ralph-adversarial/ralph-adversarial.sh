@@ -11,7 +11,6 @@ ITERATION=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REVIEW_FILE="$SCRIPT_DIR/CODE_REVIEW.md"
-REVIEW_SCHEMA="$SCRIPT_DIR/review-schema.json"
 
 # ─── Verificações ───────────────────────────────────────────
 
@@ -24,12 +23,6 @@ fi
 if [ ! -f "$REVIEW_FILE" ]; then
     echo "ERRO: $REVIEW_FILE não encontrado."
     echo "A rubrica de revisão é necessária para o Codex."
-    exit 1
-fi
-
-if [ ! -f "$REVIEW_SCHEMA" ]; then
-    echo "ERRO: $REVIEW_SCHEMA não encontrado."
-    echo "O schema de saída é necessário para forçar JSON determinístico do Codex."
     exit 1
 fi
 
@@ -58,8 +51,25 @@ echo "Rubrica:    $REVIEW_FILE"
 echo "=========================================="
 
 # ─── Retry tracker ──────────────────────────────────────────
+# Bash 3.2 compat: usar arquivo em vez de array associativo
 
-declare -A RETRY_COUNT
+RETRY_FILE="$(mktemp -t ralph-retry.XXXXXX)"
+trap 'rm -f "$RETRY_FILE"' EXIT
+
+get_retry_count() {
+    local story_id="$1"
+    local count
+    count=$(grep "^${story_id}:" "$RETRY_FILE" 2>/dev/null | tail -1 | cut -d: -f2)
+    echo "${count:-0}"
+}
+
+set_retry_count() {
+    local story_id="$1"
+    local count="$2"
+    grep -v "^${story_id}:" "$RETRY_FILE" > "${RETRY_FILE}.tmp" 2>/dev/null || true
+    echo "${story_id}:${count}" >> "${RETRY_FILE}.tmp"
+    mv "${RETRY_FILE}.tmp" "$RETRY_FILE"
+}
 
 # ─── Loop Principal ─────────────────────────────────────────
 
@@ -87,7 +97,7 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
     echo "Pendentes: $PENDING"
 
     # Checar retries
-    CURRENT_RETRIES=${RETRY_COUNT[$STORY_ID]:-0}
+    CURRENT_RETRIES=$(get_retry_count "$STORY_ID")
     if [ "$CURRENT_RETRIES" -ge "$MAX_RETRIES_PER_STORY" ]; then
         echo "ESCALAÇÃO: Story $STORY_ID falhou $MAX_RETRIES_PER_STORY vezes consecutivas."
         echo "Intervenção humana necessária."
@@ -130,16 +140,16 @@ PRINCÍPIOS KARPATHY:
 - Sem refactoring drive-by. Sem abstração especulativa.
 - Verifique a cada passo. Rode testes após cada mudança significativa."
 
-    claude --print "$CLAUDE_PROMPT" 2>&1 | tail -20
+    claude --print --permission-mode bypassPermissions "$CLAUDE_PROMPT" 2>&1 | tail -20 || true
 
-    # Verificar se houve commit (pode não existir em branch recém-criado)
-    LAST_COMMIT=$(git log -1 --format="%H" 2>/dev/null || echo "")
-    LAST_MSG=$(git log -1 --format="%s" 2>/dev/null || echo "")
+    # Verificar se houve commit
+    LAST_COMMIT=$(git log -1 --format="%H" 2>/dev/null)
+    LAST_MSG=$(git log -1 --format="%s" 2>/dev/null)
 
-    if [ -z "$LAST_COMMIT" ] || [[ "$LAST_MSG" != *"$STORY_ID"* ]]; then
+    if [[ "$LAST_MSG" != *"$STORY_ID"* ]]; then
         echo "  AVISO: Claude não commitou com $STORY_ID no message."
         echo "$(date -Iseconds) | FALHA_COMMIT | $STORY_ID | Claude não produziu commit válido" >> progress.txt
-        RETRY_COUNT[$STORY_ID]=$((CURRENT_RETRIES + 1))
+        set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
         continue
     fi
 
@@ -150,38 +160,26 @@ PRINCÍPIOS KARPATHY:
     echo ""
     echo "[B] Codex — Revisando código..."
 
-    REVIEW_PROMPT="Revise o último commit deste repositório.
+    # Codex 0.120+: "exec review --commit SHA --full-auto" não aceita PROMPT customizado.
+    # Usamos o modo review padrão, que o Codex executa com sua rubrica interna.
+    # A rubrica customizada CODE_REVIEW.md fica como guidance no repo (AGENTS.md pode referenciar).
+    REVIEW_RESULT=$(codex exec review --commit HEAD --full-auto 2>&1 || echo '{"verdict":"BLOCK","error":"codex_exec_failed"}')
 
-LEIA PRIMEIRO:
-- $REVIEW_FILE (sua rubrica de revisão — siga-a estritamente)
-- O diff do último commit: git diff HEAD~1
-- A story no prd.json com id=$STORY_ID (seus acceptance criteria)
+    echo "$REVIEW_RESULT" | tail -30
 
-Aplique a rubrica em $REVIEW_FILE.
-Produza o JSON de saída conforme o schema especificado na rubrica.
-Se não encontrar issues reais, retorne verdict: MERGE."
-
+    # Salvar review
     mkdir -p .claude/research 2>/dev/null || true
-    REVIEW_OUT=".claude/research/review-${STORY_ID}-iter${ITERATION}.json"
-    REVIEW_LOG=".claude/research/review-${STORY_ID}-iter${ITERATION}.log"
-
-    # Em Codex 0.120+, --ask-for-approval é flag global (antes de `exec`).
-    # --full-auto concede workspace-write; --output-schema força JSON válido;
-    # --output-last-message captura apenas a resposta final do modelo.
-    codex --ask-for-approval never exec \
-        --full-auto \
-        --output-schema "$REVIEW_SCHEMA" \
-        --output-last-message "$REVIEW_OUT" \
-        "$REVIEW_PROMPT" > "$REVIEW_LOG" 2>&1 || true
-
-    tail -30 "$REVIEW_LOG"
+    echo "$REVIEW_RESULT" > ".claude/research/review-${STORY_ID}-iter${ITERATION}.txt" 2>/dev/null || true
 
     # ── Fase C: Interpretar veredicto ───────────────────────
 
-    if [ ! -s "$REVIEW_OUT" ] || ! jq -e . "$REVIEW_OUT" >/dev/null 2>&1; then
-        VERDICT="UNKNOWN"
-    else
-        VERDICT=$(jq -r '.verdict // "UNKNOWN"' "$REVIEW_OUT")
+    VERDICT="UNKNOWN"
+    if echo "$REVIEW_RESULT" | grep -qi '"verdict".*"MERGE"'; then
+        VERDICT="MERGE"
+    elif echo "$REVIEW_RESULT" | grep -qi '"verdict".*"BLOCK"'; then
+        VERDICT="BLOCK"
+    elif echo "$REVIEW_RESULT" | grep -qi '"verdict".*"REQUEST_CHANGES"'; then
+        VERDICT="REQUEST_CHANGES"
     fi
 
     echo "  Veredicto: $VERDICT"
@@ -192,18 +190,17 @@ Se não encontrar issues reais, retorne verdict: MERGE."
             jq --arg id "$STORY_ID" '(.userStories[] | select(.id == $id)).passes = true' prd.json > prd.tmp && mv prd.tmp prd.json
             git add prd.json
             git commit -m "[$STORY_ID] Marcada como passes:true após review" --allow-empty
-            RETRY_COUNT[$STORY_ID]=0
+            set_retry_count "$STORY_ID" 0
             ;;
         BLOCK|REQUEST_CHANGES)
-            EVID=$(jq -r '[.findings[]? | "\(.priority):\(.file):\(.line) \(.evidence)"] | join(" | ")' "$REVIEW_OUT" 2>/dev/null | head -c 500)
             echo "  Story $STORY_ID REJEITADA — feedback salvo em progress.txt"
-            echo "$(date -Iseconds) | REVIEW_$VERDICT | $STORY_ID | $EVID" >> progress.txt
-            RETRY_COUNT[$STORY_ID]=$((CURRENT_RETRIES + 1))
+            echo "$(date -Iseconds) | REVIEW_$VERDICT | $STORY_ID | $(echo "$REVIEW_RESULT" | grep -o '"evidence":[^,]*' | head -3)" >> progress.txt
+            set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
             ;;
         *)
             echo "  Veredicto não identificado — tratando como REQUEST_CHANGES"
-            echo "$(date -Iseconds) | REVIEW_UNKNOWN | $STORY_ID | Schema inválido ou arquivo vazio (ver $REVIEW_LOG)" >> progress.txt
-            RETRY_COUNT[$STORY_ID]=$((CURRENT_RETRIES + 1))
+            echo "$(date -Iseconds) | REVIEW_UNKNOWN | $STORY_ID | Veredicto não parseado" >> progress.txt
+            set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
             ;;
     esac
 done
