@@ -1,0 +1,7 @@
+# Code Review — US-02
+
+The diff regresses auth flow; refresh tokens now land in localStorage.
+
+## Verdict
+
+Do not merge. Revert the token-store change.

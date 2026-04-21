@@ -1,0 +1,7 @@
+# Code Review — US-04
+
+Implementation is fine; missing a regression test for the original bug.
+
+## Final Verdict
+
+Changes required before merge.

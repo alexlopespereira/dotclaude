@@ -12,6 +12,9 @@ ITERATION=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REVIEW_FILE="$SCRIPT_DIR/CODE_REVIEW.md"
 
+# shellcheck source=parse-verdict.sh
+source "$SCRIPT_DIR/parse-verdict.sh"
+
 # ─── Verificações ───────────────────────────────────────────
 
 if [ ! -f "prd.json" ]; then
@@ -173,14 +176,7 @@ PRINCÍPIOS KARPATHY:
 
     # ── Fase C: Interpretar veredicto ───────────────────────
 
-    VERDICT="UNKNOWN"
-    if echo "$REVIEW_RESULT" | grep -qi '"verdict".*"MERGE"'; then
-        VERDICT="MERGE"
-    elif echo "$REVIEW_RESULT" | grep -qi '"verdict".*"BLOCK"'; then
-        VERDICT="BLOCK"
-    elif echo "$REVIEW_RESULT" | grep -qi '"verdict".*"REQUEST_CHANGES"'; then
-        VERDICT="REQUEST_CHANGES"
-    fi
+    VERDICT=$(parse_verdict "$REVIEW_RESULT")
 
     echo "  Veredicto: $VERDICT"
 

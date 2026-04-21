@@ -1,0 +1,1 @@
+{"verdict": "BLOCK", "summary": "P0 finding: SQL injection in user-input path.", "evidence": ["src/db.js:42"]}

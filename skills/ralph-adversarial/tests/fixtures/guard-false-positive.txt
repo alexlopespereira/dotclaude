@@ -1,0 +1,9 @@
+# Code Review — US-12
+
+The new endpoint would need to be approved by the security team before enabling
+in production. Meanwhile the diff itself has a P0: unbounded recursion in the
+parser.
+
+## Verdict: BLOCK
+
+Fix the recursion issue and request re-review.
