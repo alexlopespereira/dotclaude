@@ -1,0 +1,7 @@
+# Code Review — US-09
+
+Surgical change, ac_trace complete, all checks pass.
+
+## Verdict
+
+LGTM — merge.
