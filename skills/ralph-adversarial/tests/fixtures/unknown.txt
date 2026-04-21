@@ -1,0 +1,5 @@
+# Code Review — US-11
+
+This PR looks broadly reasonable but I need more context before giving a verdict.
+
+There are signals that could go either way. Awaiting clarification from author.

@@ -1,0 +1,7 @@
+# Code Review — US-07
+
+Implementation looks correct but AC3 lacks a negative-case test.
+
+## Verdict: REQUEST_CHANGES
+
+Add a test for the rate-limit error path, then re-request review.

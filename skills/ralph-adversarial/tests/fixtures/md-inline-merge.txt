@@ -1,0 +1,7 @@
+# Code Review — US-03
+
+All acceptance criteria are met. Tests green.
+
+## Verdict: MERGE
+
+LGTM — safe to ship.

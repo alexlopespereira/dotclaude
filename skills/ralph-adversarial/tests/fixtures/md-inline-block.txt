@@ -1,0 +1,7 @@
+# Code Review — US-05
+
+P0: hardcoded API key in `src/config.js`. Must not merge.
+
+**Verdict:** BLOCK
+
+Rotate the key and commit the fix on a new branch.
