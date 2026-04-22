@@ -7,6 +7,7 @@
 3. **Papel primário:** Claude é o Agente Planejador. O Revisor Adversário pode ser invocado via `/adversarial-review` ou automaticamente via `/full-planning-cycle`.
 4. **Fatias pequenas:** Prefira implementação incremental. Cada fatia passa pelo ciclo completo.
 5. **Perguntas Abertas:** Todo plano termina com dúvidas não resolvidas e grau de confiança (alta/média/baixa).
+6. **Planejamento de UI exige observação concreta:** Se a tarefa envolve alteração de interface de usuário (layout, estilo, conteúdo visível, interação), inspecione o estado atual antes de planejar — o plano deve citar elementos reais observados, não suposições. Ferramenta preferencial: Playwright (screenshot + DOM snapshot) quando houver servidor dev/URL acessível. Fallbacks aceitáveis: screenshot fornecido pelo usuário, `curl`/fetch do HTML renderizado, inspeção do template/markup estático, ou descrição detalhada do usuário. Planejar UI sem nenhuma observação do estado atual é incompleto.
 
 ## Skills disponíveis
 
