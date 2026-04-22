@@ -18,9 +18,9 @@ Use `/full-cycle` para o ciclo end-to-end: planejamento + revisão + prd.json + 
 Use `/adversarial-research` para deep research com 3 provedores (Gemini + Perplexity + OpenAI).
 Use `/research-status` para listar pesquisas.
 Use `/research-synthesize` para sintetizar pesquisa pendente.
-Use `/pr` para criar Pull Request, fazer merge e (se estiver em worktree) oferecer cleanup automático.
-Use `/worktree-start <slug>` para criar um git worktree isolado em `~/Projects/worktrees/<repo>-<slug>`.
-Use `/worktree-cleanup [path|slug]` para remover worktree após merge (com safety checks).
+Use `/pr` para criar Pull Request e fazer merge (worktree, se houver, é preservado).
+Use `/create-worktree <slug>` para criar um git worktree isolado em `~/Projects/worktrees/<repo>-<slug>`.
+Use `/delete-worktree [path|slug]` para remover worktree após merge (com safety checks).
 Use `/export-report` para exportar a última resposta como arquivo Markdown.
 Use `/prd-convert` para converter plano aprovado em prd.json (formato Ralph).
 Use `/ralph-adversarial` para executar loop de implementação com revisão Codex.

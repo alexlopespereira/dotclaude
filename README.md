@@ -270,13 +270,13 @@ After installation, these slash commands are available in any Claude Code projec
 | `/plan` | Planning | Technical plan with ReAct + Feynman |
 | `/adversarial-review` | Review | Red Team attack on an existing plan |
 | `/full-planning-cycle` | Planning + Review | Both agents in sequence (no execution) |
-| `/full-cycle` | End-to-end delivery | Worktree + plan + review + PRD + Ralph + PR/merge + cleanup |
-| `/worktree-start` | Git workflow | Creates isolated git worktree at `~/Projects/worktrees/` |
-| `/worktree-cleanup` | Git workflow | Removes worktree after merge (with safety checks) |
+| `/full-cycle` | End-to-end delivery | Plan + review + PRD + Ralph + PR/merge (worktree is user-managed) |
+| `/create-worktree` | Git workflow | Creates isolated git worktree at `~/Projects/worktrees/` |
+| `/delete-worktree` | Git workflow | Removes worktree after merge (with safety checks) |
 | `/adversarial-research` | Research | Deep research with 3 AI providers |
 | `/research-status` | Research | Lists all research sessions |
 | `/research-synthesize` | Research | Synthesizes a completed research |
-| `/pr` | Git workflow | Creates PR, auto-merges, and offers worktree cleanup |
+| `/pr` | Git workflow | Creates PR and auto-merges (worktree is preserved) |
 | `/export-report` | Utility | Exports last response as Markdown |
 | `/prd-convert` | Implementation | Converts an approved plan into prd.json (Ralph format) |
 | `/ralph-adversarial` | Implementation | Runs the Ralph loop with Codex code review |
@@ -359,32 +359,30 @@ After installation, these slash commands are available in any Claude Code projec
 
 ### `/full-cycle [problem description]`
 
-**Purpose:** Runs the complete end-to-end delivery pipeline — creates an isolated git worktree, plans, reviews, converts to PRD, executes Ralph Adversarial, runs tests, opens and merges a PR, and finally removes the worktree. All production work happens in isolation from the main checkout.
+**Purpose:** Runs the complete end-to-end delivery pipeline in the current working directory — plans, reviews, converts to PRD, executes Ralph Adversarial, runs tests, opens and merges a PR.
+
+**Worktree management is explicit and user-owned.** This command does **not** create or remove worktrees. If you want to isolate the work, run `/create-worktree <slug>` first and `cd` into the worktree before invoking `/full-cycle`. After the merge, run `/delete-worktree` manually.
 
 **What happens when you run it:**
 
-1. **Phase 0 — Worktree:** derives a slug from the description and creates `~/Projects/worktrees/<repo>-<slug>` with a new branch based on `origin/main`. All subsequent phases operate inside this path
-2. **Phase 1 — Planning:** Claude acts as the Planner Agent, executes the full ReAct cycle, and saves a plan to `<worktree>/.claude/plans/<slug>.md`
-3. **Phase 2 — Adversarial Review:** Claude switches to the Adversary Agent role, re-reads the plan with fresh eyes, and attacks it. The review is appended to the same file under a `---` separator
-4. **Phase 3 — Approval gate:**
+1. **Phase 1 — Planning:** Claude acts as the Planner Agent, executes the full ReAct cycle, and saves a plan to `.claude/plans/<slug>.md`
+2. **Phase 2 — Adversarial Review:** Claude switches to the Adversary Agent role, re-reads the plan with fresh eyes, and attacks it. The review is appended to the same file under a `---` separator
+3. **Phase 3 — Approval gate:**
    - **APPROVED** → proceeds to PRD
    - **APPROVED WITH CAVEATS** → asks the human whether to proceed
-   - **REJECTED** → stops. Worktree is preserved for human review
-5. **Phase 4 — PRD conversion:** slices the plan into `<worktree>/prd.json` following the `prd` skill rules
-6. **Phase 5 — Ralph Adversarial:** runs the implementation loop (Claude implements, Codex reviews) inside the worktree until all stories pass or the budget is exhausted
-7. **Phase 6 — Final tests:** runs the project test suite inside the worktree; fails here stop the flow (no PR opened)
-8. **Phase 7 — PR + Merge:** pushes the branch, opens a PR, waits for CI, merges with `--delete-branch`
-9. **Phase 8 — Cleanup:** removes the worktree and deletes the local branch. Returns to the main repo
+   - **REJECTED** → stops
+4. **Phase 4 — PRD conversion:** slices the plan into `prd.json` following the `prd` skill rules
+5. **Phase 5 — Ralph Adversarial:** runs the implementation loop (Claude implements, Codex reviews) until all stories pass or the budget is exhausted
+6. **Phase 6 — Final tests:** runs the project test suite; failures stop the flow (no PR opened)
+7. **Phase 7 — PR + Merge:** pushes the branch, opens a PR, waits for CI, merges with `--delete-branch`
 
-**Guardrails:** No production code is written before adversarial approval. The worktree is **preserved** on any interruption (rejection, escalated stories, P0 findings, failing tests, blocked merge) — it is only removed after Phase 7 succeeds. For planning-only without execution or PR, use `/full-planning-cycle`.
+**Guardrails:** No production code is written before adversarial approval. The command stops and escalates on any interruption (rejection, escalated stories, P0 findings, failing tests, blocked merge). For planning-only without execution or PR, use `/full-planning-cycle`.
 
 **Example:**
 ```
+> /create-worktree realtime-notifications-websocket
+> cd ~/Projects/worktrees/myapp-realtime-notifications-websocket
 > /full-cycle implement real-time notifications with WebSocket
-
-Phase 0 — Worktree
-  Created ~/Projects/worktrees/myapp-realtime-notifications-websocket
-  Branch: realtime-notifications-websocket (from origin/main)
 
 Phase 1 — Planning (ReAct + Feynman)
   ...
@@ -397,12 +395,13 @@ Phase 4 — PRD with 4 stories
 Phase 5 — Ralph: 4/4 passed (Codex verdicts: MERGE MERGE MERGE MERGE)
 Phase 6 — Tests green
 Phase 7 — PR #128 merged
-Phase 8 — Worktree removed, branch deleted. Back on main.
+
+> /delete-worktree   # manual cleanup after confirming the merge
 ```
 
 ---
 
-### `/worktree-start <slug> [base-branch]`
+### `/create-worktree <slug> [base-branch]`
 
 **Purpose:** Creates an isolated git worktree so feature work never pollutes the main checkout.
 
@@ -415,11 +414,11 @@ Phase 8 — Worktree removed, branch deleted. Back on main.
 
 **Layout convention:** all worktrees live under `~/Projects/worktrees/` and are named `<repo-name>-<slug>` to disambiguate across repos.
 
-**Guardrails:** refuses to overwrite an existing worktree path (use `/worktree-cleanup` first). Never creates a worktree on top of uncommitted changes in the source branch without warning.
+**Guardrails:** refuses to overwrite an existing worktree path (use `/delete-worktree` first). Never creates a worktree on top of uncommitted changes in the source branch without warning.
 
 **Example:**
 ```
-> /worktree-start fix-auth-bug
+> /create-worktree fix-auth-bug
 
 Worktree created:
   path:   /Users/you/Projects/worktrees/myapp-fix-auth-bug
@@ -429,7 +428,7 @@ Worktree created:
 
 ---
 
-### `/worktree-cleanup [path-or-slug] [--force]`
+### `/delete-worktree [path-or-slug] [--force]`
 
 **Purpose:** Removes a worktree after the work has been merged. Runs safety checks before deleting anything.
 
@@ -447,7 +446,7 @@ Worktree created:
 
 **Example:**
 ```
-> /worktree-cleanup fix-auth-bug
+> /delete-worktree fix-auth-bug
 
 Worktree removed:
   path:   /Users/you/Projects/worktrees/myapp-fix-auth-bug
@@ -549,11 +548,11 @@ Research #2 is pending synthesis. Run /research-synthesize to generate it.
 
 ### `/pr`
 
-**Purpose:** Creates a Pull Request on GitHub, auto-merges it, and offers to clean up the worktree if you're working inside one — a complete git workflow in one command.
+**Purpose:** Creates a Pull Request on GitHub and auto-merges it. Worktree (if any) is preserved — run `/delete-worktree` manually to remove it after confirming the merge.
 
 **What happens when you run it:**
 
-1. **Checks state:** `git status` to detect uncommitted changes; detects whether the cwd is inside `~/Projects/worktrees/`
+1. **Checks state:** `git status` to detect uncommitted changes; detects whether the cwd is inside `~/Projects/worktrees/` (used only to `cd` back to the main checkout after merge)
 2. **Commits** if needed (following the repo's commit convention)
 3. **Creates branch** if currently on `main` (descriptive name based on changes)
 4. **Pushes** the branch to origin
@@ -561,9 +560,9 @@ Research #2 is pending synthesis. Run /research-synthesize to generate it.
 6. **Waits for CI** checks to pass (if configured), otherwise proceeds
 7. **Merges** the PR with `--merge --delete-branch`
 8. **Returns** to the main repo and pulls latest (resolves the main checkout via `git-common-dir` when called from a worktree)
-9. **Offers cleanup** when the run started inside a worktree: prompts before running `git worktree remove` + `git worktree prune` + local-branch delete
+9. **Reports** the PR URL and, if the run started inside a worktree, reminds the user to run `/delete-worktree` manually
 
-**Guardrails:** If merge fails due to branch protection or pending reviews, it reports the status and **stops** — no cleanup is attempted on a failed merge. Never touches the worktree without explicit confirmation.
+**Guardrails:** If merge fails due to branch protection or pending reviews, it reports the status and **stops**. Never removes worktrees — that's the user's job via `/delete-worktree`.
 
 **Example:**
 ```
@@ -575,8 +574,7 @@ Pushed to origin.
 PR #42 created: "Fix auth middleware token expiry handling"
 CI checks passed. PR #42 merged. Branch deleted on remote.
 Returned to main repo.
-Remove worktree ~/Projects/worktrees/myapp-fix-auth? (Y/n) y
-Worktree removed. Local branch deleted.
+Worktree ~/Projects/worktrees/myapp-fix-auth preserved. To remove: /delete-worktree
 ```
 
 ---
@@ -742,8 +740,8 @@ dotclaude/
 │   ├── research-status.md             #   /research-status
 │   ├── research-synthesize.md         #   /research-synthesize
 │   ├── pr.md                          #   /pr
-│   ├── worktree-start.md              #   /worktree-start
-│   ├── worktree-cleanup.md            #   /worktree-cleanup
+│   ├── create-worktree.md             #   /create-worktree
+│   ├── delete-worktree.md             #   /delete-worktree
 │   ├── export-report.md               #   /export-report
 │   ├── prd-convert.md                 #   /prd-convert
 │   ├── ralph-adversarial.md           #   /ralph-adversarial
@@ -807,7 +805,7 @@ Any `<name>.md` placed under a project's `.claude/commands/` replaces the global
 
 **Worked example — post-merge Shopify theme push.** The [`horizons`](https://github.com/aeitauser/horizons) Shopify-theme repo has a two-way sync with the Shopify CDN: merging a PR in GitHub does *not* automatically update the theme DB, and the next `shopify[bot]` sync can silently revert the PR (this actually happened — PR #58 was reverted by commit `c5ca2f4`). The fix is a post-merge `shopify theme push --nodelete`, but only when the diff touches files the platform serializes (`config/settings_data.json`, `snippets/*.liquid`, `sections/*.liquid`, `templates/page.*.json`).
 
-That logic is specific to one repo, one theme ID, one store — so it lives in `<horizons>/.claude/commands/pr.md` as an override of `/pr`. The override reuses steps 1–6 verbatim and inserts step 6.5 (the theme push) between "return to main" and "worktree cleanup". The global `/pr` in this repo stays free of Shopify references.
+That logic is specific to one repo, one theme ID, one store — so it lives in `<horizons>/.claude/commands/pr.md` as an override of `/pr`. The override reuses the global steps verbatim and inserts the theme push after "return to main". The global `/pr` in this repo stays free of Shopify references.
 
 **Rule of thumb:** if extra steps reference hardcoded IDs, specific domains, or platform integrations that only exist in one repo, override locally. If they're about how Claude should reason (planning discipline, review rigor, testing), they belong in the global command or in `CLAUDE.md`.
 
@@ -845,7 +843,7 @@ The protocols here aren't arbitrary ceremony — each one addresses a specific, 
 | Self-review of own code misses introduced bugs | Ralph loop: Claude implements, Codex (different provider) reviews each commit |
 | Long implementations drift from the plan | Fresh context per story + `ac_trace` in every commit forces traceability |
 | Agents pass their own tests (which they wrote) | TDD RED-before-GREEN + pre-commit hook + test-runner subagent |
-| Autonomous loops contaminate the working checkout | `/full-cycle` runs every delivery inside an isolated git worktree; cleanup is gated on successful merge |
+| Autonomous loops contaminate the working checkout | `/create-worktree` + `/delete-worktree` isolate every delivery in a dedicated git worktree; `/full-cycle` runs inside it without touching worktree lifecycle |
 | Playwright MCP floods context with a11y trees | CLI-first policy in the `testing` skill; MCP only for explicit cases |
 | Docs drift from code as the repo evolves | LLM Wiki Bootstrap: YAML frontmatter ties every page to `source_files` + `last_verified_commit`; CI fails on stale `high`-confidence claims |
 
