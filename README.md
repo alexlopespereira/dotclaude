@@ -22,6 +22,8 @@ Observation #1: Tokens are stored in localStorage with no expiry. The refresh lo
 
 This cycle repeats until Claude has enough evidence to make a grounded recommendation — or explicitly declares that the information is insufficient. No more "let me just assume X and move on."
 
+**UI work gets a specific corollary:** when a task changes the user interface (layout, styling, copy, interaction), the plan must cite elements *actually observed* in the current state — not imagined ones. Preferred tool is Playwright (screenshot + DOM snapshot) when a dev server exists; acceptable fallbacks are user-provided screenshots, `curl`/fetch of the rendered HTML, static markup/template inspection, or a detailed description from the user. A UI plan with zero observation of the current state is incomplete by policy.
+
 > **Why it matters:** [Yao et al. (2023)](https://arxiv.org/abs/2210.03629) showed that ReAct reduces hallucination and error propagation in LLM reasoning by forcing the model to interleave reasoning with real-world observations rather than chain-of-thought in a vacuum.
 
 ### 2. The Feynman Method — Intellectual Honesty
@@ -789,6 +791,25 @@ git add -A && git commit -m "Update commands/skills" && git push
 # After git pull (changes from another machine), install to ~/.claude/
 ./sync.sh install
 ```
+
+## Project-Specific Command Overrides
+
+The commands shipped by dotclaude are deliberately generic — they have to work across any stack, any repo, any objective. When a specific project needs extra steps that don't belong in the global flow, the right move is a **local override**, not a branch in the global command.
+
+Claude Code resolves slash commands in this order:
+
+```
+<repo>/.claude/commands/<name>.md   ← project override (wins)
+~/.claude/commands/<name>.md         ← global (dotclaude)
+```
+
+Any `<name>.md` placed under a project's `.claude/commands/` replaces the global one while you're inside that repo. The global stays clean and portable.
+
+**Worked example — post-merge Shopify theme push.** The [`horizons`](https://github.com/aeitauser/horizons) Shopify-theme repo has a two-way sync with the Shopify CDN: merging a PR in GitHub does *not* automatically update the theme DB, and the next `shopify[bot]` sync can silently revert the PR (this actually happened — PR #58 was reverted by commit `c5ca2f4`). The fix is a post-merge `shopify theme push --nodelete`, but only when the diff touches files the platform serializes (`config/settings_data.json`, `snippets/*.liquid`, `sections/*.liquid`, `templates/page.*.json`).
+
+That logic is specific to one repo, one theme ID, one store — so it lives in `<horizons>/.claude/commands/pr.md` as an override of `/pr`. The override reuses steps 1–6 verbatim and inserts step 6.5 (the theme push) between "return to main" and "worktree cleanup". The global `/pr` in this repo stays free of Shopify references.
+
+**Rule of thumb:** if extra steps reference hardcoded IDs, specific domains, or platform integrations that only exist in one repo, override locally. If they're about how Claude should reason (planning discipline, review rigor, testing), they belong in the global command or in `CLAUDE.md`.
 
 ## Prerequisites for Adversarial Research
 
