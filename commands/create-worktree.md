@@ -40,7 +40,7 @@ Se `$ARGUMENTS` estiver vazio, **PARE** e peça o slug ao usuário.
    mkdir -p "$WORKTREE_BASE"
    ```
 
-   Se `$WORKTREE_PATH` já existir, **PARE** e informe: "Worktree já existe em $WORKTREE_PATH. Use `/worktree-cleanup` primeiro ou escolha outro slug."
+   Se `$WORKTREE_PATH` já existir, **PARE** e informe: "Worktree já existe em $WORKTREE_PATH. Use `/delete-worktree` primeiro ou escolha outro slug."
 
 3. **Atualizar base branch:**
    ```bash
@@ -76,9 +76,9 @@ Se `$ARGUMENTS` estiver vazio, **PARE** e peça o slug ao usuário.
      base:   <BASE>
 
    Próximos passos:
-     - Continue trabalhando normalmente; comandos subsequentes (/plan, /full-cycle, /pr)
-       devem usar este path via `cd` ou `git -C <path>`.
-     - Para limpar ao final: /worktree-cleanup
+     - Faça `cd <WORKTREE_PATH>` e trabalhe normalmente. Comandos subsequentes
+       (/plan, /full-cycle, /pr) operam no cwd atual.
+     - Para remover após merge: /delete-worktree
    ```
 
 ## Guardrails
