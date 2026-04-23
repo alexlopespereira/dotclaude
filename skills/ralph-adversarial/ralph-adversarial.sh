@@ -14,6 +14,53 @@ REVIEW_FILE="$SCRIPT_DIR/CODE_REVIEW.md"
 
 # shellcheck source=parse-verdict.sh
 source "$SCRIPT_DIR/parse-verdict.sh"
+# shellcheck source=detect-quota.sh
+source "$SCRIPT_DIR/detect-quota.sh"
+
+# Claude Sonnet atua como reviewer de fallback quando o Codex está
+# indisponível (quota/rate-limit, binário ausente, falha persistente).
+# Recebe: story_id, story_title. Imprime o output bruto do reviewer,
+# que será interpretado por parse_verdict (mesma rubrica).
+review_with_claude_sonnet() {
+    local story_id="$1"
+    local story_title="$2"
+    local header footer rubric prompt
+
+    read -r -d '' header <<HEADER || true
+Você é revisor adversário de código no loop Ralph Adversarial.
+Revise o commit HEAD — implementa a user story: ${story_id} - ${story_title}.
+
+INVESTIGAÇÃO (rode antes de concluir):
+- git show HEAD  (diff + commit message com ac_trace)
+- Consulte prd.json para os acceptance criteria de ${story_id}
+- Leia progress.txt para contexto de iterações anteriores
+
+RUBRICA OBRIGATÓRIA (aplique linha a linha — não improvise):
+---
+HEADER
+
+    read -r -d '' footer <<'FOOTER' || true
+---
+
+SAÍDA OBRIGATÓRIA:
+Termine sua resposta com uma linha exatamente no formato:
+
+## Verdict: MERGE
+
+(ou BLOCK, ou REQUEST_CHANGES)
+
+Antes do veredicto, liste apenas findings sólidos (P0/P1) com arquivo:linha
+e modo de falha concreto. Silêncio é melhor que finding fraco.
+NÃO elogie. NÃO resuma o diff.
+FOOTER
+
+    rubric=$(cat "$REVIEW_FILE")
+    # printf com %s evita que shell reexpanda conteúdo da rubrica.
+    prompt=$(printf '%s\n%s\n%s\n' "$header" "$rubric" "$footer")
+
+    claude --model sonnet --print --permission-mode bypassPermissions "$prompt" 2>&1 \
+        || printf '%s\n%s\n' '## Verdict: BLOCK' '(claude sonnet fallback exec failed)'
+}
 
 # ─── Verificações ───────────────────────────────────────────
 
@@ -31,7 +78,14 @@ fi
 
 command -v jq >/dev/null 2>&1 || { echo "ERRO: jq não instalado"; exit 1; }
 command -v claude >/dev/null 2>&1 || { echo "ERRO: Claude Code CLI não encontrado"; exit 1; }
-command -v codex >/dev/null 2>&1 || { echo "ERRO: Codex CLI não encontrado"; exit 1; }
+
+# Codex é o reviewer preferido, mas é opcional: se ausente ou indisponível
+# (quota), o loop cai para Claude Sonnet.
+CODEX_UNAVAILABLE=false
+if ! command -v codex >/dev/null 2>&1; then
+    echo "AVISO: Codex CLI não encontrado — reviews usarão fallback Claude Sonnet."
+    CODEX_UNAVAILABLE=true
+fi
 
 # ─── Setup ──────────────────────────────────────────────────
 
@@ -158,21 +212,42 @@ PRINCÍPIOS KARPATHY:
 
     echo "  Commit: $LAST_MSG"
 
-    # ── Fase B: Codex revisa ────────────────────────────────
+    # ── Fase B: Revisão adversária (Codex ou fallback) ──────
 
-    echo ""
-    echo "[B] Codex — Revisando código..."
+    if [ "$CODEX_UNAVAILABLE" = true ]; then
+        REVIEWER="claude-sonnet"
+        echo ""
+        echo "[B] Claude Sonnet (fallback) — Revisando código..."
+        REVIEW_RESULT=$(review_with_claude_sonnet "$STORY_ID" "$STORY_TITLE")
+    else
+        REVIEWER="codex"
+        echo ""
+        echo "[B] Codex — Revisando código..."
 
-    # Codex 0.120+: "exec review --commit SHA --full-auto" não aceita PROMPT customizado.
-    # Usamos o modo review padrão, que o Codex executa com sua rubrica interna.
-    # A rubrica customizada CODE_REVIEW.md fica como guidance no repo (AGENTS.md pode referenciar).
-    REVIEW_RESULT=$(codex exec review --commit HEAD --full-auto 2>&1 || echo '{"verdict":"BLOCK","error":"codex_exec_failed"}')
+        # Codex 0.120+: "exec review --commit SHA --full-auto" não aceita PROMPT customizado.
+        # Usamos o modo review padrão, que o Codex executa com sua rubrica interna.
+        # A rubrica customizada CODE_REVIEW.md fica como guidance no repo (AGENTS.md pode referenciar).
+        set +e
+        REVIEW_RESULT=$(codex exec review --commit HEAD --full-auto 2>&1)
+        CODEX_EXIT=$?
+        set -e
+
+        if is_codex_quota_error "$REVIEW_RESULT"; then
+            echo "  ⚠  Codex: quota/rate-limit detectado — ativando fallback Claude Sonnet para esta e próximas iterações."
+            echo "$(date -Iseconds) | CODEX_QUOTA | Fallback Claude Sonnet ativado durante $STORY_ID" >> progress.txt
+            CODEX_UNAVAILABLE=true
+            REVIEWER="claude-sonnet"
+            REVIEW_RESULT=$(review_with_claude_sonnet "$STORY_ID" "$STORY_TITLE")
+        elif [ $CODEX_EXIT -ne 0 ]; then
+            REVIEW_RESULT=$(printf '%s\n%s\n' "$REVIEW_RESULT" '{"verdict":"BLOCK","error":"codex_exec_failed"}')
+        fi
+    fi
 
     echo "$REVIEW_RESULT" | tail -30
 
-    # Salvar review
+    # Salvar review (com sufixo do reviewer usado)
     mkdir -p .claude/research 2>/dev/null || true
-    echo "$REVIEW_RESULT" > ".claude/research/review-${STORY_ID}-iter${ITERATION}.txt" 2>/dev/null || true
+    echo "$REVIEW_RESULT" > ".claude/research/review-${STORY_ID}-iter${ITERATION}-${REVIEWER}.txt" 2>/dev/null || true
 
     # ── Fase C: Interpretar veredicto ───────────────────────
 

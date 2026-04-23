@@ -675,12 +675,12 @@ Exported to: /Users/you/project/report-2026-04-16-143022.md
 
 **What happens when you run it:**
 
-1. Verifies prerequisites: `prd.json` at the repo root, `jq`, `claude` CLI, `codex` CLI, and the rubric at `~/.claude/skills/ralph-adversarial/CODE_REVIEW.md`
+1. Verifies prerequisites: `prd.json` at the repo root, `jq`, `claude` CLI, and the rubric at `~/.claude/skills/ralph-adversarial/CODE_REVIEW.md`. `codex` CLI is optional — if absent, or if it hits quota/rate-limit mid-run, the loop falls back to a second `claude --model sonnet` instance acting as reviewer with the same rubric.
 2. If `prd.json` doesn't exist but an approved plan does, it offers to run `/prd-convert` first
 3. Creates (or checks out) the branch declared in `prd.json` → `branchName`
 4. Iterates until all stories pass or `max_iterations` is reached:
    - **(A) Claude Code** spawns with a fresh context, reads `prd.json`, `progress.txt`, and recent git history, picks the next pending story (lowest priority number), implements it, runs project quality checks, and commits with an `ac_trace` block in the commit message
-   - **(B) Codex** is spawned to review the diff against the rubric in `CODE_REVIEW.md` and produces a JSON verdict: `MERGE`, `REQUEST_CHANGES`, or `BLOCK`
+   - **(B) Reviewer** is spawned to review the diff against the rubric in `CODE_REVIEW.md` and produces a verdict: `MERGE`, `REQUEST_CHANGES`, or `BLOCK`. The reviewer is Codex by default; when Codex is unavailable (missing binary or quota error), a `claude --model sonnet` instance takes over for the rest of the run, and the switch is logged in `progress.txt` as `CODEX_QUOTA`.
    - **(C) Verdict handling:**
      - `MERGE` → story marked `passes: true`, next iteration
      - `BLOCK` / `REQUEST_CHANGES` → review saved to `.claude/research/review-*.txt`, feedback appended to `progress.txt`, story retried
@@ -705,7 +705,7 @@ Exported to: /Users/you/project/report-2026-04-16-143022.md
 - git history — what's already been implemented
 - `AGENTS.md` — conventions discovered during implementation
 
-**Prerequisites:** OpenAI Codex CLI installed and authenticated (`codex` in PATH), plus `jq`.
+**Prerequisites:** `jq` and the Claude Code CLI. OpenAI Codex CLI (`codex` in PATH) is recommended for cross-provider review, but optional — if it's missing or hits a quota/rate-limit error, the loop automatically falls back to `claude --model sonnet` as the reviewer and continues.
 
 **Example:**
 ```
