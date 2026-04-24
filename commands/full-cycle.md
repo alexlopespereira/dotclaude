@@ -54,12 +54,17 @@ Para apenas planejar (sem executar/merge), use `/full-planning-cycle`.
 ## Fase 5 — Execução Ralph Adversarial
 
 1. Leia `~/.claude/skills/ralph-adversarial/SKILL.md`.
-2. Verifique pré-requisitos: `jq`, `claude`, `codex`, `CODE_REVIEW.md`.
-3. Execute no cwd atual:
+2. Verifique pré-requisitos: `jq`, `CODE_REVIEW.md`, e os CLIs necessários conforme os papéis:
+   - Default: `claude` implementa, `codex` revisa → ambos precisam existir.
+   - Se `PRIMARY_AGENT` / `REVIEWER_AGENT` estiverem definidos no ambiente, valide apenas os CLIs escolhidos.
+3. Execute no cwd atual, **propagando as env vars de papéis** se estiverem definidas:
    ```bash
    chmod +x ~/.claude/skills/ralph-adversarial/ralph-adversarial.sh
-   bash ~/.claude/skills/ralph-adversarial/ralph-adversarial.sh
+   PRIMARY_AGENT="${PRIMARY_AGENT:-claude}" REVIEWER_AGENT="${REVIEWER_AGENT:-codex}" \
+     bash ~/.claude/skills/ralph-adversarial/ralph-adversarial.sh
    ```
+   Para inverter os papéis, o usuário lança o Claude Code com as vars no shell:
+   `PRIMARY_AGENT=codex REVIEWER_AGENT=claude claude` — depois invoca `/full-cycle`.
 4. Após conclusão, apresente resumo: stories completas/pendentes/escaladas, findings P0/P1, progress.txt.
 
 **Gate:** Se houver stories escaladas ou findings P0 não resolvidos, **PARE** e escale para humano. NÃO prossiga para PR.
