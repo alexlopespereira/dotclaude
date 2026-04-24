@@ -11,7 +11,8 @@ Executa o loop de implementação Ralph Adversarial.
 2. Verifique pré-requisitos:
    - `prd.json` existe na raiz do projeto atual?
    - `~/.claude/skills/ralph-adversarial/CODE_REVIEW.md` existe?
-   - `jq`, `claude`, `codex` estão disponíveis?
+   - `jq` disponível?
+   - CLIs dos papéis escolhidos: default exige `claude` e `codex`; se `PRIMARY_AGENT`/`REVIEWER_AGENT` estiverem definidos, valide apenas os escolhidos.
 
 3. Se `prd.json` NÃO existir:
    - Verifique se há plano aprovado em `.claude/plans/`
@@ -24,7 +25,13 @@ Executa o loop de implementação Ralph Adversarial.
    bash ~/.claude/skills/ralph-adversarial/ralph-adversarial.sh $ARGUMENTS
    ```
 
+   Para alternar os papéis, exporte as env vars antes (defaults: `claude` implementa, `codex` revisa):
+   ```bash
+   PRIMARY_AGENT=codex REVIEWER_AGENT=claude \
+     bash ~/.claude/skills/ralph-adversarial/ralph-adversarial.sh
+   ```
+
 5. Após conclusão, apresente resumo:
    - Stories completas vs pendentes vs escaladas
-   - Findings P0/P1 encontrados pelo Codex
+   - Findings P0/P1 encontrados pelo reviewer (Codex ou Claude, conforme `REVIEWER_AGENT`)
    - Conteúdo do progress.txt (aprendizados acumulados)
