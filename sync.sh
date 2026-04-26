@@ -20,6 +20,7 @@ DIRS=(
     "commands"
     "skills"
     "agents"
+    "hooks"
 )
 
 usage() {
