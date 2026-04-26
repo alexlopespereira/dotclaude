@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.alexlopespereira.auto-morning</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/alex/Projects/dotclaude/bin/auto-morning.sh</string>
+    </array>
+
+    <!-- Roda apenas em sessão GUI (após login), não em boot puro -->
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+
+    <!-- Roda uma vez ao carregar (login) -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- One-shot: não reinicia se sair -->
+    <key>KeepAlive</key>
+    <false/>
+
+    <!-- Logs (auto-morning.sh já loga em ~/.claude/cache/auto-morning.log;
+         estes capturam erros antes do script começar) -->
+    <key>StandardOutPath</key>
+    <string>/Users/alex/.claude/cache/auto-morning.launchd.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/alex/.claude/cache/auto-morning.launchd.err</string>
+</dict>
+</plist>

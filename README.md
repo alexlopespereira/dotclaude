@@ -306,13 +306,21 @@ After installation, these slash commands are available in any Claude Code projec
 | `/plan` | Planning | Technical plan with ReAct + Feynman |
 | `/adversarial-review` | Review | Red Team attack on an existing plan |
 | `/full-planning-cycle` | Planning + Review | Both agents in sequence (no execution) |
-| `/full-cycle` | End-to-end delivery | Plan + review + PRD + Ralph + PR/merge (worktree is user-managed) |
-| `/create-worktree` | Git workflow | Creates isolated git worktree at `~/Projects/worktrees/` |
-| `/delete-worktree` | Git workflow | Removes worktree after merge (with safety checks) |
+| `/full-cycle` | End-to-end delivery | Plan + review + PRD + Ralph + ephemeral branch + PR |
+| `/checkout-init` | Parallel workflow (Boris) | Provisions 5 parallel checkouts at `~/Projects/checkouts/<repo>-{1..5}` |
+| `/checkout-launch` | Parallel workflow (Boris) | Opens 1 terminal window with 5 tabs (one per slot) |
+| `/checkout-use` | Parallel workflow (Boris) | Prepares a slot — updates `main`, **does not create branch** |
+| `/checkout-status` | Parallel workflow (Boris) | Shows state of all slots (branch, dirty, ahead/behind, label) |
+| `/checkout-sync-all` | Parallel workflow (Boris) | Pulls `origin/main` in all slots, prunes merged branches |
+| `/sync` | Parallel workflow (Boris) | Shortcut to `/checkout-sync-all` (auto-detects pool from cwd) |
+| `/morning` | Parallel workflow (Boris) | Daily routine — sync-all + launch tabs |
+| `/commit-push-pr` | Git workflow | Creates ephemeral branch, commits, pushes, opens PR (with auto-merge default) |
+| `/techdebt` | Code quality | Analyses diff for tech debt, produces P0/P1/P2 cleanup plan |
+| `/create-worktree` *(legacy)* | Git workflow | Creates isolated git worktree at `~/Projects/worktrees/` |
+| `/delete-worktree` *(legacy)* | Git workflow | Removes worktree after merge (with safety checks) |
 | `/adversarial-research` | Research | Deep research with 3 AI providers |
 | `/research-status` | Research | Lists all research sessions |
 | `/research-synthesize` | Research | Synthesizes a completed research |
-| `/pr` | Git workflow | Creates PR and auto-merges (worktree is preserved) |
 | `/export-report` | Utility | Exports last response as Markdown |
 | `/prd-convert` | Implementation | Converts an approved plan into prd.json (Ralph format) |
 | `/ralph-adversarial` | Implementation | Runs the Ralph loop with Codex code review |
@@ -397,7 +405,11 @@ After installation, these slash commands are available in any Claude Code projec
 
 **Purpose:** Runs the complete end-to-end delivery pipeline in the current working directory — plans, reviews, converts to PRD, executes Ralph Adversarial, runs tests, opens and merges a PR.
 
-**Worktree management is explicit and user-owned.** This command does **not** create or remove worktrees. If you want to isolate the work, run `/create-worktree <slug>` first and `cd` into the worktree before invoking `/full-cycle`. After the merge, run `/delete-worktree` manually.
+**Isolation management is explicit and user-owned.** This command does **not** create or release slots/worktrees. Choose your isolation model before invoking:
+
+- **Recommended (Boris parallel checkouts):** run `/checkout-use <repo> <slot>` and `cd` into `~/Projects/checkouts/<repo>-<slot>`. After PR merges, run `/sync` (or `/checkout-sync-all <repo>`) to update all slots.
+- **Legacy (worktree):** `/create-worktree <slug>` then `cd` into the worktree. After merge, `/delete-worktree`.
+- **None:** run directly in the main checkout.
 
 **What happens when you run it:**
 
@@ -582,35 +594,52 @@ Research #2 is pending synthesis. Run /research-synthesize to generate it.
 
 ---
 
-### `/pr`
+### `/commit-push-pr ["msg"] [--branch=...] [--type=...] [--no-pr] [--draft] [--no-auto-merge] [--merge-method=squash|merge|rebase]`
 
-**Purpose:** Creates a Pull Request on GitHub and auto-merges it. Worktree (if any) is preserved — run `/delete-worktree` manually to remove it after confirming the merge.
+**Purpose:** Packages your work into an ephemeral branch, opens a PR to `main`, and (by default) enables auto-merge so GitHub squash-merges when CI passes. Replaces the old `/pr`.
 
-**What happens when you run it:**
+**Workflow model (Boris Cherny + branch protection):**
+- Work happens on `main` **local** inside each parallel checkout slot.
+- This command creates a branch only at push time, derived from the commit message (e.g. `feat: dark mode` → `feat/dark-mode`).
+- Branch protection on `origin/main` is preserved — nothing pushes to `main` directly.
+- After PR merges (auto or manual), `/sync` propagates the new `main` to all slots and prunes merged branches.
 
-1. **Checks state:** `git status` to detect uncommitted changes; detects whether the cwd is inside `~/Projects/worktrees/` (used only to `cd` back to the main checkout after merge)
-2. **Commits** if needed (following the repo's commit convention)
-3. **Creates branch** if currently on `main` (descriptive name based on changes)
-4. **Pushes** the branch to origin
-5. **Creates the PR** via `gh pr create` with a structured summary
-6. **Waits for CI** checks to pass (if configured), otherwise proceeds
-7. **Merges** the PR with `--merge --delete-branch`
-8. **Returns** to the main repo and pulls latest (resolves the main checkout via `git-common-dir` when called from a worktree)
-9. **Reports** the PR URL and, if the run started inside a worktree, reminds the user to run `/delete-worktree` manually
+**Arguments are optional.** When run as `/commit-push-pr` with no args, Claude infers a Conventional Commits message + branch name from the diff, recent commits, and conversation context, then asks for confirmation.
 
-**Guardrails:** If merge fails due to branch protection or pending reviews, it reports the status and **stops**. Never removes worktrees — that's the user's job via `/delete-worktree`.
+**What happens:**
+
+1. **Inference (if no message provided):** Reads `git status`, `git diff`, `git log`, conversation context. Proposes message + branch + PR mode (ready/draft/no-pr based on heuristic).
+2. **Creates branch** from main local at HEAD. If commits were already on local main, moves them to the new branch and resets main to `origin/main`.
+3. **Pushes** the branch to origin.
+4. **Creates the PR** via `gh pr create` (base: `main`, head: new branch).
+5. **Enables auto-merge** with `gh pr merge --auto --squash --delete-branch` (skipped on `--draft` or `--no-auto-merge`).
+6. **Resets** local `main` so the slot is clean for the next task.
+
+**Defaults:**
+- Type when no Conventional Commits prefix: `chore`.
+- PR mode: `ready` (sugestões `draft` / `no-pr` aparecem na proposta quando heurística sugere).
+- Auto-merge: **on** (squash + delete-branch).
+
+**Guardrails:**
+- Never force-pushes to `main`.
+- Never bypasses branch protection (`--admin` etc.).
+- Aborts if diff contains likely secret files (`.env*`, `*.pem`, `credentials*`).
+- If `git push` is rejected by server hook, reports server message verbatim — no bypass attempt.
 
 **Example:**
 ```
-> /pr
+> /commit-push-pr
 
-Detected worktree: ~/Projects/worktrees/myapp-fix-auth
-Created branch: fix-auth
-Pushed to origin.
-PR #42 created: "Fix auth middleware token expiry handling"
-CI checks passed. PR #42 merged. Branch deleted on remote.
-Returned to main repo.
-Worktree ~/Projects/worktrees/myapp-fix-auth preserved. To remove: /delete-worktree
+Mensagem proposta:
+  feat: add dark mode toggle in settings page
+Branch proposta: feat/add-dark-mode-toggle
+Tipo: feat | Arquivos: 3 | Linhas: +47 -12
+PR mode sugerido: ready (não-draft)
+  → Confirmar tudo? (y / n / editar / draft / no-pr)
+> y
+
+✓ PR aberto: https://github.com/owner/repo/pull/142
+✓ Auto-merge (squash) habilitado — PR mergeará quando CI passar.
 ```
 
 ---

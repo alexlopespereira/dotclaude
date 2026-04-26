@@ -4,9 +4,14 @@ allowed-tools: Read, Write, Glob, Grep, Bash(find *), Bash(bash *), Bash(chmod *
 argument-hint: [descrição do problema ou feature]
 ---
 
-Executa o ciclo completo de entrega no cwd atual: planejamento → revisão adversária → PRD → Ralph → PR/merge.
+Executa o ciclo completo de entrega no cwd atual: planejamento → revisão adversária → PRD → Ralph → commit + push em main.
 
-**Gestão de worktree é explícita e fica com o usuário.** Este comando NÃO cria nem remove worktrees. Se você quiser isolar a feature, rode `/create-worktree <slug>` antes e `cd` para o worktree. Após o merge, remova manualmente com `/delete-worktree`.
+**Modelo trunk-based (Boris Cherny).** O cwd atual é um slot do pool de checkouts. **Não criamos branch.** Trabalho vai direto em `main` e é propagado aos outros slots via `/checkout-sync-all`.
+
+Antes de invocar `/full-cycle`:
+- `/checkout-use <repo> <slot> [label]` para preparar o slot (atualiza main).
+- Trabalhe nesse slot.
+- Após terminar: `/full-cycle` (este comando) → `/checkout-sync-all <repo>`.
 
 Para apenas planejar (sem executar/merge), use `/full-planning-cycle`.
 
@@ -78,15 +83,31 @@ Antes de abrir PR, rode a suíte de testes do projeto no cwd atual:
 
 Se falhar, **PARE** e escale — não abra PR com testes vermelhos.
 
-## Fase 7 — PR + Merge
+## Fase 7 — Branch efêmera + Push + PR
 
-Execute o fluxo de `/pr` no cwd atual: push do branch, criação do PR, watch de checks, merge com `--delete-branch`.
+Execute `/commit-push-pr "<mensagem em conventional commits>"` no cwd atual. Esse comando:
 
-Se merge falhar (proteção, reviews pendentes), **PARE** e reporte ao usuário.
+- Cria branch efêmera derivada da mensagem (ex: `feat/add-dark-mode`).
+- Pushaa branch para `origin`.
+- Abre PR via `gh` para `main` (mantém branch protection).
+- Reseta `main` local para `origin/main`.
+
+Se `git push` falhar por hook do servidor ou política de proteção, reporte ao usuário e **PARE** — não tente bypass.
+
+## Fase 8 — Aguardar merge + sincronizar slots
+
+Após o PR ser **mergeado no GitHub** (review humano normalmente), detecte o pool:
+```bash
+REPO=$(basename "$(cd "$(git rev-parse --show-toplevel)" && pwd)" | sed 's/-[0-9]*$//')
+```
+
+Rode `/checkout-sync-all <REPO>` para:
+- atualizar `main` em todos os slots
+- remover branches locais já mergeadas
 
 ## Guardrails
 
 - Nenhum código de produção é escrito antes do veredicto APROVADO.
 - Humano pode interromper em qualquer fase.
 - Se qualquer fase falhar, reporte o status e PARE — não improvise.
-- **Gestão de worktree é responsabilidade do usuário.** Este comando não cria nem remove worktrees. Se estiver trabalhando em worktree, rode `/delete-worktree` manualmente após confirmar o merge.
+- **Modelo:** trabalho em `main` local → branch efêmera no push → PR → merge → sync. Branch protection mantida.

@@ -18,9 +18,22 @@ Use `/full-cycle` para o ciclo end-to-end: planejamento + revisão + prd.json + 
 Use `/adversarial-research` para deep research com 3 provedores (Gemini + Perplexity + OpenAI).
 Use `/research-status` para listar pesquisas.
 Use `/research-synthesize` para sintetizar pesquisa pendente.
-Use `/pr` para criar Pull Request e fazer merge (worktree, se houver, é preservado).
-Use `/create-worktree <slug>` para criar um git worktree isolado em `~/Projects/worktrees/<repo>-<slug>`.
-Use `/delete-worktree [path|slug]` para remover worktree após merge (com safety checks).
+## Workflow Boris Cherny — Checkouts paralelos + branch efêmera no push
+
+Modelo: 5 cópias físicas do repo (`~/Projects/checkouts/<repo>-{1..5}`), todas em `main` local. **Trabalho acontece em `main` local**; **branch só é criada no momento do push**, com nome derivado da mensagem (Conventional Commits). PR aberto via `gh`. Branch protection mantida.
+
+Ciclo: `main` local trabalha → `/commit-push-pr "feat: ..."` (branch efêmera + PR) → review/merge no GitHub → `/checkout-sync-all` (atualiza todos os slots, remove branches mergeadas).
+
+Use `/checkout-init <repo-url>` para provisionar 5 checkouts paralelos.
+Use `/morning <repo>` para rotina de manhã: sync + abrir abas (atalho de `/checkout-sync-all` + `/checkout-launch`).
+Use `/checkout-launch <repo>` para abrir 5 abas do terminal (1 janela), opcionalmente com `claude --name` por slot.
+Use `/checkout-use <repo> <slot> [label]` para preparar slot — atualiza `main`, **não cria branch**.
+Use `/checkout-status [repo]` para ver estado dos slots.
+Use `/sync` (ou `/checkout-sync-all <repo>`) para sincronizar slots com `origin/main` e podar branches mergeadas. `/sync` auto-detecta o pool a partir do cwd.
+Use `/commit-push-pr ["msg"]` para criar branch efêmera + commit + push + PR (substitui `/pr`). Argumentos opcionais — Claude infere mensagem/branch do contexto. Auto-merge é default (squash + delete-branch quando CI passa).
+Use `/techdebt [escopo]` para análise + plano de limpeza de tech debt.
+Use `/create-worktree <slug>` *(legado)* para git worktree isolado.
+Use `/delete-worktree [path|slug]` *(legado)*.
 Use `/export-report` para exportar a última resposta como arquivo Markdown.
 Use `/prd-convert` para converter plano aprovado em prd.json (formato Ralph).
 Use `/ralph-adversarial` para executar loop de implementação com revisão Codex.
