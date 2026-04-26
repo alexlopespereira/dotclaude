@@ -12,6 +12,21 @@ ITERATION=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REVIEW_FILE="$SCRIPT_DIR/CODE_REVIEW.md"
 
+# Papéis dos agentes (env vars) — permitem alternar sem editar o script.
+#   PRIMARY_AGENT:  quem implementa cada story   (claude | codex)  default: claude
+#   REVIEWER_AGENT: quem faz a revisão adversária (codex  | claude) default: codex
+PRIMARY_AGENT="${PRIMARY_AGENT:-claude}"
+REVIEWER_AGENT="${REVIEWER_AGENT:-codex}"
+
+case "$PRIMARY_AGENT" in
+    claude|codex) ;;
+    *) echo "ERRO: PRIMARY_AGENT inválido: '$PRIMARY_AGENT' (use claude|codex)"; exit 1 ;;
+esac
+case "$REVIEWER_AGENT" in
+    claude|codex) ;;
+    *) echo "ERRO: REVIEWER_AGENT inválido: '$REVIEWER_AGENT' (use claude|codex)"; exit 1 ;;
+esac
+
 # shellcheck source=parse-verdict.sh
 source "$SCRIPT_DIR/parse-verdict.sh"
 # shellcheck source=detect-quota.sh
@@ -77,14 +92,29 @@ if [ ! -f "$REVIEW_FILE" ]; then
 fi
 
 command -v jq >/dev/null 2>&1 || { echo "ERRO: jq não instalado"; exit 1; }
-command -v claude >/dev/null 2>&1 || { echo "ERRO: Claude Code CLI não encontrado"; exit 1; }
 
-# Codex é o reviewer preferido, mas é opcional: se ausente ou indisponível
-# (quota), o loop cai para Claude Sonnet.
+# Checa CLIs apenas quando o respectivo papel realmente precisa.
+if [ "$PRIMARY_AGENT" = "claude" ] || [ "$REVIEWER_AGENT" = "claude" ]; then
+    command -v claude >/dev/null 2>&1 || {
+        echo "ERRO: Claude Code CLI não encontrado (PRIMARY/REVIEWER=claude requer)"; exit 1;
+    }
+fi
+
+# CODEX_UNAVAILABLE continua sendo a flag que força o caminho de revisão Claude.
+# Três gatilhos: (1) usuário escolheu REVIEWER_AGENT=claude, (2) codex não instalado,
+# (3) quota/rate-limit detectado durante o loop.
 CODEX_UNAVAILABLE=false
-if ! command -v codex >/dev/null 2>&1; then
-    echo "AVISO: Codex CLI não encontrado — reviews usarão fallback Claude Sonnet."
+if [ "$REVIEWER_AGENT" = "claude" ]; then
     CODEX_UNAVAILABLE=true
+fi
+if [ "$PRIMARY_AGENT" = "codex" ] || [ "$REVIEWER_AGENT" = "codex" ]; then
+    if ! command -v codex >/dev/null 2>&1; then
+        if [ "$PRIMARY_AGENT" = "codex" ]; then
+            echo "ERRO: PRIMARY_AGENT=codex mas Codex CLI não encontrado"; exit 1
+        fi
+        echo "AVISO: Codex CLI não encontrado — reviews usarão fallback Claude Sonnet."
+        CODEX_UNAVAILABLE=true
+    fi
 fi
 
 # ─── Setup ──────────────────────────────────────────────────
@@ -105,6 +135,8 @@ echo "Projeto:    $PROJECT_NAME"
 echo "Branch:     $BRANCH_NAME"
 echo "Iterações:  max $MAX_ITERATIONS"
 echo "Rubrica:    $REVIEW_FILE"
+echo "Primary:    $PRIMARY_AGENT  (implementa)"
+echo "Reviewer:   $REVIEWER_AGENT $([ "$CODEX_UNAVAILABLE" = true ] && [ "$REVIEWER_AGENT" = "codex" ] && echo '(→ fallback claude)')"
 echo "=========================================="
 
 # ─── Retry tracker ──────────────────────────────────────────
@@ -164,10 +196,10 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
         continue
     fi
 
-    # ── Fase A: Claude Code implementa ──────────────────────
+    # ── Fase A: Primary agent implementa ────────────────────
 
     echo ""
-    echo "[A] Claude Code — Implementando..."
+    echo "[A] $PRIMARY_AGENT — Implementando..."
 
     CLAUDE_PROMPT="Você está no loop Ralph Adversarial. Contexto fresco — leia tudo do disco.
 
@@ -197,15 +229,22 @@ PRINCÍPIOS KARPATHY:
 - Sem refactoring drive-by. Sem abstração especulativa.
 - Verifique a cada passo. Rode testes após cada mudança significativa."
 
-    claude --print --permission-mode bypassPermissions "$CLAUDE_PROMPT" 2>&1 | tail -20 || true
+    case "$PRIMARY_AGENT" in
+        claude)
+            claude --print --permission-mode bypassPermissions "$CLAUDE_PROMPT" 2>&1 | tail -20 || true
+            ;;
+        codex)
+            codex exec --full-auto "$CLAUDE_PROMPT" 2>&1 | tail -20 || true
+            ;;
+    esac
 
     # Verificar se houve commit
     LAST_COMMIT=$(git log -1 --format="%H" 2>/dev/null)
     LAST_MSG=$(git log -1 --format="%s" 2>/dev/null)
 
     if [[ "$LAST_MSG" != *"$STORY_ID"* ]]; then
-        echo "  AVISO: Claude não commitou com $STORY_ID no message."
-        echo "$(date -Iseconds) | FALHA_COMMIT | $STORY_ID | Claude não produziu commit válido" >> progress.txt
+        echo "  AVISO: $PRIMARY_AGENT não commitou com $STORY_ID no message."
+        echo "$(date -Iseconds) | FALHA_COMMIT | $STORY_ID | $PRIMARY_AGENT não produziu commit válido" >> progress.txt
         set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
         continue
     fi
@@ -217,7 +256,11 @@ PRINCÍPIOS KARPATHY:
     if [ "$CODEX_UNAVAILABLE" = true ]; then
         REVIEWER="claude-sonnet"
         echo ""
-        echo "[B] Claude Sonnet (fallback) — Revisando código..."
+        if [ "$REVIEWER_AGENT" = "claude" ]; then
+            echo "[B] Claude Sonnet — Revisando código..."
+        else
+            echo "[B] Claude Sonnet (fallback) — Revisando código..."
+        fi
         REVIEW_RESULT=$(review_with_claude_sonnet "$STORY_ID" "$STORY_TITLE")
     else
         REVIEWER="codex"

@@ -250,6 +250,42 @@ Re-running with `install.sh <repo> --update` overwrites the protocol/lint/workfl
 
 > **Why it matters:** The real risk with AI-generated docs isn't hallucination — it's **staleness**. Without a structural link from each doc back to the source files and the commits that verified them, wikis become fiction in weeks. Making `source_files` + `last_verified_commit` mandatory, and checking them in CI on every PR, is the cheapest way to keep the knowledge base actually true.
 
+### Bonus: Context Threshold Notification
+
+Long sessions silently approach the context limit until autocompact fires — usually mid-task, at the worst possible moment. Claude Code has no native setting to alert at a custom threshold, so dotclaude ships a `Stop` hook that emits a macOS notification when the session crosses **128K tokens**, giving you a heads-up to `/compact` or `/clear` before the harness compresses on its own.
+
+**How it works:**
+
+1. After every Claude turn, the `Stop` hook runs `~/.claude/hooks/context-threshold-notify.py`
+2. The script reads the session transcript JSONL, finds the most recent `assistant` message with a `usage` block, and sums `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`
+3. If the total ≥ 128K, it fires `osascript display notification` with a system sound — once per session, flagged in `~/.claude/cache/context-notify/<session_id>.flag`
+
+**Configuration:**
+
+- **Threshold:** edit `THRESHOLD = 128_000` at the top of `hooks/context-threshold-notify.py`
+- **Reset within a session** (e.g. to test): delete `~/.claude/cache/context-notify/<session_id>.flag`
+- Wired in `~/.claude/settings.json` under `"hooks": {"Stop": [...]}`; requires `"disableAllHooks": false`
+
+**Install** is automatic — `./sync.sh install` copies `hooks/` to `~/.claude/hooks/`. After installing, add the hook block to `~/.claude/settings.json`:
+
+```json
+"hooks": {
+  "Stop": [
+    {
+      "matcher": "",
+      "hooks": [
+        { "type": "command", "command": "/Users/<you>/.claude/hooks/context-threshold-notify.py" }
+      ]
+    }
+  ]
+},
+"disableAllHooks": false
+```
+
+Restart Claude Code after editing `settings.json` — hooks are read at session startup.
+
+> **Why it matters:** Autocompact mid-task forces Claude to compress mid-thought. A nudge at 128K — well before the limit — lets you choose how to free context (compact, clear, split into a subagent) instead of having the harness make that choice for you.
+
 ## Installation
 
 ```bash
@@ -765,6 +801,8 @@ dotclaude/
 │           ├── mcp.json
 │           ├── settings.hooks.json    #   PreToolUse hook (guarded)
 │           └── gitignore.testing
+├── hooks/                             # Hooks (installed to ~/.claude/hooks/)
+│   └── context-threshold-notify.py    #   Stop hook: macOS notification at 128K tokens
 ├── bootstrap/                         # Drop-in templates (not installed globally)
 │   └── llm-wiki/                      #   LLM Wiki system — copy into any target repo
 │       ├── AGENTS.md                  #     inviolable protocol
@@ -846,6 +884,7 @@ The protocols here aren't arbitrary ceremony — each one addresses a specific, 
 | Autonomous loops contaminate the working checkout | `/create-worktree` + `/delete-worktree` isolate every delivery in a dedicated git worktree; `/full-cycle` runs inside it without touching worktree lifecycle |
 | Playwright MCP floods context with a11y trees | CLI-first policy in the `testing` skill; MCP only for explicit cases |
 | Docs drift from code as the repo evolves | LLM Wiki Bootstrap: YAML frontmatter ties every page to `source_files` + `last_verified_commit`; CI fails on stale `high`-confidence claims |
+| Long sessions hit autocompact mid-task | `Stop` hook fires a macOS notification at 128K tokens (configurable) before the harness compresses |
 
 ## License
 
