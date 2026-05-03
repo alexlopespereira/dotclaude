@@ -1,0 +1,10 @@
+codex
+The bootstrap commit has two schema/setup issues: a clean checkout cannot open the default SQLite database path, and the Alembic migration is already out of sync with the declared ORM models.
+
+Full review comments:
+
+- [P1] Create the `data/` directory before using the default SQLite URL — alembic.ini:89
+  On a fresh checkout, `sqlite:///data/finance.db` cannot be opened because the parent `data/` directory is gitignored and never created here. That means `alembic upgrade head` (and any code that relies on the default DB path) fails immediately.
+
+- [P2] Keep the initial Alembic revision in sync with `AlertSent` — src/finance/core/models.py:118-126
+  `AlertSent` is part of `Base.metadata`, but the initial Alembic revision never creates `alerts_sent`. Schema drift between ORM and migrated DB.

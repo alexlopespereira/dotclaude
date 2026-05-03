@@ -1,0 +1,2 @@
+codex
+The change correctly adds Dia da Consciência Negra as a year-conditional holiday from 2024 onward and includes focused tests for the new behavior. I did not find any introduced correctness, performance, security, or maintainability issues.

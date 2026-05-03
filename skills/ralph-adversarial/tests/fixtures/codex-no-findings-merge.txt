@@ -1,0 +1,9 @@
+codex
+Reviewed the changes against the rubric. No blocking issues found.
+
+Full review comments:
+
+- [P3] Consider extracting the helper function for clarity — src/finance/util.py:42
+  Optional cleanup; not blocking.
+
+Review complete. No P0/P1/P2 issues identified.

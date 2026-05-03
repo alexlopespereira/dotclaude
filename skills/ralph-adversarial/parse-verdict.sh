@@ -51,7 +51,23 @@ parse_verdict() {
         fi
     fi
 
-    # 3. Heading standalone "## Verdict" seguido de linha de conteúdo.
+    # 3. Codex 0.120+ review mode (`codex exec review --commit ... --full-auto`):
+    #    output é markdown sem linha "Verdict:". Inferir pelos findings.
+    #    Convenção da rubrica CODE_REVIEW.md: P0/P1/P2 são bloqueantes; P3 é nit.
+    #    Falhas técnicas do binário (codex_exec_failed) já caem na regra 1 (JSON sentinel).
+    if echo "$input" | grep -qE '^[[:space:]]*[-*][[:space:]]*\[P[012]\]'; then
+        echo "REQUEST_CHANGES"; return 0
+    fi
+    # Codex emitiu review (marcador "Full review comments" ou "Review complete")
+    # sem nenhum P0/P1/P2 → MERGE. Apenas P3 (nit) ainda merge.
+    # Phrasings observadas em smoke test 2026-05-03 (US-05 AC7):
+    #   - "do not introduce any functional or maintainability issues"
+    #   - "does not introduce an identifiable functional or maintainability issue"
+    if echo "$input" | grep -qiE '(full[[:space:]]+review[[:space:]]+comments|review[[:space:]]+complete|no[[:space:]]+(blocking[[:space:]]+)?(issues|findings)|(did[[:space:]]+not|didn'\''t)[[:space:]]+find[[:space:]]+any[[:space:]]+(introduced[[:space:]]+)?[a-z, ]*(issues|problems|bugs)|(do|does)[[:space:]]+not[[:space:]]+introduce[[:space:]]+(an[[:space:]]+|any[[:space:]]+)?[a-z, ]*(issue|issues|problem|problems|bug|bugs))'; then
+        echo "MERGE"; return 0
+    fi
+
+    # 4. Heading standalone "## Verdict" seguido de linha de conteúdo.
     #    Ex:
     #      ## Verdict
     #      LGTM — merge.

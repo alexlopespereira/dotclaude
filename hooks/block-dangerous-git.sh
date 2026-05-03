@@ -43,7 +43,8 @@ if printf '%s' "$STRIPPED" | grep -qE 'git +(push|commit)\b'; then
     STAGED_FILES=$(git diff --cached --name-only 2>/dev/null)
     while IFS= read -r f; do
       [ -z "$f" ] && continue
-      if printf '%s' "$f" | grep -qE '(^|/)(\.env(\..*)?|credentials(\..*)?|secrets?(\..*)?)$|\.(pem|key|p12|pfx)$'; then
+      if printf '%s' "$f" | grep -qE '(^|/)(\.env(\..*)?|credentials(\..*)?|secrets?(\..*)?)$|\.(pem|key|p12|pfx)$' \
+         && ! printf '%s' "$f" | grep -qE '\.(example|sample|template|tmpl)(\..*)?$'; then
         echo "BLOCKED (sensitive file staged): '$f' looks like secrets material. Add to .gitignore and unstage with 'git reset HEAD $f'." >&2
         exit 2
       fi
