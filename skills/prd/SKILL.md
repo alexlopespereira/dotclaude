@@ -23,6 +23,7 @@ Arquivo `prd.json` na raiz do repositório com este formato:
   "projectName": "[extraído do título do plano]",
   "branchName": "feat/[slug-do-plano]",
   "sourcePlan": ".claude/plans/[nome].md",
+  "hasFinancialCost": false,
   "userStories": [
     {
       "id": "US-01",
@@ -39,6 +40,10 @@ Arquivo `prd.json` na raiz do repositório com este formato:
 }
 ```
 
+**Campo `hasFinancialCost`** (opcional, default `false`): flag estrutural lida pelo Princípio 11 cláusula (e) do CLAUDE.md global. Quando `true`, transições do `/full-cycle` que iniciam execução real param para confirmar com o humano. Como decidir o valor:
+- Se o plano-fonte tem seção `## Custos recorrentes` com **alguma linha não-`Nenhum`/não-vazia** OU se há marker `HAS_FINANCIAL_COST=true` em `.claude/plans/<slug>.flags` (escrito pelo step shell da Fase 1 do `/full-cycle`), gere `hasFinancialCost: true`.
+- Caso contrário, `hasFinancialCost: false`.
+
 ## Regras de conversão
 
 1. **Uma fatia do plano = uma user story.** Se o plano tem uma seção "Próxima Fatia" e outras fatias implícitas nas decisões técnicas, cada uma vira uma story separada.
@@ -52,3 +57,5 @@ Arquivo `prd.json` na raiz do repositório com este formato:
 5. **Prioridade segue a ordem do plano.** A "Próxima Fatia" é priority 1, as demais incrementam.
 
 6. **Preserve rastreabilidade.** O campo `sourcePlan` referencia o plano original. O Claude Code no loop Ralph deve poder ler o plano para contexto.
+
+7. **Propague `hasFinancialCost`.** Aplicar regra documentada na seção "Saída" acima. Adição é aditiva (campo opcional); prd.json sem o campo continua válido (default `false`).

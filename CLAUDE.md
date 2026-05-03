@@ -9,6 +9,26 @@
 5. **Perguntas Abertas:** Todo plano termina com dúvidas não resolvidas e grau de confiança (alta/média/baixa).
 6. **Planejamento de UI exige observação concreta:** Se a tarefa envolve alteração de interface de usuário (layout, estilo, conteúdo visível, interação), inspecione o estado atual antes de planejar — o plano deve citar elementos reais observados, não suposições. Ferramenta preferencial: Playwright (screenshot + DOM snapshot) quando houver servidor dev/URL acessível. Fallbacks aceitáveis: screenshot fornecido pelo usuário, `curl`/fetch do HTML renderizado, inspeção do template/markup estático, ou descrição detalhada do usuário. Planejar UI sem nenhuma observação do estado atual é incompleto.
 7. **Nunca versione segredos:** É proibido commitar/pushar para o GitHub (ou qualquer remote) qualquer informação sensível — tokens, chaves de API, senhas, certificados privados (`.pem`, `.key`), credenciais de cloud (`AWS_*`, `GCP_*`), arquivos `.env*`/`credentials*`/`secrets*`, ou conexões com hostname interno. Antes de qualquer `git add`/commit, inspecione o diff e o working tree em busca desses padrões; se encontrar, **PARE**, alerte o usuário, e proponha mover para variáveis de ambiente, secret manager, ou `.env` no `.gitignore`. Se um segredo já foi commitado por engano, reporte imediatamente — `git rm` no próximo commit **não** remove do histórico; é necessário rotacionar o segredo e usar `git filter-repo`/BFG. Esta regra vale também para `/commit-push-pr` e qualquer comando que faça push.
+8. **Nunca peça ao usuário para executar comandos git:** Claude jamais deve instruir o usuário a rodar um comando `git` manualmente. Sempre que um comando `git` for necessário, Claude deve (a) explicar exatamente qual comando vai ser executado e por quê, e (b) perguntar se o usuário quer que Claude mesmo execute. Se o usuário disser sim, Claude executa via Bash. Se disser não, Claude segue outro caminho — **nunca** delega o comando para o usuário rodar.
+9. **Paralelize tool_use independente:** Ao chamar múltiplas tools sem dependência entre elas, emita TODAS no mesmo bloco de tool_calls. Independência ≡ nenhuma usa o output da outra. Análise empírica de 12.191 turns mostrou 0% de paralelismo apesar de `maxParallelToolUses` estar habilitado — não basta poder paralelizar, é preciso exercitar.
+   - ✅ Bash(`git status`) + Bash(`git log --oneline -5`) + Bash(`git diff --stat`) — três status checks independentes; mesmo bloco.
+   - ✅ Read(`src/foo.ts`) + Read(`src/bar.ts`) + Read(`tests/foo.test.ts`) — arquivos diferentes; mesmo bloco.
+   - ✅ Edit(`a.md`) + Edit(`b.md`) + Edit(`c.md`) — arquivos distintos; mesmo bloco.
+   - ❌ **Contraexemplo (dependência de dado):** Bash(`curl -s https://api/x`) → Bash(`echo "$OUT" \| jq .`) — segundo precisa do output do primeiro. SEQUENCIAL.
+   - ❌ Read(`foo.ts`) → Edit(`foo.ts`) — Edit precisa do conteúdo lido. SEQUENCIAL.
+10. **Scheduling: árvore de decisão CronCreate / Monitor / ScheduleWakeup.** Polling auto-paced via `ScheduleWakeup` queimou 578 cache-warm wakeups em 3 dias por escolha errada de mecanismo. Decida pelo ramo:
+    - **Intervalo conhecido recorrente** (ex: a cada hora, todo dia 6:30) → `CronCreate`. Não usar ScheduleWakeup polling.
+    - **Evento conhecido em log/process** (ex: backup terminou, build acabou) → `Monitor`. Event-driven, sem polling.
+    - **Espera <5min de coisa-prestes-a-mudar** (cache-warm) → `ScheduleWakeup` com `delaySeconds < 270`.
+    - **Espera idle longa (>20min)** → `ScheduleWakeup` com `delaySeconds >= 1200`.
+    - **Checagem genérica sem sinal específico** → default 1200–1800s. **NUNCA 300s** (worst-of-both: paga cache miss sem amortizar).
+    - Monitor re-arm: se `Monitor` time out e o evento ainda é necessário, rearm com `Monitor` novamente — backoff exponencial — não escalar para `ScheduleWakeup` curto.
+11. **Auto-aprovação híbrida em slash commands compostos.** Transições internas dentro de `/full-cycle`, `/full-planning-cycle`, `/prd-convert`, `/ralph-adversarial` **não pedem confirmação humana** (a existência dos slash commands já é o gate de alto nível; usuário interrompe via Ctrl-C). Exceções sempre-pergunta com mecanismo de detecção concreto:
+    - **(a) Comandos destrutivos por nome:** `git push --force`, `git reset --hard`, `git clean -f`, `git branch -D`, `rm -rf`. Detecção: agente lê o `command` da Bash tool call e compara com a lista antes de invocar.
+    - **(b) Comandos contra domínio externo pago:** `gh pr merge` em branch protegida sem auto-merge habilitado; qualquer comando contra `*.amazonaws.com`, `api.openai.com` (exceto leituras free-tier), `*.stripe.com`, `api.gemini.google.com`. Detecção: regex no `command`.
+    - **(c) Instalação de pacote/recurso pago em allowlist textual:** `npm i <pkg-pago>`, `pip install <pkg-pago>`, `gh secret set` para serviço pago, `gcloud/aws ... run-instances|create-cluster`. Detecção: match em comandos conhecidos com custo.
+    - **(d) Qualquer ação que dispare segredo:** já coberta pelo Princípio 7.
+    - **(e) `prd.json` corrente contém `hasFinancialCost: true`:** flag estrutural propagada pela Fase 1 do `/full-cycle` (Planejador detecta palavras-chave e seta a flag). Quando ativa, qualquer transição que inicia execução real (Fase 5 do `/full-cycle`) confirma com humano antes.
 
 ## Skills disponíveis
 

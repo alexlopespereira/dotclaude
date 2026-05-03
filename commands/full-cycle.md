@@ -22,6 +22,16 @@ Para apenas planejar (sem executar/merge), use `/full-planning-cycle`.
 3. Execute o ciclo ReAct completo para: $ARGUMENTS
 4. Produza o plano usando o Template: Plano.
 5. Salve o plano em `.claude/plans/<slug>.md` (relativo ao cwd).
+6. **Detecção de custo recorrente (Princípio 11 cláusula (e)):** após salvar, execute o step shell determinístico abaixo para gerar a flag que será lida pela skill `prd` na Fase 4. **Heurística aplicada por shell, NÃO pelo agente** — evita circularidade ("agente decide se o que ele mesmo escreveu contém palavras-chave"):
+   ```bash
+   PLAN_FILE=".claude/plans/<slug>.md"
+   FLAGS_FILE=".claude/plans/<slug>.flags"
+   if grep -iqE 'subscription|monthly|paid tier|API key|recurring cost|SaaS|R\$[0-9]|\$[0-9]+/(mo|mês)' "$PLAN_FILE"; then
+       echo "HAS_FINANCIAL_COST=true" > "$FLAGS_FILE"
+   else
+       echo "HAS_FINANCIAL_COST=false" > "$FLAGS_FILE"
+   fi
+   ```
 
 ## Fase 2 — Revisão Adversária (Agente Revisor)
 
@@ -38,9 +48,8 @@ Para apenas planejar (sem executar/merge), use `/full-planning-cycle`.
 - **PARE AQUI** — escale para o humano. NÃO prossiga para PRD/Ralph/PR.
 
 **Se APROVADO COM RESSALVAS:**
-- Liste as ressalvas bloqueantes (severidade Crítica/Alta).
-- Pergunte: "Há N ressalvas de alta severidade. Deseja (a) prosseguir, (b) revisar o plano primeiro, ou (c) abortar?"
-- Se (a), prossiga. Se (b)/(c), PARE.
+- Liste as ressalvas bloqueantes (severidade Crítica/Alta) — recomendar correção durante implementação como ACs adicionais.
+- Prossiga automaticamente para Fase 4 (Princípio 11: transição interna não pede confirmação). Humano interrompe via Ctrl-C se quiser revisar antes.
 
 **Se APROVADO:** prossiga para Fase 4.
 
@@ -51,10 +60,13 @@ Para apenas planejar (sem executar/merge), use `/full-planning-cycle`.
    - 1 fatia = 1 user story
    - AC testáveis
    - [SUPOSIÇÕES] viram AC de validação
-3. Mostre o `prd.json` ao usuário.
-4. Pergunte: "prd.json criado com N stories. Revisar antes de executar Ralph? (y/N)"
-   - Se "y": **PARE**. Usuário ajusta e depois roda `/ralph-adversarial` ou continua.
-   - Se "N" ou enter: prossiga para Fase 5.
+   - **Propagar `hasFinancialCost`** lendo `.claude/plans/<slug>.flags` (escrito pela Fase 1) ou heurística da seção "Custos recorrentes" — vide skill `prd`.
+3. **Validação automática do prd.json (Princípio 11 substitui o gate humano):**
+   ```bash
+   jq -e '(.userStories | type == "array") and (.userStories | length > 0) and (.userStories | all((.id // "") != "" and (.title // "") != "" and ((.acceptanceCriteria // []) | type == "array") and ((.acceptanceCriteria // []) | length > 0) and ((.acceptanceCriteria // []) | all(type == "string" and . != ""))))' prd.json
+   ```
+   Se exit != 0: **PARE** com erro claro mostrando qual story/campo falhou. Se exit 0: prossiga para Fase 5.
+4. **Gate de custo financeiro (Princípio 11 cláusula (e)):** se `prd.json` tem `hasFinancialCost: true`, pause e pergunte ao humano "Plano envolve custo recorrente. Confirma execução do Ralph? (y/N)" antes de prosseguir.
 
 ## Fase 5 — Execução Ralph Adversarial
 

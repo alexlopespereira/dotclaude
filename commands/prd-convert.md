@@ -22,4 +22,9 @@ Converte um plano em prd.json para execução no Ralph Adversarial.
 
 5. Salve como `prd.json` na raiz do repositório.
 
-6. Mostre o resultado ao usuário e pergunte se quer ajustar alguma story antes de executar o Ralph.
+6. **Valide automaticamente** (Princípio 11 substitui o gate humano de "ajustar story?"):
+   ```bash
+   jq -e '(.userStories | type == "array") and (.userStories | length > 0) and (.userStories | all((.id // "") != "" and (.title // "") != "" and ((.acceptanceCriteria // []) | type == "array") and ((.acceptanceCriteria // []) | length > 0) and ((.acceptanceCriteria // []) | all(type == "string" and . != ""))))' prd.json
+   ```
+   - Se exit 0: imprima resumo do prd.json gerado (story count, priorities) e termine. Humano interrompe via Ctrl-C se quiser ajustar manualmente antes de invocar `/ralph-adversarial`.
+   - Se exit != 0: **PARE** com erro claro mostrando qual story/campo falhou. NÃO prossiga.

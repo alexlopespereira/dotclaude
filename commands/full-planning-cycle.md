@@ -44,3 +44,5 @@ Se REPROVADO:
 - NÃO tente resolver automaticamente — escale para o humano.
 
 **Este comando PARA aqui.** Não converte em prd.json nem executa Ralph — deixe o usuário revisar o plano primeiro. Para fluxo end-to-end automatizado, use `/full-cycle`.
+
+**Princípio 11 (consistência):** as Fases 0→1→2→3 internas a este comando são transições internas e não pedem confirmação humana entre elas. Humano pode interromper a qualquer momento via Ctrl-C. O **gate humano de alto nível** é a escolha entre `/full-planning-cycle` (PARA após o veredicto) e `/full-cycle` (CONTINUA até PR).

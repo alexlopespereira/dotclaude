@@ -35,3 +35,5 @@ Executa o loop de implementação Ralph Adversarial.
    - Stories completas vs pendentes vs escaladas
    - Findings P0/P1 encontrados pelo reviewer (Codex ou Claude, conforme `REVIEWER_AGENT`)
    - Conteúdo do progress.txt (aprendizados acumulados)
+
+**Princípio 11 (consistência):** este comando é a Fase 5 do `/full-cycle` quando invocado lá; quando invocado direto, é o ponto de entrada do loop autônomo. Em ambos os casos, transições internas (verificações, execuções por iteração) não pedem confirmação humana — o gate humano é o veredito do reviewer (BLOCK/REQUEST_CHANGES). Humano interrompe via Ctrl-C a qualquer momento.
