@@ -24,7 +24,8 @@ Cada iteração do loop:
 5. Reviewer aplica rubrica de `~/.claude/skills/ralph-adversarial/CODE_REVIEW.md`
 6. Se MERGE: marca story passes:true, próxima iteração
 7. Se BLOCK/REQUEST_CHANGES: feedback vai para progress.txt, Claude corrige na próxima iteração
-8. Se 2 iterações consecutivas da mesma story falham: escalar ao humano
+8. Se 2 iterações consecutivas da mesma story falham: invocar `/diagnose <story-id>` (skill `diagnose`) para construir feedback loop e ranquear hipóteses **antes** da 3ª iteração. Persistir achados em progress.txt.
+9. Se 3 iterações consecutivas falham mesmo após `/diagnose`: escalar ao humano.
 
 ## Fallback de reviewer
 - Detector: `detect-quota.sh::is_codex_quota_error` identifica padrões

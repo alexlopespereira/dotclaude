@@ -12,13 +12,23 @@
 
 ## Skills disponíveis
 
-Use `/plan` para produzir um plano completo com templates ReAct + Feynman.
+Use `/plan` para produzir um plano completo com templates ReAct + Feynman. Suporta `--grill` para iniciar com sessão de alinhamento.
 Use `/adversarial-review` para gerar o parecer de revisão adversária.
-Use `/full-planning-cycle` para executar planejamento + auto-revisão em sequência (para só quando aprovado; não executa).
+Use `/full-planning-cycle [--grill]` para executar planejamento + auto-revisão em sequência (para só quando aprovado; não executa).
 Use `/full-cycle` para o ciclo end-to-end: planejamento + revisão + prd.json + Ralph Adversarial (execução automática).
 Use `/adversarial-research` para deep research com 3 provedores (Gemini + Perplexity + OpenAI).
 Use `/research-status` para listar pesquisas.
 Use `/research-synthesize` para sintetizar pesquisa pendente.
+Use `/diagnose [bug]` para loop disciplinado de diagnóstico (Phase 1 = construir feedback loop).
+
+## Skills de alinhamento e exploração (Tier 1 — Matt Pocock)
+
+- **`grill-me`** — interview adversário para alinhar plano/design. Pergunta uma de cada vez. Invocada manualmente ou via `/plan --grill`.
+- **`grill-with-docs`** — superset do `grill-me` que mantém `CONTEXT.md` (glossário de domínio) e `docs/adr/` (decisões hard-to-reverse). Use quando a área já tem ou merece esses artefatos.
+- **`zoom-out`** — mapeia módulos/callers de uma área desconhecida usando o vocabulário do domínio. Usado por `/plan` e `/techdebt` quando o contexto de código está raso.
+- **`diagnose`** — protocolo de 6 fases (feedback loop → reproduzir → hipotetizar → instrumentar → fix+regressão → cleanup). Invocada por `/diagnose` ou pelo `ralph-adversarial` após 2 falhas consecutivas.
+- **`git-guardrails-claude-code`** — hook PreToolUse global em `~/.claude/settings.json` (`block-dangerous-git.sh`). **Apenas secret scan**: bloqueia `commit`/`push` se o diff staged contém segredos (Stripe/GH/Netlify/AWS/Google/Slack/PEM) ou arquivos `.env`/`credentials`/`*.pem`/`*.key`. Operações destrutivas (`--force`, `reset --hard`, `clean -f`, `branch -D`) **não são bloqueadas** — Princípio 7 cobre só segredos.
+
 ## Workflow Boris Cherny — Checkouts paralelos + branch efêmera no push
 
 Modelo: 5 cópias físicas do repo (`~/Projects/checkouts/<repo>-{1..5}`), todas em `main` local. **Trabalho acontece em `main` local**; **branch só é criada no momento do push**, com nome derivado da mensagem (Conventional Commits). PR aberto via `gh`. Branch protection mantida.

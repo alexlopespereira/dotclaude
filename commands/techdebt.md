@@ -1,10 +1,12 @@
 ---
 description: Analisa o código mudado nesta sessão atrás de tech debt e propõe plano de limpeza
-allowed-tools: Read, Bash(git *), Bash(grep *), Bash(find *), Glob, Grep
+allowed-tools: Read, Bash(git *), Bash(grep *), Bash(find *), Glob, Grep, Agent
 argument-hint: [escopo: "session" | "branch" | "<path>"]
 ---
 
 Analisa o código em busca de **tech debt** acumulado e propõe plano de limpeza priorizado.
+
+> **Quando subir o nível:** se a análise revelar que o débito é estrutural (módulos rasos, falta de seams, acoplamento generalizado), pare e sugira `/architecture-review` (análise profunda baseada em CONTEXT.md/ADRs) em vez de listar débito superficial. Se você não conhece bem a área, invoque `zoom-out` antes de começar para mapear módulos e callers.
 
 ## Escopo
 

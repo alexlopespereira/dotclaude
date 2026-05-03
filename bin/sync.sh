@@ -42,4 +42,4 @@ fi
 [ -z "$REPO" ] && { echo "ERRO: não consegui inferir o pool. Passe explicitamente." >&2; exit 1; }
 
 echo "→ Sincronizando pool '$REPO'"
-exec bash "$SCRIPT" "$REPO" "${EXTRA_FLAGS[@]}"
+exec bash "$SCRIPT" "$REPO" ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"}

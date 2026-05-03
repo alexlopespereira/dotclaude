@@ -1,10 +1,21 @@
 ---
 description: Executa ciclo completo de PLANEJAMENTO — planeja como Agente Planejador, depois revisa como Adversário
-allowed-tools: Read, Write, Glob, Grep, Bash(find *)
-argument-hint: [descrição do problema ou feature]
+allowed-tools: Read, Write, Glob, Grep, Bash(find *), Bash(test *), Bash(ls *), Agent
+argument-hint: [descrição do problema ou feature] [--grill]
 ---
 
-Execute as duas fases em sequência para: $ARGUMENTS
+Execute as fases em sequência para: $ARGUMENTS
+
+## Fase 0 — Grilling opcional (`--grill`)
+
+Se `$ARGUMENTS` contiver `--grill` ou se o usuário pediu "grill me" / "stress-test", **antes** de planejar invoque a skill `grill-me` (ou `grill-with-docs` se o repo tem `CONTEXT.md`/`docs/adr/`):
+
+1. Faça uma pergunta de cada vez, esperando a resposta.
+2. Caminhe pela árvore de decisão até resolver as dependências.
+3. Para cada pergunta, dê sua recomendação de resposta.
+4. Quando alcançar entendimento compartilhado, prossiga para a Fase 1 com base nas respostas.
+
+Se o repo tem `CONTEXT.md`, atualize-o inline conforme termos forem resolvidos. Se uma decisão é hard-to-reverse + surprising + result of trade-off, ofereça criar um ADR em `docs/adr/`.
 
 ## Fase 1 — Planejamento
 
