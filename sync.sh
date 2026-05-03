@@ -24,15 +24,49 @@ DIRS=(
 )
 
 usage() {
-    echo "Uso: $0 {install|backup|status}"
+    echo "Uso: $0 {install [--force]|backup|status}"
     echo ""
-    echo "  install  — Copia do repo para ~/.claude/"
-    echo "  backup   — Copia de ~/.claude/ para o repo"
-    echo "  status   — Mostra diferenças"
+    echo "  install          — Copia do repo para ~/.claude/. Aborta se ~/.claude/ tem edits divergentes."
+    echo "  install --force  — Sobrescreve ~/.claude/ mesmo com diff. Use APENAS para rollback após git revert."
+    echo "  backup           — Copia de ~/.claude/ para o repo"
+    echo "  status           — Mostra diferenças"
     exit 1
 }
 
 sync_to_claude() {
+    local force=0
+    [ "${1:-}" = "--force" ] && force=1
+
+    if [ "$force" -ne 1 ]; then
+        local blocked=0
+        for f in "${FILES[@]}"; do
+            if [ -f "$REPO_DIR/$f" ] && [ -f "$CLAUDE_DIR/$f" ]; then
+                if ! diff -q "$REPO_DIR/$f" "$CLAUDE_DIR/$f" >/dev/null 2>&1; then
+                    echo "ERRO: $f difere em ~/.claude/." >&2
+                    blocked=1
+                fi
+            fi
+        done
+        for d in "${DIRS[@]}"; do
+            if [ -d "$REPO_DIR/$d" ] && [ -d "$CLAUDE_DIR/$d" ]; then
+                # Filtra só linhas "Files X and Y differ"; ignora "Only in" (skills históricas em ~/.claude/).
+                # Capturamos a saída primeiro porque `pipefail` + diff (exit 1 quando há diff) faz
+                # `diff -rq | grep -q` retornar não-zero mesmo com match — bug clássico do pipefail.
+                local diff_out
+                diff_out=$(diff -rq "$REPO_DIR/$d" "$CLAUDE_DIR/$d" 2>/dev/null || true)
+                if echo "$diff_out" | grep -q '^Files .* differ$'; then
+                    echo "ERRO: $d/ tem arquivos divergentes em ~/.claude/." >&2
+                    blocked=1
+                fi
+            fi
+        done
+        if [ "$blocked" -eq 1 ]; then
+            echo "" >&2
+            echo "Use './sync.sh backup' para preservar edits, OU './sync.sh install --force' para sobrescrever (rollback)." >&2
+            exit 2
+        fi
+    fi
+
     echo "=== Instalando: repo → ~/.claude/ ==="
     for f in "${FILES[@]}"; do
         if [ -f "$REPO_DIR/$f" ]; then
@@ -111,7 +145,7 @@ show_status() {
 }
 
 case "${1:-}" in
-    install) sync_to_claude ;;
+    install) sync_to_claude "${2:-}" ;;
     backup)  sync_to_repo ;;
     status)  show_status ;;
     *)       usage ;;
