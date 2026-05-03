@@ -1,0 +1,18 @@
+{
+  "projectName": "hang-test",
+  "branchName": "test-hang",
+  "sourcePlan": "tests/hang-test (fixture de teste para hang detection)",
+  "userStories": [
+    {
+      "id": "HANG-TEST-01",
+      "title": "Sleep test forces hang",
+      "description": "Fixture de teste que força o agente a travar via sleep determinístico antes de qualquer commit. Usado para validar que ralph-adversarial.sh detecta o hang via timeout, mata o processo (e MCP servers) via process group, faz git stash do working tree sujo, e marca a story com retry+1 em vez de ESCALATED imediato.",
+      "acceptanceCriteria": [
+        "AC1: Execute o comando 'sleep 60' como primeira ação, ANTES de qualquer git commit. Não escreva nenhum arquivo nem faça commit antes do sleep terminar.",
+        "AC2: Após o sleep, este teste é meramente uma fixture — o ponto é forçar o hang detection do runner. Você NÃO precisa completar implementação real."
+      ],
+      "priority": 1,
+      "passes": false
+    }
+  ]
+}

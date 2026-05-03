@@ -9,8 +9,93 @@ MAX_ITERATIONS=${1:-10}
 MAX_RETRIES_PER_STORY=2
 ITERATION=0
 
+# AC9: timeout para hang detection (default 45min); usuário pode override por env var.
+TIMEOUT=${RALPH_HANG_TIMEOUT:-2700}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REVIEW_FILE="$SCRIPT_DIR/CODE_REVIEW.md"
+
+# AC10: guard contra recursão acidental — Ralph não deve rodar dentro de seus próprios testes.
+# Usuário pode forçar com RALPH_ALLOW_TEST_CWD=1 (usado pelo TDD test fixture).
+if [[ "$PWD" == */skills/ralph-adversarial/tests/* ]] && [ "${RALPH_ALLOW_TEST_CWD:-0}" != "1" ]; then
+    echo "ERRO: Ralph não deve rodar dentro de seus próprios testes. Defina RALPH_ALLOW_TEST_CWD=1 para forçar." >&2
+    exit 5
+fi
+
+# AC1: detectar wrapper setsid (process group leader) em cadeia setsid → gsetsid → python3.
+# `bash -c 'set -m'` foi REJEITADO durante revisão adversária (R2-3): set -m em shell
+# não-interativo NÃO cria process group para subprocessos.
+declare -a SETSID_CMD=()
+if command -v setsid >/dev/null 2>&1; then
+    SETSID_CMD=(setsid)
+elif command -v gsetsid >/dev/null 2>&1; then
+    SETSID_CMD=(gsetsid)
+elif command -v python3 >/dev/null 2>&1; then
+    # python3 os.setsid() faz a syscall correta; herda env e fds do shell pai.
+    SETSID_CMD=(python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])')
+else
+    echo "ERRO: hang detection requer 'setsid' (coreutils), 'gsetsid' ou 'python3'." >&2
+    echo "Instale via 'brew install coreutils' OU 'xcode-select --install'." >&2
+    exit 4
+fi
+
+# Helper: lança o agente em novo process group, retorna PID via global $AGENT_PID.
+# Usado pela hang detection para matar agente + MCP servers forkados via `kill -- -$PGID`.
+launch_agent_pgrouped() {
+    local cmd="$1"; shift
+    local prompt="$1"
+    local logfile="$2"
+    case "$cmd" in
+        claude)
+            "${SETSID_CMD[@]}" claude --print --permission-mode bypassPermissions "$prompt" >"$logfile" 2>&1 &
+            ;;
+        codex)
+            "${SETSID_CMD[@]}" codex exec --full-auto "$prompt" >"$logfile" 2>&1 &
+            ;;
+    esac
+    AGENT_PID=$!
+}
+
+# Helper: aguarda agente com timeout; retorna 0 se completou natural, 1 se foi morto por hang.
+# Sem polling-by-sleep convencional para evitar overhead — usa `kill -0` a cada 5s.
+wait_with_timeout() {
+    local pid="$1"
+    local timeout="$2"
+    local start_ts
+    start_ts=$(date +%s)
+    while kill -0 "$pid" 2>/dev/null; do
+        local now
+        now=$(date +%s)
+        if [ $((now - start_ts)) -gt "$timeout" ]; then
+            return 1
+        fi
+        sleep 5
+    done
+    wait "$pid" 2>/dev/null || true
+    return 0
+}
+
+# Helper: mata o process group do agente (SIGTERM, sleep, SIGKILL).
+kill_agent_pg() {
+    local pid="$1"
+    local pgid
+    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
+    if [ -z "$pgid" ]; then
+        # processo já morreu antes de chegarmos aqui
+        return 0
+    fi
+    if [ "$pgid" != "$pid" ]; then
+        echo "  AVISO: PID($pid) != PGID($pgid) — setsid pode ter falhado; matando só o PID." >&2
+        kill -TERM "$pid" 2>/dev/null || true
+        sleep 2
+        kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
+    else
+        kill -TERM -- "-$pgid" 2>/dev/null || true
+        sleep 2
+        kill -0 "$pid" 2>/dev/null && kill -KILL -- "-$pgid" 2>/dev/null || true
+    fi
+    wait "$pid" 2>/dev/null || true
+}
 
 # Papéis dos agentes (env vars) — permitem alternar sem editar o script.
 #   PRIMARY_AGENT:  quem implementa cada story   (claude | codex)  default: claude
@@ -229,14 +314,47 @@ PRINCÍPIOS KARPATHY:
 - Sem refactoring drive-by. Sem abstração especulativa.
 - Verifique a cada passo. Rode testes após cada mudança significativa."
 
-    case "$PRIMARY_AGENT" in
-        claude)
-            claude --print --permission-mode bypassPermissions "$CLAUDE_PROMPT" 2>&1 | tail -20 || true
-            ;;
-        codex)
-            codex exec --full-auto "$CLAUDE_PROMPT" 2>&1 | tail -20 || true
-            ;;
-    esac
+    # AC2: agente lançado em background, em novo process group via $SETSID_CMD.
+    # AC5: capturar HEAD antes para race detection pós-kill.
+    HEAD_BEFORE=$(git rev-parse HEAD 2>/dev/null || echo none)
+    LOGFILE=$(mktemp -t ralph-iter.XXXXXX)
+
+    launch_agent_pgrouped "$PRIMARY_AGENT" "$CLAUDE_PROMPT" "$LOGFILE"
+
+    if wait_with_timeout "$AGENT_PID" "$TIMEOUT"; then
+        # Agente saiu naturalmente.
+        tail -20 "$LOGFILE" || true
+        rm -f "$LOGFILE"
+    else
+        # AC4: timeout — matar process group inteiro (cobre MCP servers forkados).
+        echo "  HANG: $PRIMARY_AGENT excedeu ${TIMEOUT}s sem terminar — matando process group."
+        kill_agent_pg "$AGENT_PID"
+        tail -20 "$LOGFILE" 2>/dev/null || true
+        rm -f "$LOGFILE"
+
+        # AC5: race detection — commit válido pode ter vazado no último segundo entre o
+        # check de timeout e o kill. Se HEAD avançou e a mensagem contém $STORY_ID,
+        # abortar ESCALATED e seguir para Fase B (review) como se fosse iteração normal.
+        HEAD_AFTER=$(git rev-parse HEAD 2>/dev/null || echo none)
+        LAST_MSG_AFTER_KILL=$(git log -1 --format=%s 2>/dev/null || echo "")
+        if [ "$HEAD_AFTER" != "$HEAD_BEFORE" ] && [[ "$LAST_MSG_AFTER_KILL" == *"$STORY_ID"* ]]; then
+            echo "  RACE: commit válido vazou no último segundo — seguindo fluxo normal."
+            echo "$(date -Iseconds) | HANG_RACE_RESCUED | $STORY_ID | commit chegou após timeout" >> progress.txt
+        else
+            # AC6: working tree pode estar sujo (agente parou no meio de edits).
+            # `git stash` preserva sem perda; nunca usar `reset --hard` aqui.
+            if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+                git stash push -u -m "ralph-hang-${STORY_ID}-iter${ITERATION}" >/dev/null 2>&1 || true
+                echo "  Working tree sujo após hang — git stash criado."
+            fi
+            # AC8: dump no formato existente.
+            echo "$(date -Iseconds) | HANG | $STORY_ID | timeout ${TIMEOUT}s sem novo commit" >> progress.txt
+            # AC7: política de retry alinhada com FALHA_COMMIT — incrementa retry; ESCALAR só quando
+            # MAX_RETRIES_PER_STORY for atingido (caminho existente que checa CURRENT_RETRIES no topo do loop).
+            set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
+            continue
+        fi
+    fi
 
     # Verificar se houve commit
     LAST_COMMIT=$(git log -1 --format="%H" 2>/dev/null)
