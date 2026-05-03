@@ -67,6 +67,13 @@ Se você usou o NOME de um padrão/conceito mas não explicou o MECANISMO por ba
 ### Próxima Fatia
 [O menor incremento implementável que entrega valor]
 
+### Custos recorrentes
+Sempre presente; "Nenhum." se o plano não envolve SaaS pago.
+
+| Serviço | Custo/mês (BRL) | Free tier suficiente? | Alternativa gratuita avaliada? | Custo de migrar para alternativa (h) |
+|---------|-----------------|-----------------------|-------------------------------|--------------------------------------|
+|         |                 |                       |                               |                                      |
+
 ## Template: Revisão Adversária (Codex como Red Team)
 
 ## Revisão Adversária: [Título do Plano]
