@@ -8,6 +8,8 @@ description: Loop de implementação autônomo baseado no padrão Ralph com revi
 ## Pré-requisitos
 - prd.json na raiz do repositório (gerado pela skill prd)
 - Rubrica de revisão em `~/.claude/skills/ralph-adversarial/CODE_REVIEW.md`
+- Template de prompt do Primary em `~/.claude/skills/ralph-adversarial/IMPL_PROMPT.md` (sem interpolação shell; story corrente é anexada via jq sob `## Story atual`)
+- Notas informativas Fase 2 em `~/.claude/skills/ralph-adversarial/IMPL_PROMPT.fase2-notes.md` (NÃO injetado no prompt do agente)
 - Claude Code CLI e jq instalados
 - Codex CLI (opcional, recomendado). Se ausente ou se a OpenAI retornar
   quota/rate-limit, o loop cai automaticamente para uma instância

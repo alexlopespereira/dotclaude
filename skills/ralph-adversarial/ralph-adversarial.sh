@@ -14,6 +14,7 @@ TIMEOUT=${RALPH_HANG_TIMEOUT:-2700}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REVIEW_FILE="$SCRIPT_DIR/CODE_REVIEW.md"
+IMPL_PROMPT_FILE="$SCRIPT_DIR/IMPL_PROMPT.md"
 
 # AC10: guard contra recursão acidental — Ralph não deve rodar dentro de seus próprios testes.
 # Usuário pode forçar com RALPH_ALLOW_TEST_CWD=1 (usado pelo TDD test fixture).
@@ -286,33 +287,12 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
     echo ""
     echo "[A] $PRIMARY_AGENT — Implementando..."
 
-    CLAUDE_PROMPT="Você está no loop Ralph Adversarial. Contexto fresco — leia tudo do disco.
-
-LEIA ESTES ARQUIVOS PRIMEIRO:
-- prd.json (sua lista de tasks — implemente a story $STORY_ID)
-- progress.txt (aprendizados e feedback de iterações anteriores)
-- git log --oneline -20 (o que já foi feito)
-
-STORY A IMPLEMENTAR: $STORY_ID - $STORY_TITLE
-
-REGRAS:
-1. Implemente APENAS esta story. Não toque em código que não é necessário.
-2. Rode os quality checks do projeto (typecheck, lint, testes).
-3. Se checks passarem, faça git commit com esta estrutura no message:
-   [$STORY_ID] $STORY_TITLE
-
-   ac_trace:
-   - AC1: [arquivo:linhas] testado em [arquivo_teste:linha] → pass/fail
-   - AC2: [arquivo:linhas] testado em [arquivo_teste:linha] → pass/fail
-
-4. Se checks falharem, corrija e tente novamente.
-5. Após o commit, atualize AGENTS.md com qualquer padrão ou gotcha descoberto.
-6. Registre aprendizados em progress.txt.
-
-PRINCÍPIOS KARPATHY:
-- Mudança mínima viável. Toda linha mudada deve rastrear para um AC.
-- Sem refactoring drive-by. Sem abstração especulativa.
-- Verifique a cada passo. Rode testes após cada mudança significativa."
+    # IMPL_PROMPT.md é o template estável (sem interpolação shell). A story
+    # corrente é anexada como bloco JSON sob "## Story atual" para o agente
+    # extrair id/title/AC. Pré-condição arquitetural para Fase 2 (templates
+    # cwd-agnósticos permitem reuso por múltiplos slots).
+    STORY_BLOCK=$(jq -r --arg id "$STORY_ID" '.userStories[] | select(.id == $id)' prd.json)
+    CLAUDE_PROMPT=$(printf '%s\n\n## Story atual\n%s\n' "$(cat "$IMPL_PROMPT_FILE")" "$STORY_BLOCK")
 
     # AC2: agente lançado em background, em novo process group via $SETSID_CMD.
     # AC5: capturar HEAD antes para race detection pós-kill.
