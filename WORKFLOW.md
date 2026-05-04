@@ -8,7 +8,9 @@
 | `/adversarial-review [plano]` | Revisão adversária de um plano existente |
 | `/full-cycle [problema]` | Planejamento + auto-revisão em sequência |
 | `/adversarial-research [tema]` | Deep research com 3 provedores |
-| `/pr` | Cria PR e faz merge automaticamente |
+| `/prd-convert [plano]` | Converte plano aprovado em `prd.json` |
+| `/ralph-adversarial [--parallel\|--parallel=N] [max_iter]` | Loop de implementação com revisão Codex |
+| `/commit-push-pr ["msg"]` | Branch efêmera + commit + push + PR |
 | `/export-report` | Exporta última resposta como Markdown |
 
 ## Fluxo de Planejamento
@@ -20,8 +22,48 @@
 
 Ou use `/full-cycle [problema]` para executar as duas fases em sequência.
 
+## Ralph Adversarial — modo paralelo (Fase 2)
+
+`/ralph-adversarial --parallel` (ou `--parallel=N`) roda múltiplas user stories em paralelo, exigindo um **pool de checkouts** provisionado por `/checkout-init` (layout Boris Cherny — `~/Projects/checkouts/<repo>-{1..N}/`). O slot de invocação atua como orquestrador; os demais slots como workers.
+
+Capacidade (`compute_cap`):
+
+| Pool size | Workers disponíveis | Cap default (`RALPH_PARALLEL_N=4`) |
+|-----------|--------------------|-----------------------------------|
+| 1         | 0                  | aborta (`pool ≥ 2 slots` exigido) |
+| 2         | 1                  | 1                                 |
+| 3         | 2                  | 2                                 |
+| 5         | 4                  | 4                                 |
+
+Override: `RALPH_PARALLEL_N=2 /ralph-adversarial --parallel`.
+
+### Contrato de delta files (deltas-untracked)
+
+Workers escrevem aprendizados em **arquivos UNTRACKED** no slot de trabalho:
+
+- `progress-<US-ID>.txt` — feedback/gotchas/decisões da iteração
+- `agents-delta-<US-ID>.md` — convenções descobertas
+
+**Esses arquivos NÃO são commitados pelo worker.** O orquestrador os captura via filesystem após o COMMIT (`stash_worker_deltas` → `$ORCH/.ralph/delta-stash/<US-ID>/`) e integra ao `progress.txt` / `AGENTS.md` central no merge (`integrate_delta_files` via `merge --amend`).
+
+Defesa em camadas (já automatizada):
+
+1. `IMPL_PROMPT.md` instrui worker a manter delta files untracked
+2. Preflight escreve `progress-*.txt` + `agents-delta-*.md` em `.git/info/exclude` de cada slot (`ensure_slot_excludes_deltas`) — bloqueia `git add` acidental
+3. `.gitignore` versionado adiciona os mesmos patterns no projeto-alvo via helper
+
+### Setup por projeto-alvo (uma vez)
+
+```bash
+bash ~/.claude/skills/ralph-adversarial/apply-gitignore.sh           # aplica em $PWD
+bash ~/.claude/skills/ralph-adversarial/apply-gitignore.sh --pool    # + commit/push/pull em slots irmãos do pool
+```
+
+Idempotente — rodar 2× não duplica linhas. Em pools Boris Cherny, `--pool` propaga via `git push` no slot atual + `git pull --ff-only` nos slots irmãos.
+
 ## Dicas
 
 - Tarefas triviais NÃO ativam ReAct (o CLAUDE.md isenta explicitamente).
 - Use `/compact` entre planejar e revisar para simular "olhos frescos".
 - Planos sempre vão para `.claude/plans/` (arquivo, não conversa).
+- `/ralph-adversarial` (serial) e `/ralph-adversarial --parallel` produzem o mesmo histórico em `main`; o paralelo só acelera a entrega.

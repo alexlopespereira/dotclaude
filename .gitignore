@@ -22,3 +22,10 @@ agents-delta-*.md
 # Ralph orchestrator stash dir + ephemeral review worktrees.
 .ralph/
 .ralph-review-*/
+
+# Per-project Ralph execution artifacts (lived briefly in this repo
+# during Fase 2 self-execution; should never be re-committed here —
+# dotclaude is the framework, not a target project).
+prd.json
+progress.txt
+AGENTS.md
