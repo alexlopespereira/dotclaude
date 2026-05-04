@@ -63,7 +63,7 @@ parse_verdict() {
     # Phrasings observadas em smoke test 2026-05-03 (US-05 AC7):
     #   - "do not introduce any functional or maintainability issues"
     #   - "does not introduce an identifiable functional or maintainability issue"
-    if echo "$input" | grep -qiE '(full[[:space:]]+review[[:space:]]+comments|review[[:space:]]+complete|no[[:space:]]+(blocking[[:space:]]+)?(issues|findings)|(did[[:space:]]+not|didn'\''t)[[:space:]]+find[[:space:]]+any[[:space:]]+(introduced[[:space:]]+)?[a-z, ]*(issues|problems|bugs)|(do|does)[[:space:]]+not[[:space:]]+introduce[[:space:]]+(an[[:space:]]+|any[[:space:]]+)?[a-z, ]*(issue|issues|problem|problems|bug|bugs))'; then
+    if echo "$input" | grep -qiE '(full[[:space:]]+review[[:space:]]+comments|review[[:space:]]+complete|no[[:space:]]+(blocking[[:space:]]+)?(issues|findings)|no[[:space:]]+[a-z, ]*(issues|findings|problems|bugs)[[:space:]]+(were[[:space:]]+|was[[:space:]]+)?found|(did[[:space:]]+not|didn'\''t)[[:space:]]+find[[:space:]]+any[[:space:]]+(introduced[[:space:]]+)?[a-z, ]*(issues|problems|bugs)|(do|does)[[:space:]]+not[[:space:]]+introduce[[:space:]]+(an[[:space:]]+|any[[:space:]]+)?[a-z, ]*(issue|issues|problem|problems|bug|bugs))'; then
         echo "MERGE"; return 0
     fi
 

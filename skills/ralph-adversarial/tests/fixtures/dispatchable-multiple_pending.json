@@ -1,0 +1,24 @@
+{
+  "projectName": "fixture-multiple-pending",
+  "branchName": "test",
+  "userStories": [
+    {
+      "id": "US-A",
+      "title": "Higher priority pending",
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-B",
+      "title": "Lower priority pending",
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-C",
+      "title": "Already done",
+      "priority": 3,
+      "passes": true
+    }
+  ]
+}

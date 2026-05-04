@@ -1,0 +1,20 @@
+{
+  "projectName": "fixture-cycle",
+  "branchName": "test",
+  "userStories": [
+    {
+      "id": "US-01",
+      "title": "Cycle A",
+      "priority": 1,
+      "passes": false,
+      "dependsOn": ["US-02"]
+    },
+    {
+      "id": "US-02",
+      "title": "Cycle B",
+      "priority": 2,
+      "passes": false,
+      "dependsOn": ["US-01"]
+    }
+  ]
+}

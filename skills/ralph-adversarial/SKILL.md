@@ -15,6 +15,16 @@ description: Loop de implementação autônomo baseado no padrão Ralph com revi
   quota/rate-limit, o loop cai automaticamente para uma instância
   `claude --model sonnet` aplicando a mesma rubrica — a troca fica
   registrada em `progress.txt` como `CODEX_QUOTA`.
+- `.gitignore` do projeto-alvo deve ignorar artefatos do framework
+  (`progress-*.txt`, `agents-delta-*.md`, `.ralph/`, `.ralph-review-*/`,
+  `.claude/`). Rode `bash skills/ralph-adversarial/apply-gitignore.sh
+  [--pool]` uma vez por projeto para adicionar idempotentemente. Em
+  layouts Boris Cherny (5 slots), use `--pool` para commitar +
+  propagar via push/pull aos slots irmãos. Defesa em camadas: o
+  orquestrador também escreve patterns em `.git/info/exclude` de
+  cada slot via `ensure_slot_excludes_deltas` no preflight, então
+  pools provisionados antes de aplicar o `.gitignore` continuam
+  protegidos automaticamente.
 
 ## Arquitetura
 

@@ -1,0 +1,12 @@
+{
+  "projectName": "fixture-independent",
+  "branchName": "test",
+  "userStories": [
+    {
+      "id": "US-A",
+      "title": "Independent A",
+      "priority": 1,
+      "passes": false
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "projectName": "fixture-deps-escalated",
+  "branchName": "test",
+  "userStories": [
+    {
+      "id": "US-A",
+      "title": "Escalated dep",
+      "priority": 1,
+      "passes": "ESCALATED"
+    },
+    {
+      "id": "US-B",
+      "title": "Depends on escalated A",
+      "priority": 2,
+      "passes": false,
+      "dependsOn": ["US-A"]
+    }
+  ]
+}

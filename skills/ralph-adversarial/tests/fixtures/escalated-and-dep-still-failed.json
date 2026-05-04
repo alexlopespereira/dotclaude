@@ -1,0 +1,23 @@
+{
+  "projectName": "fixture-escalated-and-dep-still-failed",
+  "branchName": "test",
+  "userStories": [
+    {
+      "id": "US-A",
+      "title": "Dep still failing",
+      "acceptanceCriteria": ["AC1: dummy"],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-B",
+      "title": "ESCALATED with dep still failing",
+      "acceptanceCriteria": ["AC1: dummy"],
+      "priority": 2,
+      "passes": "ESCALATED",
+      "blocked_by": "US-A",
+      "escalation_reason": "dep US-A still red",
+      "dependsOn": ["US-A"]
+    }
+  ]
+}

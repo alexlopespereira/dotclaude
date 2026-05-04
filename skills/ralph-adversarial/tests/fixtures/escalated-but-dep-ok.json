@@ -1,0 +1,23 @@
+{
+  "projectName": "fixture-escalated-but-dep-ok",
+  "branchName": "test",
+  "userStories": [
+    {
+      "id": "US-A",
+      "title": "Dep already merged",
+      "acceptanceCriteria": ["AC1: dummy"],
+      "priority": 1,
+      "passes": true
+    },
+    {
+      "id": "US-B",
+      "title": "Marked ESCALATED but dep is OK",
+      "acceptanceCriteria": ["AC1: dummy"],
+      "priority": 2,
+      "passes": "ESCALATED",
+      "blocked_by": "US-A",
+      "escalation_reason": "stale escalation; A merged after",
+      "dependsOn": ["US-A"]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "projectName": "fixture-in-review-queue",
+  "branchName": "test",
+  "userStories": [
+    {
+      "id": "US-A",
+      "title": "Pending review (still passes:false)",
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-B",
+      "title": "Blocked by A in review",
+      "priority": 2,
+      "passes": false,
+      "dependsOn": ["US-A"]
+    }
+  ]
+}

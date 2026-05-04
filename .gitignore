@@ -1,3 +1,24 @@
 .env
 .env.local
 .env.*.local
+
+# macOS
+.DS_Store
+
+# Claude Code local runtime — research outputs, plans saved during sessions,
+# and per-project state. The repo only versions the source-of-truth files
+# under skills/, commands/, hooks/, agents/.
+.claude/
+
+# Ralph Adversarial framework artifacts — must never be versioned.
+# Worker writes these to its slot WT; orchestrator stashes them via
+# stash_worker_deltas (lib/dispatch.sh) and integrates into central
+# progress.txt / AGENTS.md at merge time. See IMPL_PROMPT.md "CONTRATO
+# DE WORKER PARALELO" for the rationale (Codex review WT must not see
+# them, history stays free of framework noise).
+progress-*.txt
+agents-delta-*.md
+
+# Ralph orchestrator stash dir + ephemeral review worktrees.
+.ralph/
+.ralph-review-*/
