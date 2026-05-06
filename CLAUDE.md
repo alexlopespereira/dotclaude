@@ -70,6 +70,8 @@ Use `/export-report` para exportar a última resposta como arquivo Markdown.
 Use `/prd-convert` para converter plano aprovado em prd.json (formato Ralph).
 Use `/ralph-adversarial` para executar loop de implementação com revisão Codex.
 Use `/e2e [fluxo]` para gerar/rodar testes E2E Playwright.
+Use `/browser-status` para listar cookies do perfil Chrome dedicado (read-only).
+Use `/browser-logout-all [--confirm]` para limpar todos os cookies do perfil Chrome dedicado (destrutivo, exige MCP encerrado).
 
 ## Testing (sempre ativo)
 

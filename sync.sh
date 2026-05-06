@@ -21,6 +21,7 @@ DIRS=(
     "skills"
     "agents"
     "hooks"
+    "bin"
 )
 
 usage() {

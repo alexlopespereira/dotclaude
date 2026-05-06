@@ -232,7 +232,22 @@ Não há conflito — são domínios diferentes.
 
 **Limpeza geral** (força re-login em tudo): `rm -rf ~/.claude/chrome-profile/ && mkdir -p ~/.claude/chrome-profile && chmod 700 ~/.claude/chrome-profile`. Sugerido **trimestralmente** ou após exposição (laptop emprestado, suspeita de comprometimento).
 
-**Limpeza por domínio** (futuro): comando `/browser-logout-all` ou `/browser-status` — ainda não existem. Manualmente: abrir o perfil, DevTools → Application → Cookies → deletar.
+**Limpeza por domínio** (futuro): granularidade por host ainda não existe. Manualmente: abrir o perfil, DevTools → Application → Cookies → deletar.
+
+## Manutenção do perfil
+
+Dois slash commands operam direto no SQLite de cookies (`~/.claude/chrome-profile/Default/Cookies`):
+
+- **`/browser-status`** — read-only. Abre o DB com URI `file:...?mode=ro&immutable=1` (não disputa lock, não cria journal/-wal/-shm) e imprime tabela agregada por `host_key`: DOMAIN, COUNT, LAST_ACCESS (datetime localtime), EXPIRES (date ou `session`). Detecta MCP rodando via `~/.claude/chrome-profile/.lock/pid` + `kill -0` e avisa que cookies dos últimos segundos podem não aparecer no snapshot. Se o perfil ainda não foi inicializado (Default/Cookies inexistente), imprime mensagem amigável e exit 0.
+- **`/browser-logout-all [--confirm]`** — destrutivo. Sem `--confirm`: preview (status do lock + contagem). Com `--confirm` e lock liberado: `PRAGMA wal_checkpoint(TRUNCATE)` → `DELETE FROM cookies` → `VACUUM` em batch. Aborta com exit 1 se MCP vivo (concorrência em WAL pode corromper). VACUUM é necessário porque DELETE só marca páginas como livres — sem VACUUM o arquivo não shrinka.
+
+**Escopo restrito — apenas cookies HTTP.** Local Storage, IndexedDB e cache do browser **não** são afetados. Para reset total, encerre o MCP e rode:
+
+```bash
+rm -rf ~/.claude/chrome-profile/
+mkdir -p ~/.claude/chrome-profile
+chmod 700 ~/.claude/chrome-profile
+```
 
 ## Site list explícito
 
