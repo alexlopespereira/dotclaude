@@ -29,3 +29,8 @@ agents-delta-*.md
 prd.json
 progress.txt
 AGENTS.md
+
+# Playwright MCP runtime artifacts (snapshots, console logs, traces)
+# created when browser-actions skill exercises the browser via MCP.
+# Per-session, regenerated on demand — never commit.
+.playwright-mcp/

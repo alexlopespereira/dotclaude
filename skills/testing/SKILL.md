@@ -36,6 +36,10 @@ Regras inegociáveis:
 
 ## Playwright — CLI primeiro, MCP por último
 
+> **Delimitação:** "Playwright CLI > MCP" aqui se refere ao **test runner** (`npx playwright test`).
+> Controle de browser via Playwright MCP pra **agir em nome do usuário** é categoria distinta,
+> governada pelo Princípio 12 + skill `browser-actions`.
+
 PREFIRA `npx playwright test --reporter=line --max-failures=3` sobre MCP.
 Justificativa (README Microsoft): CLI evita carregar schemas de ferramentas
 e accessibility trees no contexto do modelo.

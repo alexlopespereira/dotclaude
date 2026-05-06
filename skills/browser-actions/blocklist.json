@@ -1,0 +1,43 @@
+{
+  "_doc": "Gatilhos estruturados pra hooks/block-browser-mutations.sh. Trigger words PT+EN, payment form inputs, sensitive domain regex, modais sempre-ask. Match case-insensitive em accessibleName/url/inputs.",
+  "trigger_words": [
+    "delete",
+    "excluir",
+    "remover",
+    "remove",
+    "cancel subscription",
+    "cancelar assinatura",
+    "unsubscribe",
+    "pay",
+    "pagar",
+    "buy",
+    "comprar",
+    "purchase",
+    "subscribe",
+    "assinar",
+    "publish",
+    "publicar",
+    "post",
+    "postar",
+    "send",
+    "enviar",
+    "make public",
+    "tornar público",
+    "transfer",
+    "transferir",
+    "withdraw",
+    "sacar",
+    "confirm purchase"
+  ],
+  "payment_form_inputs": [
+    "cardnumber",
+    "cvv",
+    "cvc",
+    "cc-number"
+  ],
+  "sensitive_domains_regex": "(\\.stripe\\.com|\\.bank|\\.itau|\\.bb\\.com\\.br|\\.santander)",
+  "always_ask_modals": [
+    "window.confirm",
+    "role=alertdialog"
+  ]
+}
