@@ -92,19 +92,77 @@ Anuncia abertura do browser:
    - `accounts.google.com` → `mail.google.com` — **sem reanúncio** (mesmo `google.com`).
    - `github.com` → `accounts.google.com` — **com reanúncio** (mudou o registrable domain).
 
-Extração do eTLD+1 (heurística simples; suficiente pra domínios comuns):
+### Extração do eTLD+1
 
-```js
-// Pega últimos 2 labels. Funciona pra .com/.org/.net/.io/etc.
-// Falha em ccTLDs de 2 níveis (.com.br, .co.uk) — tratar caso a caso.
-const url = new URL(pageUrl);
-const parts = url.hostname.split('.');
-const etld1 = parts.slice(-2).join('.');
-```
+**Antes de decidir reanunciar, executar o algoritmo passo-a-passo no raciocínio (Chain-of-Thought explícito).** A regra é determinística — basta seguir as 3 etapas na ordem.
 
-Para `.com.br`/`.co.uk`/`.gov.br`/etc., usar últimos 3 labels. Lista mínima:
-- `*.com.br`, `*.gov.br`, `*.org.br`, `*.net.br` → 3 labels.
-- `*.co.uk`, `*.ac.uk`, `*.gov.uk` → 3 labels.
+**Exercitada empiricamente — vide tabela de casos de teste** abaixo.
+
+#### Algoritmo (3 etapas, ordem importa)
+
+1. **IP literal ou `localhost`** → host único: `eTLD+1 = hostname` (sem fatiamento). Detecção: regex `^[0-9.:]+$` para IP, ou hostname == `localhost`. Hostnames com `:porta` (ex: `localhost:3000`) são tratados pelo `URL.hostname` que já remove a porta — usar `URL.hostname` como entrada.
+2. **Suffix multi-label conhecido** (tabela abaixo) → últimos **3 labels**. Match: `hostname` termina com `.<suffix>` (ponto antes — `gov.br` direto NÃO bate em `*.gov.br`, ver nota). Se hostname tem <3 labels, cai no fallback (etapa 3).
+3. **Fallback** → últimos **2 labels** (`hostname.split('.').slice(-2).join('.')`). Cobre `.com`/`.org`/`.net`/`.io`/etc.
+
+#### Tabela de suffixes multi-label conhecidos (top-N curado)
+
+| Suffix    | Origem        | Uso esperado                          |
+|-----------|---------------|---------------------------------------|
+| `*.com.br`| BR comercial  | bancos, e-commerce, serviços online BR|
+| `*.gov.br`| BR governo    | gov serviços                          |
+| `*.org.br`| BR org        | ONGs, comunidades                     |
+| `*.net.br`| BR rede       | infraestrutura                        |
+| `*.edu.br`| BR educação   | universidades                         |
+| `*.co.uk` | UK comercial  | empresas UK                           |
+| `*.ac.uk` | UK acadêmico  | universidades UK                      |
+| `*.gov.uk`| UK governo    | gov UK                                |
+| `*.com.au`| AU comercial  | empresas AU                           |
+| `*.com.mx`| MX comercial  | empresas MX                           |
+| `*.co.jp` | JP comercial  | empresas JP                           |
+
+#### Tabela de casos de teste (oráculo)
+
+| URL                                     | Hostname              | Algoritmo aplicado          | eTLD+1 esperado     |
+|-----------------------------------------|-----------------------|-----------------------------|---------------------|
+| `https://github.com/user/repo`          | `github.com`          | etapa 3 (slice -2)          | `github.com`        |
+| `https://accounts.google.com/signin`    | `accounts.google.com` | etapa 3                     | `google.com`        |
+| `https://mail.google.com/inbox`         | `mail.google.com`     | etapa 3                     | `google.com`        |
+| `https://www.bbc.co.uk/news`            | `www.bbc.co.uk`       | etapa 2 (`*.co.uk`)         | `bbc.co.uk`         |
+| `https://www.itau.com.br/empresas`      | `www.itau.com.br`     | etapa 2 (`*.com.br`)        | `itau.com.br`       |
+| `https://gov.br/saude`                  | `gov.br`              | etapa 2 não bate → fallback | `gov.br`            |
+| `https://192.168.1.1/foo`               | `192.168.1.1`         | etapa 1 (IP)                | `192.168.1.1`       |
+| `https://localhost:3000/dev`            | `localhost`           | etapa 1 (host único)        | `localhost`         |
+| `https://api.itau.com.br/v1`            | `api.itau.com.br`     | etapa 2                     | `itau.com.br`       |
+| `https://www.uol.com.br/noticias`       | `www.uol.com.br`      | etapa 2                     | `uol.com.br`        |
+| `https://www.bb.com.br/pessoas`         | `www.bb.com.br`       | etapa 2                     | `bb.com.br`         |
+| `https://www.example.com.au/`           | `www.example.com.au`  | etapa 2 (`*.com.au`)        | `example.com.au`    |
+| `https://www.example.com.mx/`           | `www.example.com.mx`  | etapa 2 (`*.com.mx`)        | `example.com.mx`    |
+| `https://www.example.co.jp/`            | `www.example.co.jp`   | etapa 2 (`*.co.jp`)         | `example.co.jp`     |
+| `https://algo.empresa.com.tr/`          | `algo.empresa.com.tr` | fail-safe (≥3 labels, suffix não listado, última label 2 letras) | reanúncio conservador |
+| `https://api.atlassian.com/v1`          | `api.atlassian.com`   | etapa 3 (fail-safe NÃO dispara: `com` tem 3 letras) | `atlassian.com` |
+
+#### Nota sobre `gov.br` direto vs `*.gov.br`
+
+`gov.br` (host único, portal federal) é uma entidade distinta de `saude.gov.br` (subdomínio governamental). O algoritmo trata corretamente:
+- `gov.br` → etapa 2 não bate (precisa de `.gov.br` com algo antes), cai no fallback (etapa 3) → `gov.br`.
+- `saude.gov.br` → etapa 2 bate em `*.gov.br` → `saude.gov.br`.
+
+Resultado: navegar de `gov.br` para `saude.gov.br` produz eTLD+1 diferentes — **reanúncio dispara**, que é o comportamento correto (são entidades distintas).
+
+#### Fail-safe — detector mecânico
+
+**Se hostname não bate em nenhuma entrada da tabela de suffixes E tem ≥3 labels E sua última label tem exatamente 2 letras (provável ccTLD), reanunciar conservadoramente em vez de aplicar `slice(-2)` cegamente.**
+
+Mecanismo: `≥3 labels + suffix não listado + última label com 2 letras` é o sinal de "possível ccTLD multi-label que não está na tabela top-N". TLDs ccTLD são quase todos códigos ISO 3166-1 alpha-2 (2 letras: `.tr`, `.cn`, `.in`, `.fr`...); gTLDs históricos têm 3+ letras (`.com`, `.org`, `.net`, `.io`, `.app`...). A condição "última label = 2 letras" filtra subdomínios de gTLD comuns: `accounts.google.com` → última label `com` (3 letras) → fail-safe **NÃO** dispara → cai corretamente na etapa 3 → `google.com`. Custo de falso positivo (reanunciar quando não precisava) = uma linha extra de mensagem. Custo de falso negativo (silêncio em mudança real de eTLD+1) = violação silenciosa do Princípio 12. Otimizar para fail-safe.
+
+Exemplos:
+- `algo.qualquer.com.tr` (Turquia, fora da tabela) → 4 labels, suffix `*.com.tr` não listado, última label `tr` (2 letras) → **fail-safe dispara**, reanunciar.
+- `accounts.google.com` → 3 labels, suffix `*.com` não está na tabela, mas última label `com` (3 letras) → fail-safe **NÃO** dispara → etapa 3 → `google.com` (consistente com os casos de teste para `*.google.com`).
+
+#### Suposições abertas (registradas como risco conhecido)
+
+- **[SUPOSIÇÃO]** Os 11 suffixes cobrem ≥95% do uso esperado. Aceito como risco conhecido — se a regra falhar em sessões reais com >5% de frequência, expandir a tabela (ex: `*.com.tr`, `*.com.cn`, `*.co.in` sob demanda).
+- **[SUPOSIÇÃO]** Fail-safe (reanunciar em dúvida) não vira spam de reanúncio. Aceito como risco conhecido sem ação preventiva — se usuário reclamar de reanúncios redundantes, ajustar.
 
 Anúncio template: *"Vou abrir `{eTLD+1}` no Chrome dedicado em `~/.claude/chrome-profile/`."*
 
