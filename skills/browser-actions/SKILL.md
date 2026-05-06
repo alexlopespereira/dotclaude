@@ -49,26 +49,39 @@ npx -y @playwright/mcp@latest \
 
 ## Protocolo de auth assistida
 
-Antes de qualquer ação que assume sessão autenticada, fazer **cookie pre-check** — não confiar que sessão herdada do perfil ainda é válida.
+Antes de qualquer ação que assume sessão autenticada, validar que a sessão está ativa — não confiar em cookies herdados do perfil.
 
-Sequência:
+### Sinais de auth — ordenados por confiabilidade
+
+**1. Redirect pra login após `browser_navigate` no endpoint privado alvo (sinal mais forte).**
+Tentar a navegação direto. Se a URL final contém `/login`, `/signin`, `/auth/`, ou a resposta é 401/403, a sessão está ausente/expirada. Não dá falso positivo. Validado 2026-05-06: `github.com/settings/repositories` → `github.com/login?return_to=...` quando deslogado; URL idêntica preservada quando logado.
+
+**2. Meta tag de identidade (forte quando o site expõe).**
+Sites bem comportados expõem `<meta name="user-login" content="...">` (GitHub) ou similar (`og:profile`, etc.). Presente = logado; ausente em endpoint privado = deslogado. Validado 2026-05-06 (`user_login: "octocat"` apareceu na meta após login).
+
+**3. `document.cookie` pre-check (sinal fraco — só triagem).**
+Validado empiricamente em 2026-05-06: dá **falso positivo** (cookies de tracking populam mesmo deslogado — `_octo`, `cpu_bucket`, `tz` no GitHub) e **falso negativo** (cookies de sessão modernos são `httpOnly`/`SameSite=Strict` e **não aparecem** em `document.cookie`, ex: `user_session`, `_gh_sess`). **Não confie isoladamente.**
+
+### Sequência recomendada
 
 ```
-1. mcp__playwright__browser_navigate(url=alvo)
-2. mcp__playwright__browser_evaluate(function="() => document.cookie")
-3. Se vazio ou claramente sem cookie de sessão do domínio:
+1. browser_navigate(url=endpoint privado alvo)
+2. browser_evaluate(() => ({
+     url: location.href,
+     userMeta: document.querySelector('meta[name="user-login"]')?.content
+   }))
+3. Se URL final contém /login OU userMeta ausente em endpoint privado:
      → ANUNCIAR: "Vou abrir [domínio] no Chrome dedicado. Faça login e me avise quando estiver pronto."
      → Esperar resposta do usuário no chat ("ok", "pronto", ENTER).
-     → Após resposta, re-checar cookie. Se ainda vazio, perguntar de novo.
-4. Se houver cookie: tentar a ação. Se redirecionar pra /login → tratar como expirada → re-auth.
+     → Re-navegar. Se ainda redireciona, perguntar de novo.
+4. Se sessão ativa: prosseguir com a ação alvo.
 ```
 
-**Limitação conhecida (S1 do handoff):** `document.cookie` **não enxerga cookies httpOnly** (a maioria dos cookies de sessão modernos são httpOnly). Em casos de falso negativo:
-- Tentar ação alvo direto.
-- Se redirecionar pra /login ou retornar 401/403 → trigger fluxo de re-auth.
-- Se possível, usar `mcp__playwright__browser_network_requests` pra inspecionar `Set-Cookie` em resposta de navegação inicial.
+### Anti-pattern
 
-**Auth ausente NUNCA é skip pro próximo nível** (regra do Princípio 12 — (a) "auth ausente nunca é skip"). Sempre pede ao usuário.
+`browser_evaluate(() => document.cookie)` como **único** sinal — falha silenciosa em ambas as direções.
+
+**Auth ausente NUNCA é skip pro próximo nível** (regra do Princípio 12 — "auth ausente nunca é skip"). Sempre pede ao usuário.
 
 ## Cadência do anúncio
 
@@ -141,7 +154,7 @@ Workflow Boris Cherny tem 5 checkouts paralelos (`~/Projects/checkouts/<repo>-{1
 | Captcha (reCAPTCHA, hCaptcha) | Página exibe widget de captcha | **Pausar**, dizer "tem captcha, resolve aí pra mim e me avise". Esperar humano. |
 | 2FA por SMS / authenticator | Após login, página pede código | Idem captcha — pausa + pede. |
 | Sessão expirada | Cookie presente, mas resposta 401/403 ou redirect pra /login | Trigger fluxo de re-auth (anuncia + espera login). |
-| `document.cookie` retorna vazio mas usuário diz que está logado | Cookies httpOnly | S1 — falso negativo conhecido. Tentar ação direto e usar redirect/erro como sinal. |
+| `document.cookie` vazio (ou só com tracking) mesmo logado | Cookies de sessão são `httpOnly`/`SameSite=Strict` | Validado 2026-05-06. Sinais primários: **redirect-pra-login** ou **meta `user-login`** (ver "Protocolo de auth assistida"). `document.cookie` só serve como triagem. |
 | localStorage-only auth (raro) | Sem cookies, auth via JWT em localStorage | Aceitar fricção: pre-check via `browser_evaluate(() => localStorage.getItem('token'))`. |
 | Extensões bloqueando seletores | Snapshot retorna estranho, click falha em elementos visíveis | Lock garante que é Chrome dedicado sem extensões — descartar essa hipótese cedo. Se acontecer mesmo assim, abrir DevTools e inspecionar. |
 | MCP não conecta após reconfig | `claude mcp list` mostra erro de timeout/conexão | (1) wrapper executável? `ls -l wrapper-launch.sh`. (2) lock órfão? `rmdir ~/.claude/chrome-profile/.lock`. (3) Chrome instalado? `ls /Applications/Google\ Chrome.app`. (4) `flock` CLI ausente — usar `mkdir` atomic lock (já default). |
