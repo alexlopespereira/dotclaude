@@ -168,7 +168,7 @@ if [ "$AUTO_MERGE" = "true" ] && [ "$DRAFT" != "true" ]; then
     echo "✓ Auto-merge ($MERGE_METHOD) habilitado — PR mergeará quando CI passar e branch será deletada."
   else
     echo "AVISO: auto-merge não habilitado (branch protection pode exigir reviews antes de auto-merge, ou repo não tem auto-merge ligado)."
-    echo "       Mergeie manualmente: gh pr merge $BRANCH_NAME --$MERGE_METHOD --delete-branch"
+    echo "       Force-merge com: /force-merge $BRANCH_NAME"
   fi
 fi
 

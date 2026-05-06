@@ -92,6 +92,35 @@ if [ "$COPY_ENV" = "true" ] && [ -n "$LOCAL_REF" ]; then
   echo "→ Arquivos .env copiados"
 fi
 
+# Configurar repo no GitHub (allow_auto_merge + delete_branch_on_merge).
+# Idempotente: PATCH no/ops se já estava true. Falha graciosa: se sem permissão
+# admin (repo de outro owner) ou gh ausente, log warning e continua.
+# Detecção de permissão antes de patch: gh api repos/X --jq .permissions.admin.
+if command -v gh >/dev/null 2>&1; then
+  REMOTE_NWO=$(git -C "$CHECKOUT_BASE/${REPO_NAME}-1" remote get-url origin 2>/dev/null \
+    | sed -E 's#^git@github\.com:##; s#^https?://github\.com/##; s#\.git$##' \
+    | head -1)
+  if [ -n "$REMOTE_NWO" ] && [[ "$REMOTE_NWO" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+    IS_ADMIN=$(gh api "repos/$REMOTE_NWO" --jq '.permissions.admin // false' 2>/dev/null || echo "false")
+    if [ "$IS_ADMIN" = "true" ]; then
+      if gh api -X PATCH "repos/$REMOTE_NWO" \
+            -F allow_auto_merge=true \
+            -F delete_branch_on_merge=true >/dev/null 2>&1; then
+        echo "✓ Repo config: allow_auto_merge + delete_branch_on_merge habilitados em $REMOTE_NWO"
+      else
+        echo "⚠ Repo config: PATCH falhou em $REMOTE_NWO — habilite manualmente nos Settings."
+      fi
+    else
+      echo "⚠ Sem permissão admin em $REMOTE_NWO — pulando config (allow_auto_merge fica como está)."
+      echo "   Habilite manualmente nos Settings ou peça ao owner."
+    fi
+  else
+    echo "⚠ Não consegui detectar owner/repo — pulando config de allow_auto_merge."
+  fi
+else
+  echo "⚠ gh CLI ausente — pulando config de allow_auto_merge (instale gh + autentique)."
+fi
+
 # Instalar dependências
 if [ "$NO_INSTALL" != "true" ]; then
   FIRST="$CHECKOUT_BASE/${REPO_NAME}-1"

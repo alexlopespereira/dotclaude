@@ -24,7 +24,7 @@
     - **Checagem genérica sem sinal específico** → default 1200–1800s. **NUNCA 300s** (worst-of-both: paga cache miss sem amortizar).
     - Monitor re-arm: se `Monitor` time out e o evento ainda é necessário, rearm com `Monitor` novamente — backoff exponencial — não escalar para `ScheduleWakeup` curto.
 11. **Auto-aprovação híbrida em slash commands compostos.** Transições internas dentro de `/full-cycle`, `/full-planning-cycle`, `/prd-convert`, `/ralph-adversarial` **não pedem confirmação humana** (a existência dos slash commands já é o gate de alto nível; usuário interrompe via Ctrl-C). Exceções sempre-pergunta com mecanismo de detecção concreto:
-    - **(a) Comandos destrutivos por nome:** `git push --force`, `git reset --hard`, `git clean -f`, `git branch -D`, `rm -rf`. Detecção: agente lê o `command` da Bash tool call e compara com a lista antes de invocar.
+    - **(a) Comandos destrutivos por nome:** `git push --force`, `git reset --hard`, `git clean -f`, `git branch -D`, `rm -rf`, `gh pr merge --admin` (bypassa branch protection). Detecção: agente lê o `command` da Bash tool call e compara com a lista antes de invocar.
     - **(b) Comandos contra domínio externo pago:** `gh pr merge` em branch protegida sem auto-merge habilitado; qualquer comando contra `*.amazonaws.com`, `api.openai.com` (exceto leituras free-tier), `*.stripe.com`, `api.gemini.google.com`. Detecção: regex no `command`.
     - **(c) Instalação de pacote/recurso pago em allowlist textual:** `npm i <pkg-pago>`, `pip install <pkg-pago>`, `gh secret set` para serviço pago, `gcloud/aws ... run-instances|create-cluster`. Detecção: match em comandos conhecidos com custo.
     - **(d) Qualquer ação que dispare segredo:** já coberta pelo Princípio 7.
@@ -63,6 +63,7 @@ Use `/checkout-use <repo> <slot> [label]` para preparar slot — atualiza `main`
 Use `/checkout-status [repo]` para ver estado dos slots.
 Use `/sync` (ou `/checkout-sync-all <repo>`) para sincronizar slots com `origin/main` e podar branches mergeadas. `/sync` auto-detecta o pool a partir do cwd.
 Use `/commit-push-pr ["msg"]` para criar branch efêmera + commit + push + PR (substitui `/pr`). Argumentos opcionais — Claude infere mensagem/branch do contexto. Auto-merge é default (squash + delete-branch quando CI passa).
+Use `/force-merge [PR|branch] [--wait] [--admin]` para mergear PR aberto agora; auto-sync do pool após merge. Cobre o caso onde `gh pr merge --auto` não pegou (ex: repo sem `allow_auto_merge` ligado, branch protection exigindo reviews que não chegaram, ou repo solo onde você quer mergear sem esperar). Modos: soft (default — mergeia agora), `--wait` (aguarda CI até timeout 30min, override `--wait-timeout=Nm`), `--admin` (bypassa proteção; sempre confirma).
 Use `/techdebt [escopo]` para análise + plano de limpeza de tech debt.
 Use `/create-worktree <slug>` *(legado)* para git worktree isolado.
 Use `/delete-worktree [path|slug]` *(legado)*.
