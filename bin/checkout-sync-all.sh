@@ -88,9 +88,9 @@ for slot_path in "${SLOTS[@]}"; do
   # Regenerar realinha. Não comitamos — fica dirty pro próximo /commit-push-pr.
   # Ver docs/adr/0001-adopt-graphify-sunset-llm-wiki.md (consequência negativa #3).
   if [ -f "$slot_path/graphify-out/graph.json" ] && command -v graphify >/dev/null 2>&1; then
-    echo "  → regenerando graphify-out/ (post-pull)"
-    ( cd "$slot_path" && graphify . >/dev/null 2>&1 ) \
-      || echo "  ⚠ graphify . falhou no slot — verifique manualmente"
+    echo "  → atualizando graphify-out/ (post-pull, AST-only)"
+    ( cd "$slot_path" && graphify update . >/dev/null 2>&1 ) \
+      || echo "  ⚠ graphify update . falhou no slot — verifique manualmente"
   fi
 
   # Limpar branches locais que já foram mergeadas em origin/default

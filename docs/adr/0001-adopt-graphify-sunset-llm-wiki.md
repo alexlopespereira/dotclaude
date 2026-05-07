@@ -67,3 +67,15 @@ Em paralelo, surgiu o projeto open-source [Graphify](https://github.com/safisham
 - README oficial linhas 183–197: "Team setup" recommending versioning of `graphify-out/`.
 - Graphify hooks implementation: `graphify/hooks.py` — pula durante rebase/merge/cherry-pick; rebuild background-detached.
 - LLM provider default: `graphify/llm.py:3` — "default pipeline uses Claude Code subagents via skill.md".
+
+## Errata — 2026-05-07
+
+A primeira encarnação de `/graphify-init` (PR #9, commit `fb555b2`) e do `bin/graphify-init.sh` chamava `graphify .` como se fosse subcomando da CLI. Isso nunca funcionou: `graphify .` é um **slash command de agente AI** (`/graphify .` em Claude Code/Cursor/etc) servido pela skill `~/.claude/skills/graphify/SKILL.md` (instalada via `graphify install`) — não há subcomando `.` no binário shell. Mesmo bug existia em `bin/checkout-sync-all.sh:92` (regenerar grafo pós-pull no `/sync`).
+
+**Refatoração:**
+
+- **Build inicial saiu do shell script.** Voltou a ser responsabilidade do agente que invoca `/graphify-init`. O markdown do slash (`commands/graphify-init.md`) agora orquestra dois passos: (1) `Skill(graphify)` na cwd para o build inicial, zero-cost via subagents Claude Code (subscription); (2) `bin/graphify-init.sh` para os passos shell-puros (`graphify claude install`, `graphify hook install`, `.gitignore`/`.gitattributes`, commit local).
+- **`bin/graphify-init.sh` ganhou pre-flight check:** aborta se `graphify-out/graph.json` não existir (sinal de que o agente pulou o passo 1). Removidas as flags `--force`/`--skip-rebuild` do script (agora interpretadas no markdown do slash); mantida `--allow-dirty`.
+- **`bin/checkout-sync-all.sh:92`:** trocado `graphify .` por `graphify update .` (CLI subcomando documentado em `--help` — AST-only, zero LLM, headless). É o comando correto pra "realinhar pós-pull" sem precisar de agente AI rodando, e a condição de existência de `graphify-out/graph.json` (já presente no script) garante o pré-requisito do `update`.
+
+A intenção original do ADR — zero custo via subscription, knowledge graph versionado, hook AST-only — permanece intacta. O que mudou é o **mecanismo de invocação** do build inicial (e a documentação interna distinguindo CLI subcomando × slash command de agente).

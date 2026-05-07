@@ -185,9 +185,9 @@ cd /path/to/target-repo
 /graphify-init                    # build + claude install + git hooks + .gitignore/.gitattributes + commit
 ```
 
-What `/graphify-init` does in one command (script: `bin/graphify-init.sh`):
-- `graphify .` — initial build (uses Claude Code subagent, zero API cost).
-- `graphify claude install` — writes `.claude/settings.json` PreToolUse hook so the agent is told about the graph before any file scan.
+What `/graphify-init` does (two stages — see `commands/graphify-init.md`):
+- **Stage 1 (agent):** `/graphify .` skill — initial build via Claude Code subagents (zero API cost). The slash command is served by the installed skill (`~/.claude/skills/graphify/SKILL.md`); it is *not* a CLI subcommand.
+- **Stage 2 (script `bin/graphify-init.sh`):** `graphify claude install` — writes `.claude/settings.json` PreToolUse hook so the agent is told about the graph before any file scan.
 - `graphify hook install` — git `post-commit` + `post-checkout` hooks (AST-only, zero LLM).
 - `.gitignore` ← `manifest.json`, `cost.json`, `cache/` (per upstream README:185–190).
 - `.gitattributes` ← `graphify-out/graph.json merge=theirs` (so concurrent slots don't fight over a JSON blob).

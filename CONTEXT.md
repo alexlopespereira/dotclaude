@@ -32,11 +32,11 @@ Criar slash command `/graphify-init` (executa os 6 passos: build inicial, `graph
 `graphify claude install` mantém comportamento default: grava hook em `.claude/settings.json` **versionado no repo**, não no `~/.claude/settings.json` global. Coexiste sem conflito com hook global de secret-scan (`block-dangerous-git.sh`). Colaboradores que clonem o repo herdam o hook automaticamente. `/graphify-init` deve incluir o passo `graphify claude install` por repo.
 
 ### Decisão: estratégia de merge para `graphify-out/graph.json`
-`.gitattributes` com `graphify-out/graph.json merge=theirs` — em conflito, sempre preserva a versão de `origin/main`. Após `git pull` / `/sync`, rodar `graphify .` localmente pra regenerar refletindo o working tree do slot. Hook permanece no modo `post-commit` padrão (background, assíncrono, lag de 1 commit aceito). Fluxo: `/sync` → resolve conflitos via merge=theirs → `graphify .` → próximo commit traz `graph.json` re-alinhado.
+`.gitattributes` com `graphify-out/graph.json merge=theirs` — em conflito, sempre preserva a versão de `origin/main`. Após `git pull` / `/sync`, rodar `graphify update .` (CLI, AST-only, zero LLM) localmente pra regenerar refletindo o working tree do slot. Hook permanece no modo `post-commit` padrão (background, assíncrono, lag de 1 commit aceito). Fluxo: `/sync` → resolve conflitos via merge=theirs → `graphify update .` → próximo commit traz `graph.json` re-alinhado.
 
 ### Instalação Graphify (dois níveis)
 - **Nível máquina (1× por máquina):** `uv tool install graphifyy && graphify install` — instala CLI globalmente e registra slash command `/graphify` no Claude Code.
-- **Nível repo (por projeto):** `graphify .` para gerar artefatos + `graphify claude install` para gravar hook PreToolUse no `.claude/` local que faz o agente consultar `GRAPH_REPORT.md` antes de ler arquivos.
+- **Nível repo (por projeto):** `/graphify .` (slash command de agente AI; usa subagents Claude Code via subscription) para o build inicial + `graphify update .` (CLI, AST-only) para re-build incremental + `graphify claude install` (CLI) para gravar hook PreToolUse no `.claude/` local que faz o agente consultar `GRAPH_REPORT.md` antes de ler arquivos.
 
 ### `graphify hook install`
 Comando separado de `graphify claude install`. Instala **git hooks** (`post-commit` + `post-checkout`) no `.git/hooks/` local, que **reconstroem `graphify-out/` automaticamente** após cada commit ou checkout. Rebuild é **AST-only — sem chamada a LLM, sem custo de API**. É o mecanismo oficial pra manter `graphify-out/` fresco sem CI.
