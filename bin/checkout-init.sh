@@ -13,11 +13,12 @@ CHECKOUT_BASE="$HOME/Projects/checkouts"
 SLOTS=5
 NO_INSTALL=false
 COPY_ENV=false
+NO_GRAPHIFY=false
 SOURCE=""
 
 usage() {
   cat <<EOF
-Uso: $(basename "$0") <repo-url-ou-path> [--slots=N] [--no-install] [--copy-env]
+Uso: $(basename "$0") <repo-url-ou-path> [--slots=N] [--no-install] [--copy-env] [--no-graphify]
 
 Provisiona N checkouts paralelos em ~/Projects/checkouts/<repo>-{1..N}.
 
@@ -25,6 +26,7 @@ Opções:
   --slots=N      Número de checkouts (default: 5).
   --no-install   Pula instalação de dependências.
   --copy-env     Copia .env, .env.local, .env.development do source local.
+  --no-graphify  Pula instalação dos git hooks Graphify nos slots.
   -h, --help     Mostra esta mensagem.
 EOF
   exit 0
@@ -36,6 +38,7 @@ while [ $# -gt 0 ]; do
     --slots=*) SLOTS="${1#*=}" ;;
     --no-install) NO_INSTALL=true ;;
     --copy-env) COPY_ENV=true ;;
+    --no-graphify) NO_GRAPHIFY=true ;;
     -*) echo "Flag desconhecida: $1" >&2; exit 1 ;;
     *) [ -z "$SOURCE" ] && SOURCE="$1" || echo "Arg extra ignorado: $1" >&2 ;;
   esac
@@ -140,6 +143,27 @@ if [ "$NO_INSTALL" != "true" ]; then
     done
   else
     echo "→ Sem package manager Node detectado — pule install ou rode manualmente."
+  fi
+fi
+
+# Instalar Graphify hooks por slot (git hooks vivem em .git/hooks/, não viajam
+# com push — cada clone físico precisa instalar separadamente). Idempotente,
+# não exige grafo prévio. Skip silencioso se CLI ausente ou --no-graphify.
+# Ver docs/adr/0001-adopt-graphify-sunset-llm-wiki.md (decisão 5).
+if [ "$NO_GRAPHIFY" != "true" ]; then
+  if command -v graphify >/dev/null 2>&1; then
+    for i in $(seq 1 "$SLOTS"); do
+      SLOT_PATH="$CHECKOUT_BASE/${REPO_NAME}-${i}"
+      echo "→ Graphify hooks no slot $i"
+      ( cd "$SLOT_PATH" && graphify hook install >/dev/null 2>&1 ) \
+        || echo "  ⚠ graphify hook install falhou no slot $i (não-fatal)"
+      ( cd "$SLOT_PATH" && graphify claude install >/dev/null 2>&1 ) \
+        || echo "  ⚠ graphify claude install falhou no slot $i (não-fatal)"
+    done
+    echo "✓ Graphify hooks instalados em $SLOTS slot(s)"
+  else
+    echo "⚠ graphify CLI ausente — pulando hooks Graphify nos slots."
+    echo "   Instale 1× por máquina: uv tool install graphifyy && graphify install"
   fi
 fi
 

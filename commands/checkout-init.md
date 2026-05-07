@@ -1,7 +1,7 @@
 ---
 description: Provisiona 5 checkouts paralelos do mesmo repo (workflow Boris Cherny — trunk-based, sem branches por feature)
 allowed-tools: Bash(bash *), Bash(chmod *), Bash(test *), Bash(ls *), Read
-argument-hint: <repo-url-ou-path> [--slots=N] [--no-install] [--copy-env]
+argument-hint: <repo-url-ou-path> [--slots=N] [--no-install] [--copy-env] [--no-graphify]
 ---
 
 Provisiona N checkouts paralelos (default: **5**) em `~/Projects/checkouts/<repo>-{1..N}`. Modelo de trabalho: **trunk-based** — todos os slots ficam em `main`, você commita direto em `main` e sincroniza entre slots via `git pull`. **Não criamos branches por feature.**
@@ -21,7 +21,7 @@ Provisiona N checkouts paralelos (default: **5**) em `~/Projects/checkouts/<repo
    bash "$SCRIPT" $ARGUMENTS
    ```
 
-   O script faz: clones independentes (com `--reference-if-able` se a fonte for local), install de deps detectando o package manager, e grava metadata em `~/Projects/checkouts/.<repo>.pool`.
+   O script faz: clones independentes (com `--reference-if-able` se a fonte for local), install de deps detectando o package manager, instala git hooks Graphify (`graphify hook install` + `graphify claude install`) em cada slot quando a CLI está disponível, e grava metadata em `~/Projects/checkouts/.<repo>.pool`. Use `--no-graphify` pra pular a etapa Graphify.
 
 3. **Reportar** o que o script imprimiu e sugira:
    - `/checkout-launch <repo>` — abrir as 5 abas

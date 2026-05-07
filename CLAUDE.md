@@ -56,12 +56,13 @@ Modelo: 5 cópias físicas do repo (`~/Projects/checkouts/<repo>-{1..5}`), todas
 
 Ciclo: `main` local trabalha → `/commit-push-pr "feat: ..."` (branch efêmera + PR) → review/merge no GitHub → `/checkout-sync-all` (atualiza todos os slots, remove branches mergeadas).
 
-Use `/checkout-init <repo-url>` para provisionar 5 checkouts paralelos.
+Use `/checkout-init <repo-url>` para provisionar 5 checkouts paralelos. Quando `graphify` CLI está disponível, instala git hooks Graphify (`hook install` + `claude install`) em cada slot — pule com `--no-graphify`.
+Use `/graphify-init [--force] [--skip-rebuild]` para bootstrap Graphify (knowledge graph local) num repo: build inicial + hooks PreToolUse/post-commit + `.gitignore`/`.gitattributes` + commit local (sem push). Pré-requisito 1× por máquina: `uv tool install graphifyy && graphify install`. Decisão completa em `docs/adr/0001-adopt-graphify-sunset-llm-wiki.md` do dotclaude.
 Use `/morning <repo>` para rotina de manhã: sync + abrir abas (atalho de `/checkout-sync-all` + `/checkout-launch`).
 Use `/checkout-launch <repo>` para abrir 5 abas do terminal (1 janela), opcionalmente com `claude --name` por slot.
 Use `/checkout-use <repo> <slot> [label]` para preparar slot — atualiza `main`, **não cria branch**.
 Use `/checkout-status [repo]` para ver estado dos slots.
-Use `/sync` (ou `/checkout-sync-all <repo>`) para sincronizar slots com `origin/main` e podar branches mergeadas. `/sync` auto-detecta o pool a partir do cwd.
+Use `/sync` (ou `/checkout-sync-all <repo>`) para sincronizar slots com `origin/main` e podar branches mergeadas. `/sync` auto-detecta o pool a partir do cwd. Em slots com Graphify configurado, regenera `graphify-out/` localmente após o pull (compensa `merge=theirs` em `graph.json`).
 Use `/commit-push-pr ["msg"]` para criar branch efêmera + commit + push + PR (substitui `/pr`). Argumentos opcionais — Claude infere mensagem/branch do contexto. Auto-merge é default (squash + delete-branch quando CI passa).
 Use `/force-merge [PR|branch] [--wait] [--admin]` para mergear PR aberto agora; auto-sync do pool após merge. Cobre o caso onde `gh pr merge --auto` não pegou (ex: repo sem `allow_auto_merge` ligado, branch protection exigindo reviews que não chegaram, ou repo solo onde você quer mergear sem esperar). Modos: soft (default — mergeia agora), `--wait` (aguarda CI até timeout 30min, override `--wait-timeout=Nm`), `--admin` (bypassa proteção; sempre confirma).
 Use `/techdebt [escopo]` para análise + plano de limpeza de tech debt.
