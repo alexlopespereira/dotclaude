@@ -9,6 +9,8 @@ Operacional pra Claude agir em nome do usuário via browser, quando CLI/MCP/API 
 
 A precedência é definida no Princípio 12 — esta skill cobre só o "como" do nível (4) Playwright MCP. Não revisita o "quando".
 
+Pareia com `browser-inspect` (leitura runtime + execução efêmera de debug, sem mutação real no mundo). Esta skill (`browser-actions`) cobre **ações mutativas** (cliques de pagamento, submits, navegação destrutiva). Pra leitura de `console.log`, network requests, `evaluate` read-only ou synthetic clicks de debug → `~/.claude/skills/browser-inspect/SKILL.md`.
+
 ## Quando usar / quando NÃO usar
 
 **Use quando:**
