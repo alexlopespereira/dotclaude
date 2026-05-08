@@ -19,7 +19,13 @@ Para apenas planejar (sem executar/merge), use `/full-planning-cycle`.
 
 1. Leia `~/.claude/skills/react-feynman/SKILL.md`.
 2. Assuma o papel de **Agente Planejador**.
-3. Execute o ciclo ReAct completo para: $ARGUMENTS
+3. Execute o ciclo ReAct completo para: $ARGUMENTS.
+
+   **Paralelização do passo Action (Princípio 9).** Durante o ciclo ReAct, quando o passo *Action* precisa coletar contexto sobre múltiplas áreas antes de planejar, **dispare TODOS os subagents necessários no MESMO bloco de tool_calls** — rodam concorrentes e o wall-time fica ≈ ao do mais lento (não a soma). Critério: independência ≡ subagent B não consome output de A. Heurística de quando vale: tarefa do subagent >5k tokens ou >30s; abaixo disso o overhead de reabrir context não compensa.
+
+   - ✅ `Agent(Explore: módulo afetado pela feature)` + `Agent(Explore: testes/fixtures relacionados)` + `Agent(Explore: features análogas já implementadas)` — três investigações independentes, mesmo turn.
+   - ✅ `Agent(Plan: arquitetura A)` + `Agent(Plan: arquitetura B)` quando você quer pesar duas opções — pareceres independentes, mesmo turn.
+   - ❌ `Agent(Explore: módulo X)` → ler resultado → `Agent(Plan: baseado em X)` — segundo precisa do output do primeiro. Sequencial.
 4. Produza o plano usando o Template: Plano.
 5. Salve o plano em `.claude/plans/<slug>.md` (relativo ao cwd).
 6. **Detecção de custo recorrente (Princípio 11 cláusula (e)):** após salvar, execute o step shell determinístico abaixo para gerar a flag que será lida pela skill `prd` na Fase 4. **Heurística aplicada por shell, NÃO pelo agente** — evita circularidade ("agente decide se o que ele mesmo escreveu contém palavras-chave"):
@@ -38,6 +44,11 @@ Para apenas planejar (sem executar/merge), use `/full-planning-cycle`.
 1. Troque para o papel de **Agente Revisor Adversário**.
 2. Releia o plano com olhos frescos.
 3. Para cada decisão, tente refutar. Aplique Teste Feynman.
+
+   **Paralelização de refutações (Princípio 9).** O Revisor normalmente ataca o plano por várias frentes ortogonais — checar se uma SUPOSIÇÃO bate com o código real, procurar anti-patterns similares no histórico, stress-testar contra edge cases conhecidos, validar dependências externas. Dispare **todos os subagents adversários no MESMO turn** quando as investigações forem independentes — cada um devolve um finding que o Revisor consolida no parecer. Mesma regra de independência da Fase 1.
+
+   - ✅ `Agent(Explore: a SUPOSIÇÃO "API X é idempotente" bate com a implementação?)` + `Agent(Explore: histórico de bugs no módulo Y)` + `Agent(Explore: cobertura de teste do caso Z)` — três refutações ortogonais, mesmo turn.
+   - ❌ Esperar resposta de uma para decidir a próxima — anula o ganho.
 4. Produza o parecer usando o Template: Revisão Adversária.
 5. Adicione o parecer ao mesmo arquivo do plano, sob `---` separador.
 
