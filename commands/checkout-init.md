@@ -21,7 +21,7 @@ Provisiona N checkouts paralelos (default: **5**) em `~/Projects/checkouts/<repo
    bash "$SCRIPT" $ARGUMENTS
    ```
 
-   O script faz: clones independentes (com `--reference-if-able` se a fonte for local), install de deps detectando o package manager, instala git hooks Graphify (`graphify hook install` + `graphify claude install`) em cada slot quando a CLI está disponível, e grava metadata em `~/Projects/checkouts/.<repo>.pool`. Use `--no-graphify` pra pular a etapa Graphify.
+   O script faz: clones independentes (com `--reference-if-able` se a fonte for local), install de deps detectando o package manager, instala git hooks Graphify (`graphify hook install` em `.git/hooks/`, per-clone) **apenas se o repo já é Graphified em main** (presença de `graphify-out/graph.json` no slot 1), e grava metadata em `~/Projects/checkouts/.<repo>.pool`. Config versionada do Graphify (`CLAUDE.md`, `.claude/settings.json`) é responsabilidade de `/graphify-init` — `checkout-init` não toca em paths versionados (Errata 2026-05-08 do ADR 0001). Use `--no-graphify` pra pular a etapa de hooks.
 
 3. **Reportar** o que o script imprimiu e sugira:
    - `/checkout-launch <repo>` — abrir as 5 abas

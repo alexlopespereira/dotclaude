@@ -79,3 +79,17 @@ A primeira encarnação de `/graphify-init` (PR #9, commit `fb555b2`) e do `bin/
 - **`bin/checkout-sync-all.sh:92`:** trocado `graphify .` por `graphify update .` (CLI subcomando documentado em `--help` — AST-only, zero LLM, headless). É o comando correto pra "realinhar pós-pull" sem precisar de agente AI rodando, e a condição de existência de `graphify-out/graph.json` (já presente no script) garante o pré-requisito do `update`.
 
 A intenção original do ADR — zero custo via subscription, knowledge graph versionado, hook AST-only — permanece intacta. O que mudou é o **mecanismo de invocação** do build inicial (e a documentação interna distinguindo CLI subcomando × slash command de agente).
+
+## Errata — 2026-05-08
+
+A decisão 5 dizia "Estender `/checkout-init` para rodar `graphify hook install` + `graphify claude install` em cada um dos 5 slots Boris automaticamente". A parte sobre `graphify claude install` produziu um problema operacional repetido: rodar `claude install` em cada slot modifica `CLAUDE.md` e `.claude/settings.json` (arquivos **versionados** — decisão 6) sem commitar. Resultado: todos os N slots ficavam dirty contra `origin/main`, e `/sync` bloqueava silenciosamente até intervenção manual. Observado pela primeira vez no provisionamento de `assistente-aulas` (PR #14 daquele repo).
+
+**Refinamento — fronteira clara de responsabilidade:**
+
+- **`/graphify-init` é o único dono da config versionada.** O script já era idempotente: `graphify claude install` retorna no-op (`"already configured in CLAUDE.md"`) quando re-rodado, e `bin/graphify-init.sh` continua aplicando os passos shell-puros idempotentemente (`grep -qxF` em `.gitignore`/`.gitattributes`, `git diff --cached --quiet` antes de commit). Cobre tanto bootstrap inicial quanto retrofit de repos que tinham `graphify-out/` mas faltavam a config claude.
+- **`/checkout-init` cuida apenas dos hooks per-clone.** Hooks vivem em `.git/hooks/` (não viajam com push). `checkout-init.sh` agora chama **somente** `graphify hook install` em cada slot, e **somente** se o repo já é Graphified em main (gating: `graphify-out/graph.json` presente no slot 1 recém-clonado). A chamada `graphify claude install` foi removida.
+- **`/sync` (`checkout-sync-all.sh`) reinstala hooks pós-pull idempotentemente.** Cobre o caso "repo virou Graphified depois do pool ser criado": `/graphify-init` num slot único → `/commit-push-pr` → merge → `/sync` propaga `graphify-out/` aos N slots **e** ativa hooks per-clone. Sem ação manual.
+
+**Garantia de regressão:** novo teste `bin/tests/test_checkout_init_graphify_gating.sh` cobre 4 cenários (Graphified+CLI presente / não-Graphified / `--no-graphify` / CLI ausente) com `graphify` mockada via PATH. O teste valida que `claude install` **nunca** é invocado pelo `checkout-init` e que `hook install` só corre quando o gating positivo passa.
+
+A intenção original — config Graphify versionada e propagada para colaboradores via clone — segue intacta. O que mudou é **quem** materializa essa config: `/graphify-init` (entry-point único), não dois caminhos paralelos com semântica diferente.

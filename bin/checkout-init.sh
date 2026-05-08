@@ -146,19 +146,21 @@ if [ "$NO_INSTALL" != "true" ]; then
   fi
 fi
 
-# Instalar Graphify hooks por slot (git hooks vivem em .git/hooks/, não viajam
-# com push — cada clone físico precisa instalar separadamente). Idempotente,
-# não exige grafo prévio. Skip silencioso se CLI ausente ou --no-graphify.
-# Ver docs/adr/0001-adopt-graphify-sunset-llm-wiki.md (decisão 5).
-if [ "$NO_GRAPHIFY" != "true" ]; then
+# Instalar Graphify hooks por slot. Hooks vivem em .git/hooks/ (per-clone, não
+# viajam com push), então cada clone físico precisa instalar separadamente.
+# Gating: só roda se o repo é Graphified em main (graphify-out/graph.json
+# presente no slot 1 recém-clonado). Config versionada (CLAUDE.md +
+# .claude/settings.json) é responsabilidade de /graphify-init — checkout-init
+# nunca toca em paths versionados (Errata 2026-05-08 do ADR 0001).
+# Idempotente: re-rodar é no-op (CLI cuida).
+if [ "$NO_GRAPHIFY" != "true" ] \
+   && [ -f "$CHECKOUT_BASE/${REPO_NAME}-1/graphify-out/graph.json" ]; then
   if command -v graphify >/dev/null 2>&1; then
     for i in $(seq 1 "$SLOTS"); do
       SLOT_PATH="$CHECKOUT_BASE/${REPO_NAME}-${i}"
       echo "→ Graphify hooks no slot $i"
       ( cd "$SLOT_PATH" && graphify hook install >/dev/null 2>&1 ) \
         || echo "  ⚠ graphify hook install falhou no slot $i (não-fatal)"
-      ( cd "$SLOT_PATH" && graphify claude install >/dev/null 2>&1 ) \
-        || echo "  ⚠ graphify claude install falhou no slot $i (não-fatal)"
     done
     echo "✓ Graphify hooks instalados em $SLOTS slot(s)"
   else

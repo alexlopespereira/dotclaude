@@ -82,15 +82,21 @@ for slot_path in "${SLOTS[@]}"; do
     fi
   fi
 
-  # Regenerar grafo Graphify pós-pull. merge=theirs (.gitattributes) faz com que
-  # graph.json reflita origin/main após pull; se o working tree local tem código
-  # diferente (raro mas possível em fluxo Boris), o grafo está dessincronizado.
-  # Regenerar realinha. Não comitamos — fica dirty pro próximo /commit-push-pr.
-  # Ver docs/adr/0001-adopt-graphify-sunset-llm-wiki.md (consequência negativa #3).
+  # Pós-pull em repos Graphified:
+  #   1. Regenerar grafo (AST-only, zero LLM). merge=theirs em .gitattributes faz
+  #      graph.json refletir origin/main após pull; regenerar realinha working tree.
+  #   2. Reinstalar git hooks Graphify (idempotente). Cobre o caso "repo virou
+  #      Graphified depois do pool ser criado": /graphify-init num slot → PR
+  #      mergeado → /sync propaga graphify-out/ + ativa hooks per-clone.
+  # Não comitamos os mods do graph regenerado — ficam dirty pro próximo
+  # /commit-push-pr. Ver docs/adr/0001-adopt-graphify-sunset-llm-wiki.md
+  # (consequência negativa #3 + Errata 2026-05-08).
   if [ -f "$slot_path/graphify-out/graph.json" ] && command -v graphify >/dev/null 2>&1; then
     echo "  → atualizando graphify-out/ (post-pull, AST-only)"
     ( cd "$slot_path" && graphify update . >/dev/null 2>&1 ) \
       || echo "  ⚠ graphify update . falhou no slot — verifique manualmente"
+    ( cd "$slot_path" && graphify hook install >/dev/null 2>&1 ) \
+      || echo "  ⚠ graphify hook install falhou no slot — verifique manualmente"
   fi
 
   # Limpar branches locais que já foram mergeadas em origin/default
