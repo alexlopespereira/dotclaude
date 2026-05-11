@@ -37,6 +37,7 @@ Use `/plan` para produzir um plano completo com templates ReAct + Feynman. Supor
 Use `/adversarial-review` para gerar o parecer de revisão adversária.
 Use `/full-planning-cycle [--grill]` para executar planejamento + auto-revisão em sequência (para só quando aprovado; não executa).
 Use `/full-cycle` para o ciclo end-to-end: planejamento + revisão + prd.json + Ralph Adversarial (execução automática).
+Use `/full-cycle-simple` para features **simples** (escopo único, ≤5 arquivos, sem migration/dep nova/auth/custo): pula adversarial review (Fase 2) e reviewer Codex no Ralph (`--no-review`). Mantém Plan completo + gate E3 que escala pra `/full-cycle` se o plano disparar trigger de complexidade.
 Use `/adversarial-research` para deep research com 3 provedores (Gemini + Perplexity + OpenAI).
 Use `/research-status` para listar pesquisas.
 Use `/research-synthesize` para sintetizar pesquisa pendente.

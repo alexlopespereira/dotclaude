@@ -8,13 +8,16 @@ set -e
 # US-05 F5: arg parser. Aceita opcionalmente --parallel/--parallel=N antes do
 # argumento posicional max_iterations (compat com chamadas existentes que só
 # passam o número). N default vem de RALPH_PARALLEL_N (=4 quando ausente).
+# --no-review: pula a fase de revisão adversária (usado por /full-cycle-simple).
 PARALLEL_MODE=false
 PARALLEL_N="${RALPH_PARALLEL_N:-4}"
+SKIP_REVIEWER=false
 POSITIONAL=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --parallel)    PARALLEL_MODE=true; shift ;;
         --parallel=*)  PARALLEL_MODE=true; PARALLEL_N="${1#*=}"; shift ;;
+        --no-review)   SKIP_REVIEWER=true; shift ;;
         --) shift; while [ $# -gt 0 ]; do POSITIONAL+=("$1"); shift; done; break ;;
         *)             POSITIONAL+=("$1"); shift ;;
     esac
@@ -366,7 +369,7 @@ if [ "$REVIEWER_AGENT" = "claude" ]; then
 fi
 NEEDS_CODEX=false
 [ "$PRIMARY_AGENT"  = "codex" ] && [ -z "${RALPH_AGENT_BIN:-}" ]    && NEEDS_CODEX=true
-[ "$REVIEWER_AGENT" = "codex" ] && [ -z "${RALPH_REVIEWER_BIN:-}" ] && NEEDS_CODEX=true
+[ "$REVIEWER_AGENT" = "codex" ] && [ -z "${RALPH_REVIEWER_BIN:-}" ] && [ "$SKIP_REVIEWER" != "true" ] && NEEDS_CODEX=true
 if [ "$NEEDS_CODEX" = "true" ]; then
     if ! command -v codex >/dev/null 2>&1; then
         if [ "$PRIMARY_AGENT" = "codex" ] && [ -z "${RALPH_AGENT_BIN:-}" ]; then
@@ -396,7 +399,11 @@ echo "Branch:     $BRANCH_NAME"
 echo "Iterações:  max $MAX_ITERATIONS"
 echo "Rubrica:    $REVIEW_FILE"
 echo "Primary:    $PRIMARY_AGENT  (implementa)"
-echo "Reviewer:   $REVIEWER_AGENT $([ "$CODEX_UNAVAILABLE" = true ] && [ "$REVIEWER_AGENT" = "codex" ] && echo '(→ fallback claude)')"
+if [ "$SKIP_REVIEWER" = "true" ]; then
+    echo "Reviewer:   SKIPPED (--no-review)"
+else
+    echo "Reviewer:   $REVIEWER_AGENT $([ "$CODEX_UNAVAILABLE" = true ] && [ "$REVIEWER_AGENT" = "codex" ] && echo '(→ fallback claude)')"
+fi
 echo "=========================================="
 
 # ─── Retry tracker ──────────────────────────────────────────
@@ -533,7 +540,13 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
 
     # ── Fase B: Revisão adversária (Codex ou fallback) ──────
 
-    if [ -n "${RALPH_REVIEWER_BIN:-}" ]; then
+    if [ "$SKIP_REVIEWER" = "true" ]; then
+        REVIEWER="skipped"
+        REVIEW_RESULT=$(printf '%s\n%s\n' '(reviewer skipped via --no-review)' '## Verdict: MERGE')
+        echo ""
+        echo "[B] Reviewer SKIPPED — auto-MERGE (--no-review)"
+        echo "$(date -Iseconds) | REVIEW_SKIPPED | $STORY_ID | --no-review ativo" >> progress.txt
+    elif [ -n "${RALPH_REVIEWER_BIN:-}" ]; then
         # US-03 F3: substituto programável para o reviewer (e.g.,
         # tests/mocks/fake-codex.sh). Mock retorna texto contendo
         # "## Verdict: <X>" que parse_verdict reconhece.
@@ -840,8 +853,13 @@ handle_finished_worker() {
 
     local committed_at
     committed_at=$(date +%s)
-    enqueue_review "$PARALLEL_REVIEW_QUEUE" "$slot_basename" "$story_id" "$committed_at"
-    log_event "REVIEW_ENQUEUE" "$story_id" "slot=$slot_basename"
+    if [ "${SKIP_REVIEWER:-false}" = "true" ]; then
+        log_event "REVIEW_SKIPPED" "$story_id" "slot=$slot_basename — auto-MERGE via --no-review"
+        finalize_review "$slot_basename" "$story_id" "MERGE" "review-skipped" ""
+    else
+        enqueue_review "$PARALLEL_REVIEW_QUEUE" "$slot_basename" "$story_id" "$committed_at"
+        log_event "REVIEW_ENQUEUE" "$story_id" "slot=$slot_basename"
+    fi
 }
 
 # poll_review_tick — drainer for review-queue.txt with single-active
