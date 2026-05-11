@@ -17,6 +17,7 @@ set -euo pipefail
 
 MSG=""
 BRANCH_NAME=""
+BRANCH_EXPLICIT=false
 TYPE=""
 NO_PR=false
 DRAFT=false
@@ -25,7 +26,7 @@ MERGE_METHOD="squash"
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --branch=*) BRANCH_NAME="${1#*=}" ;;
+    --branch=*) BRANCH_NAME="${1#*=}"; BRANCH_EXPLICIT=true ;;
     --type=*) TYPE="${1#*=}" ;;
     --no-pr) NO_PR=true ;;
     --draft) DRAFT=true ;;
@@ -121,10 +122,18 @@ elif [ "$CURRENT" = "$DEFAULT" ] && [ "$DIRTY" = "true" ]; then
   git add -A
   git commit -m "$MSG"
 
-# CASO C: Já estamos em outra branch (legado) → apenas commitar e usar branch atual como nome
+# CASO C: Já estamos em outra branch (legado).
+#   - Se usuário passou --branch explícito: renomeia a branch atual para o nome pedido
+#     (override explícito tem precedência sobre comportamento legado).
+#   - Caso contrário: usa a branch atual como destino do PR.
 else
-  echo "→ Já em branch '$CURRENT' (não-default). Commitando e pushando essa branch."
-  BRANCH_NAME="$CURRENT"
+  if [ "$BRANCH_EXPLICIT" = "true" ]; then
+    echo "→ Já em branch '$CURRENT'; renomeando para '$BRANCH_NAME' (--branch explícito)."
+    git branch -m "$BRANCH_NAME"
+  else
+    echo "→ Já em branch '$CURRENT' (não-default). Commitando e pushando essa branch."
+    BRANCH_NAME="$CURRENT"
+  fi
   if [ "$DIRTY" = "true" ]; then
     git add -A
     git commit -m "$MSG"
