@@ -93,3 +93,25 @@ A decisão 5 dizia "Estender `/checkout-init` para rodar `graphify hook install`
 **Garantia de regressão:** novo teste `bin/tests/test_checkout_init_graphify_gating.sh` cobre 4 cenários (Graphified+CLI presente / não-Graphified / `--no-graphify` / CLI ausente) com `graphify` mockada via PATH. O teste valida que `claude install` **nunca** é invocado pelo `checkout-init` e que `hook install` só corre quando o gating positivo passa.
 
 A intenção original — config Graphify versionada e propagada para colaboradores via clone — segue intacta. O que mudou é **quem** materializa essa config: `/graphify-init` (entry-point único), não dois caminhos paralelos com semântica diferente.
+
+## Errata — 2026-05-12
+
+Observação operacional: após `/sync`, todos os 5 slots ficavam dirty em `graphify-out/{.graphify_root,GRAPH_REPORT.md,graph.html,graph.json}` com diff massivo (graph.json: +9.729 / −2.802 linhas no advisory-ia), e o próximo `/sync` pulava todos por causa do dirty-check de `checkout-sync-all.sh:43`. Diagnóstico inicial atribuiu o problema a não-determinismo do `graphify update .` — incorreto.
+
+**Causa raiz:** drift de versão da CLI graphify entre o momento em que os artefatos foram committados (PR #11 do advisory-ia: graphify 0.7.8) e a CLI local (0.7.10). A 0.7.10 mudou o extrator (267 nodes → 636 nodes no mesmo código), adicionou seção "Graph Freshness" ao `GRAPH_REPORT.md`, e ajustou o formato do título. `graphify update .` é determinístico para uma dada versão da CLI — o problema era que ninguém detectava o drift.
+
+**Agravado por contradição lógica em `checkout-sync-all.sh`:** o regen pós-pull (linha 96) deixa `graphify-out/` dirty por design (Errata 2026-05-07), mas o dirty-check no topo do loop (linha 43) pula slot quando vê dirty. Isso quebrava idempotência: sync N produz dirt → sync N+1 pula. A Mitigação #1 do ADR ("lock da versão do `graphifyy` em `pyproject.toml` por repo") nunca foi enforçada, então drift acontecia silenciosamente a cada `graphify install`.
+
+**Fix em três camadas:**
+
+- **L1 — Idempotência:** `bin/checkout-sync-all.sh` agora executa `git checkout -- graphify-out/` antes do dirty-check. O regen anterior é descartado (seguro: arquivos derivados, serão refeitos pós-pull). Dirty-check passa a ver só código de usuário. Sync vira realmente idempotente sem violar a regra "graphify-out/ é versionado".
+- **L2 — Detecção de drift:** novo helper compartilhado em `bin/lib/graphify_version.sh` (`_graphify_installed_version` via `uv tool list` com fallback `pip show graphifyy`; `_graphify_drift_check` compara versão local com `graphify-out/.graphify_version`). `/graphify-init` grava o arquivo durante bootstrap; `/sync` avisa quando há mismatch e sugere `/commit-push-pr 'chore: refresh graphify-out/'`. Warning não bloqueia — apenas informa.
+- **L3 — Refresh one-time por repo:** repos com artefatos pré-2026-05-12 precisam de um PR de refresh manual (`graphify update . && /commit-push-pr 'chore: refresh graphify-out/ (CLI 0.7.10)'`) pra alinhar committed = output da CLI atual. Sem isso, L2 emite warning permanentemente nesses repos até alguém fazer o refresh.
+
+**Garantia de regressão:** dois novos testes em `bin/tests/`. (a) `test_graphify_drift.sh` cobre 8 cenários unitários dos helpers (uv presente/ausente, pip fallback, drift detectado, versões iguais, arquivo ausente, arquivo vazio, indetectável). (b) `test_checkout_sync_idempotent.sh` cobre 6 cenários integração com git repo + remote real em tmpdir (slot limpo, slot dirty em graphify-out, slot dirty fora de graphify-out, sync 2× consecutivo, drift integrado, sem drift).
+
+**Por que não as alternativas óbvias:**
+
+- ~~`git update-index --skip-worktree graphify-out/*`~~ — local-only, perde mudanças remotas legítimas em `graph.json`, precisa repetir a cada reprovisionamento.
+- ~~Mover `graphify-out/` pro `.gitignore`~~ — viola Decision 3 do ADR (versionar é proposital — onboarding + hook PreToolUse precisa do `graph.json` em fresh clone).
+- ~~Investigar não-determinismo no `graphify update`~~ — não existe; é drift de versão.

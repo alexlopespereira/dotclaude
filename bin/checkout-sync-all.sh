@@ -8,6 +8,11 @@
 
 set -euo pipefail
 
+# Source helpers para detecção de versão graphify (drift check L2)
+SYNC_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+# shellcheck source=lib/graphify_version.sh
+. "$SYNC_LIB_DIR/graphify_version.sh"
+
 CHECKOUT_BASE="$HOME/Projects/checkouts"
 REPO="${1:-}"
 FORCE=false
@@ -40,6 +45,16 @@ for slot_path in "${SLOTS[@]}"; do
   name=$(basename "$slot_path")
   default=$(git -C "$slot_path" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
   branch=$(git -C "$slot_path" rev-parse --abbrev-ref HEAD)
+
+  # L1: descarta artefatos do regen pós-pull do /sync anterior antes do dirty-check.
+  # O regen (mais abaixo) deixa graphify-out/ dirty por design (ADR 0001 Errata
+  # 2026-05-07: "ficam dirty pro próximo /commit-push-pr"). Sem este descarte,
+  # o dirty-check seguinte pula o slot e /sync nunca é idempotente.
+  # Regen é refeito pós-pull — descartar aqui é seguro (arquivos derivados).
+  if [ -d "$slot_path/graphify-out" ]; then
+    git -C "$slot_path" checkout -- graphify-out/ 2>/dev/null || true
+  fi
+
   dirty=$(git -C "$slot_path" status --porcelain)
 
   echo ""
@@ -92,6 +107,10 @@ for slot_path in "${SLOTS[@]}"; do
   # /commit-push-pr. Ver docs/adr/0001-adopt-graphify-sunset-llm-wiki.md
   # (consequência negativa #3 + Errata 2026-05-08).
   if [ -f "$slot_path/graphify-out/graph.json" ] && command -v graphify >/dev/null 2>&1; then
+    # L2: avisar se versão da CLI difere da que gerou artefatos committados
+    # (silencioso quando .graphify_version ausente ou versões iguais).
+    _graphify_drift_check "$slot_path"
+
     echo "  → atualizando graphify-out/ (post-pull, AST-only)"
     ( cd "$slot_path" && graphify update . >/dev/null 2>&1 ) \
       || echo "  ⚠ graphify update . falhou no slot — verifique manualmente"

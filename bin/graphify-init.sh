@@ -18,6 +18,11 @@
 
 set -euo pipefail
 
+# Source helpers para detecção de versão graphify
+INIT_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+# shellcheck source=lib/graphify_version.sh
+. "$INIT_LIB_DIR/graphify_version.sh"
+
 ALLOW_DIRTY=false
 
 while [ $# -gt 0 ]; do
@@ -97,6 +102,16 @@ graphify claude install
 
 echo "→ graphify hook install"
 graphify hook install
+
+# Gravar versão da CLI em graphify-out/.graphify_version pra detecção de drift
+# em /sync (ADR 0001 Errata 2026-05-12). Idempotente: sobrescreve com versão atual.
+GRAPHIFY_VER=$(_graphify_installed_version)
+if [ -n "$GRAPHIFY_VER" ]; then
+  echo "$GRAPHIFY_VER" > graphify-out/.graphify_version
+  echo "→ graphify-out/.graphify_version = $GRAPHIFY_VER (drift sentinel)"
+else
+  echo "  ⚠ versão da CLI não detectável (uv/pip indisponíveis) — pulando .graphify_version"
+fi
 
 # .gitignore append (idempotente)
 echo "→ .gitignore: append regras Graphify (idempotente)"
