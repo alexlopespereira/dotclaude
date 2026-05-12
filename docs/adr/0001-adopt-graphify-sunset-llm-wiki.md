@@ -115,3 +115,21 @@ Observação operacional: após `/sync`, todos os 5 slots ficavam dirty em `grap
 - ~~`git update-index --skip-worktree graphify-out/*`~~ — local-only, perde mudanças remotas legítimas em `graph.json`, precisa repetir a cada reprovisionamento.
 - ~~Mover `graphify-out/` pro `.gitignore`~~ — viola Decision 3 do ADR (versionar é proposital — onboarding + hook PreToolUse precisa do `graph.json` em fresh clone).
 - ~~Investigar não-determinismo no `graphify update`~~ — não existe; é drift de versão.
+
+**Adendo (post-fix): aceitar dirt como design via instrução na CLAUDE.md.**
+
+Tentativa de L3 refresh (1 PR por repo) revelou causa adicional além do drift de CLI: o community detection do upstream graphify é **não-determinístico entre runs** mesmo com mesma CLI e mesmo código. Comparação direta após sync alinhar todos os slots a `origin/main`:
+
+- slot-1 `graph.json`: 636 nodes, mesmos labels/files/ids
+- slot-2 `graph.json`: 690 nodes, mesmos labels/files/ids — porém `"community": 5` onde slot-1 tinha `"community": 2` (cluster IDs reordenados)
+- diff: ~1100 linhas em `graph.json` puramente por reatribuição de communities
+
+Combinado com `.graphify_root` per-slot (`watch.py:140` grava caminho absoluto) e título de `GRAPH_REPORT.md` usando `basename(cwd)` (`watch.py:28-31`), os 4 arquivos `graphify-out/{.graphify_root,GRAPH_REPORT.md,graph.json,graph.html}` **nunca convergem entre slots Boris sem patch upstream**.
+
+**Decisão (opção B do plan `verifique-se-a-proposta-hashed-tome.md`):** aceitar dirt como design e instruir o agente Claude via subseção dedicada na `CLAUDE.md` ("Graphify: dirt em `graphify-out/` é design, não bug"). Em vez de propagar L1 (descarte de `graphify-out/`) por N scripts mutantes (whack-a-mole), o agente reconhece o padrão e aplica `git checkout -- graphify-out/` sob demanda quando um comando do `gh`/`git` falhar com "would be overwritten by checkout" citando esses paths. Também cobre comandos ad-hoc, não só scripts em `bin/`.
+
+Alternativas rejeitadas:
+
+- **Reverter Decision 3 (gitignorar `graphify-out/`)** — perde hook PreToolUse em fresh clone (depende de `graph.json` presente para alertar o agente).
+- **PR upstream pra clustering determinístico** — fix correto a longo prazo, mas dependência externa não-bloqueante; instrução cobre 100% dos casos hoje.
+- **L1 em todos os scripts mutantes** — sustenta-se mas é whack-a-mole; cada script novo precisaria do pattern. Instrução universal cobre também comandos ad-hoc fora de `bin/`.

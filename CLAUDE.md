@@ -76,6 +76,18 @@ Use `/e2e [fluxo]` para gerar/rodar testes E2E Playwright.
 Use `/browser-status` para listar cookies do perfil Chrome dedicado (read-only).
 Use `/browser-logout-all [--confirm]` para limpar todos os cookies do perfil Chrome dedicado (destrutivo, exige MCP encerrado).
 
+### Graphify: dirt em `graphify-out/` é design, não bug
+
+Em slots de repos Graphified, os arquivos `graphify-out/{.graphify_root, GRAPH_REPORT.md, graph.json, graph.html}` ficam dirty após qualquer commit ou branch switch — os hooks `post-commit`/`post-checkout` do graphify regeneram em background, e parte do output é estruturalmente per-slot (caminho absoluto em `.graphify_root`, `basename(cwd)` no título do `GRAPH_REPORT.md`) ou não-determinística entre runs (community IDs do clustering). **Isso é design conhecido — ADR 0001 Errata 2026-05-12.**
+
+Comportamento esperado:
+
+- **Não tratar como user work-in-progress.** São arquivos derivados.
+- **Não commitar a dirt isoladamente** — não tem valor semântico per-slot (vira ruído no diff do próximo PR).
+- **Não tentar `git stash`** — stash pop conflita quando outro slot atualizou os mesmos paths.
+- **Antes de comandos que fazem checkout interno** (`gh pr merge --delete-branch`, `git rebase`, `git switch <branch>`) em slot Graphified: descartar com `git checkout -- graphify-out/`. Pattern canônico em `bin/checkout-sync-all.sh:49-56`.
+- **Se um git/gh command falhar com `"would be overwritten by checkout"` citando `graphify-out/`:** descartar com `git checkout -- graphify-out/` e re-executar. Não stash, não commit.
+
 ## Testing (sempre ativo)
 
 TDD red-green-refactor obrigatório. Nunca implemente antes do teste.
