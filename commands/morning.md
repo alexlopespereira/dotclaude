@@ -6,8 +6,9 @@ argument-hint: <repo> [--names=A,B,C,D] [--claude] [--skip-permissions|--yolo] [
 
 Rotina diária de início de trabalho. Encadeia:
 
-1. `/checkout-sync-all <repo>` — puxa `origin/main` em todos os slots, remove branches mergeadas.
-2. `/checkout-launch <repo>` — abre 1 janela com N abas, opcionalmente com `claude --name` por slot.
+1. **Reflexões pendentes** — lê `~/.claude/cache/reflect/reminders.jsonl` (baselines do `/reflect`) e exibe `N baselines aguardando retro (mais antiga: D+X)` quando há entradas, lembrando de rodar `/reflect <pr> --retro` em PRs ≥ D+7.
+2. `/checkout-sync-all <repo>` — puxa `origin/main` em todos os slots, remove branches mergeadas.
+3. `/checkout-launch <repo>` — abre 1 janela com N abas, opcionalmente com `claude --name` por slot.
 
 Use `--no-sync` para pular o sync (ex: já fez de manhã, está só reabrindo).
 

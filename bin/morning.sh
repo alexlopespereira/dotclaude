@@ -33,6 +33,39 @@ ls -d "$CHECKOUT_BASE/${REPO}-"* >/dev/null 2>&1 || { echo "ERRO: pool '$REPO' n
 
 echo "═══ Bom dia. Iniciando rotina para o pool '$REPO' ═══"
 
+# Reflexões pendentes (/reflect — AC10/AC17) — informa baselines aguardando retro.
+show_reflect_reminders() {
+  local reminders="$HOME/.claude/cache/reflect/reminders.jsonl"
+  [ -f "$reminders" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  local now_epoch count oldest_days line created_at created_epoch age
+  now_epoch=$(date -u +%s)
+  count=0
+  oldest_days=0
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    created_at=$(jq -r '.created_at // empty' <<<"$line" 2>/dev/null) || continue
+    [ -z "$created_at" ] && continue
+    # Formato canônico do /reflect: 2026-05-18T03-15-16Z (dashes no time).
+    # Tenta BSD/macOS primeiro; cai para GNU convertendo dashes em colons.
+    if created_epoch=$(date -j -u -f '%Y-%m-%dT%H-%M-%SZ' "$created_at" +%s 2>/dev/null); then
+      :
+    else
+      local iso="${created_at:0:10}T${created_at:11:2}:${created_at:14:2}:${created_at:17:2}Z"
+      created_epoch=$(date -u -d "$iso" +%s 2>/dev/null) || continue
+    fi
+    age=$(( (now_epoch - created_epoch) / 86400 ))
+    count=$((count + 1))
+    [ "$age" -gt "$oldest_days" ] && oldest_days="$age"
+  done < "$reminders"
+  if [ "$count" -gt 0 ]; then
+    echo ""
+    echo "→ Reflexões pendentes: $count baseline(s) aguardando retro (mais antiga: D+$oldest_days)"
+    echo "  Rode /reflect <pr-number> --retro nos PRs com idade ≥ 7 dias."
+  fi
+}
+show_reflect_reminders
+
 if [ "$NO_SYNC" != "true" ]; then
   echo ""
   echo "→ Etapa 1/2: sincronizando slots com origin/main"

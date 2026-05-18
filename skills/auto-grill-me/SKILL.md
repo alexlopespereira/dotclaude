@@ -62,4 +62,8 @@ Append por decisão (Tipo 1/2/3) em `~/.claude/cache/auto-grill/<basename-cwd>-d
 
 ## Gotchas
 
-(Preencher após primeiro uso real. DoD Categoria 1 / Tarefa 2 exige "erros reais observados em uso, não inventados".)
+**Observados na primeira sessão real (2026-05-17, dotclaude, design do `/reflect`):**
+
+1. **Sessão pode encerrar sem nenhuma pergunta.** Quando todas as decisões da árvore caem em score < 60 (Tipo 2/3), o agente não interrompe — entrega plano direto. Pode surpreender usuário que invocou esperando ser entrevistado. Comportamento correto pela rubrica, mas vale **anunciar no início da sessão** ("classifiquei N decisões previstas; M vão pra pergunta; resto vira assume + footnote") para calibrar expectativa.
+
+2. **Cluster de decisões score 53–60 = sinal de calibragem.** Em sessões reais é comum 2–3 decisões caírem exatamente no limite superior do Tipo 3 (perto de 60). São candidatos a força-Tipo-1 manual OU sinal de que o threshold 60 está alto demais para o domínio. Recomendação da rubrica (Sprint 3): revisar mensalmente `decisions.jsonl`; se ≥30% das decisões ficam na faixa 53–60, baixar threshold superior de 60 para 55. Antes desse volume, não recalibrar — pode ser variância normal.

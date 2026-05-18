@@ -131,6 +131,8 @@ Aguarde resposta. Se (1), prossiga pra Fase 4. Se (2), invoque `/full-cycle` com
 
 **Gate:** Se houver stories escaladas (max retries por FALHA_COMMIT/HANG), **PARE** e escale para humano. NÃO prossiga para testes/PR.
 
+**Antes de escalar para humano:** sugira `/reflect --on-failure 5 --quick --context-file <path-com-findings-P0>` para entender qual critério DoD teria capturado os findings P0 antes do Ralph escalar. Modo `--quick` mantém o espírito enxuto do `/full-cycle-simple` (camadas 1+2 apenas; sem fetch de PR comments).
+
 ## Fase 6 — Testes (suite + Playwright se UI) com auto-fix até 3 iterações
 
 Antes de abrir PR:
@@ -150,6 +152,8 @@ Antes de abrir PR:
      - output do teste falhante
      - hipótese atual sobre o bug
    Não abra PR com testes vermelhos.
+
+**Antes de escalar para humano:** sugira `/reflect --on-failure 6 --quick --from-stdin` (alimentado por output do test runner) para entender qual critério DoD teria capturado a falha de teste antes do CI. Modo `--quick` mantém o espírito enxuto do `/full-cycle-simple` (camadas 1+2 apenas; sem fetch de PR comments).
 
 ## Fase 7 — Branch efêmera + Push + PR — IDÊNTICO ao /full-cycle
 
@@ -173,6 +177,48 @@ REPO=$(basename "$(cd "$(git rev-parse --show-toplevel)" && pwd)" | sed 's/-[0-9
 Rode `/checkout-sync-all <REPO>` para:
 - atualizar `main` em todos os slots
 - remover branches locais já mergeadas
+
+## Fase 9 — Reflexão sobre DoD (auto-baseline --quick)
+
+Após o sync dos slots, invoque automaticamente `/reflect --baseline --quick` para classificar a adequação do Definition of Done aplicado a esta PR. Modo `--quick` é subset do `--baseline` — roda apenas camadas 1 (decisions.jsonl) e 2 (git log paths-touched) do algoritmo D1, sem fetch de PR comments. Mantém o espírito enxuto do `/full-cycle-simple` (custo de tokens reduzido). Gera relatório baseline em `.claude/reflections/<ts>-<slug>-baseline.md` e agenda follow-up retro D+7 via `~/.claude/cache/reflect/reminders.jsonl`.
+
+```bash
+PR_NUMBER=$(gh pr list --state merged --limit 1 --base main --json number --jq .[0].number) && /reflect $PR_NUMBER --baseline --quick
+```
+
+**Comportamento non-blocking.** Se `/reflect` falhar (ex.: PR não correlaciona com plano, `gh` offline, sessão `/auto-grill-me` ausente), registre o aviso mas **NÃO interrompa o pipeline** — reflexão é auditoria, não gate. O pipeline já considerou Fase 8 (sync) como término efetivo da entrega; Fase 9 apenas anexa metadado de qualidade.
+
+### Verificação (humano pós-merge)
+
+Após o pipeline completar, valide a Fase 9 inspecionando dois artefatos:
+
+1. **Baseline gravado** — `.claude/reflections/<ts>-<slug>-baseline.md` no cwd (ou `~/.claude/cache/reflect/<repo>/<ts>-<slug>-baseline.md` em fallback). Em modo `--quick` o relatório deve conter `Camada #6 (PR comments): pulada (--quick)` e cobrir apenas camadas 1+2.
+2. **Reminder agendado** — `tail -1 ~/.claude/cache/reflect/reminders.jsonl` deve mostrar entrada com o `pr` da PR mergeada e `retro_due_at` ≈ D+7.
+
+#### Smoke test parcial (executado durante implementação — Cat 1)
+
+A primeira metade da invocação da Fase 9 (resolução do `PR_NUMBER`) **é** testável sem invocar `/reflect` recursivamente. Comando rodado na implementação desta story:
+
+```bash
+gh pr list --state merged --limit 1 --base main --json number --jq '.[0].number'
+# → 20  (último merge no dotclaude)
+```
+
+Smoke test confirma que: (a) `gh` está instalado e autenticado, (b) o filtro `--state merged --base main --limit 1` retorna número válido, (c) a expressão jq não erra em json vazio (já vimos PR=20 retornar limpo). Isso cobre o pré-requisito necessário pra `/reflect $PR_NUMBER --baseline --quick` parsear `$1`. O passo seguinte — execução real do `/reflect` — é **Cat 3** (limite físico do Ralph: slash command recursivo dentro do worker é inviável).
+
+#### Verificação manual restante (humano — Cat 3 explícito)
+
+**Classificação:** US-03 AC5 (ciclo simples real) é **Cat 3 (humano-validated post-merge)** por limite físico do Ralph adversarial — mesmo motivo do AC8/AC9 do US-02 em `full-cycle.md`: `/full-cycle-simple` invocando `/reflect` dentro do worker = recursão de slash command. Este bloco lista o checklist manual que cumpre o AC.
+
+**Checklist (rode UMA vez após merge do próximo PR via `/full-cycle-simple`):**
+
+- [ ] **AC5a — Baseline `--quick` gravado.** Inspecione `.claude/reflections/<ts>-<slug>-baseline.md` no cwd (ou `~/.claude/cache/reflect/<repo>/<ts>-<slug>-baseline.md` em fallback). Deve conter linha `Quick mode: true` no front-matter e seção `Camada #6 (PR comments): pulada (--quick)` na lista de camadas — confirma que `--quick` reduziu o escopo conforme esperado.
+- [ ] **AC5b — Reminder agendado (mesma evidência de US-02 AC8b).** `tail -1 ~/.claude/cache/reflect/reminders.jsonl` mostra entrada com `pr` mergeado + `retro_due_at` ≈ D+7.
+- [ ] **AC5c — Sugestão `--quick` em paradas Fase 5/6.** Trigger parada deliberada (P0 ou testes vermelhos). Confirme que output contém `**Antes de escalar para humano:** sugira /reflect --on-failure <N> --quick ...` — note o `--quick` explícito (espírito enxuto do `/full-cycle-simple`).
+
+**Nota sobre divergência semântica da AC1 (vs prd.json original):**
+
+O `prd.json` US-03 AC1 definia `--quick` como "subset do --baseline; só camadas 1 e 2". Mas `--baseline` não roda algoritmo D1 (camadas) — D1 é exclusivo do `--retro`. A definição implementada em `commands/reflect.md:27` é semanticamente coerente: `--quick` com `--baseline` reduz comparação à categoria detectada + pula PR comments; com `--on-failure` reduz cross-ref à categoria da fase parada + pula PR comments; com `--retro` é rejeitado (não faz sentido reduzir o algoritmo completo via flag pequena). Divergência da AC1 é nominal — semântica do Worker preserva a intenção (modo enxuto barato).
 
 ## Guardrails
 

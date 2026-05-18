@@ -57,6 +57,7 @@ Para apenas planejar (sem executar/merge), use `/full-planning-cycle`.
 **Se REPROVADO:**
 - Destaque os 3 pontos mais críticos.
 - **PARE AQUI** — escale para o humano. NÃO prossiga para PRD/Ralph/PR.
+- **Antes de escalar para humano:** sugira `/reflect --on-failure 3 --context-file <path-do-parecer>` para entender qual critério DoD teria evitado a reprovação.
 
 **Se APROVADO COM RESSALVAS:**
 - Liste as ressalvas bloqueantes (severidade Crítica/Alta) — recomendar correção durante implementação como ACs adicionais.
@@ -97,6 +98,8 @@ Para apenas planejar (sem executar/merge), use `/full-planning-cycle`.
 
 **Gate:** Se houver stories escaladas ou findings P0 não resolvidos, **PARE** e escale para humano. NÃO prossiga para PR.
 
+**Antes de escalar para humano:** sugira `/reflect --on-failure 5 --context-file <path-com-findings-P0>` para entender qual critério DoD teria capturado os findings P0 antes do Ralph escalar.
+
 ## Fase 6 — Testes finais
 
 Antes de abrir PR, rode a suíte de testes do projeto no cwd atual:
@@ -105,6 +108,8 @@ Antes de abrir PR, rode a suíte de testes do projeto no cwd atual:
 ```
 
 Se falhar, **PARE** e escale — não abra PR com testes vermelhos.
+
+**Antes de escalar para humano:** sugira `/reflect --on-failure 6 --from-stdin` (alimentado por output do test runner) para entender qual critério DoD teria capturado a falha de teste antes do CI.
 
 ## Fase 7 — Branch efêmera + Push + PR
 
@@ -127,6 +132,32 @@ REPO=$(basename "$(cd "$(git rev-parse --show-toplevel)" && pwd)" | sed 's/-[0-9
 Rode `/checkout-sync-all <REPO>` para:
 - atualizar `main` em todos os slots
 - remover branches locais já mergeadas
+
+## Fase 9 — Reflexão sobre DoD (auto-baseline)
+
+Após o sync dos slots, invoque automaticamente `/reflect --baseline` para classificar a adequação do Definition of Done aplicado a esta PR. Gera relatório baseline em `.claude/reflections/<ts>-<slug>-baseline.md` e agenda follow-up retro D+7 via `~/.claude/cache/reflect/reminders.jsonl`.
+
+```bash
+PR_NUMBER=$(gh pr list --state merged --limit 1 --base main --json number --jq .[0].number) && /reflect $PR_NUMBER --baseline
+```
+
+**Comportamento non-blocking.** Se `/reflect` falhar (ex.: PR não correlaciona com plano, `gh` offline, sessão `/auto-grill-me` ausente), registre o aviso mas **NÃO interrompa o pipeline** — reflexão é auditoria, não gate. O pipeline já considerou Fase 8 (sync) como término efetivo da entrega; Fase 9 apenas anexa metadado de qualidade.
+
+### Verificação (humano pós-merge — Cat 3 explícito)
+
+**Classificação:** AC8 e AC9 da US-02 são **Cat 3 (humano-validated post-merge)** por limite físico do Ralph adversarial — slash command recursivo dentro do worker é inviável. A automação Cat 1/2 esbarraria em loop infinito (`/full-cycle` invocando `/reflect` invocando `/full-cycle`...). Este bloco lista o checklist manual que substitui a evidência empírica esperada pelo Codex.
+
+**Checklist (rode UMA vez após merge do próximo PR via `/full-cycle`):**
+
+- [ ] **AC8 — Baseline gravado.** Inspecione `.claude/reflections/<ts>-<slug>-baseline.md` no cwd (ou `~/.claude/cache/reflect/<repo>/<ts>-<slug>-baseline.md` em fallback). Verifique que contém: cabeçalho `Plan match: <marker|slug-exact|fuzzy|none>`, `Session correlated: <true|false>`, seção `CI checks` listando pelo menos 1 check (ou `ci_checks: nenhum`), e seção `Aviso retrospectiva` com data D+7 ≈ correta.
+- [ ] **AC8b — Reminder agendado.** `tail -1 ~/.claude/cache/reflect/reminders.jsonl` deve mostrar entrada JSON com `pr` da PR mergeada, `repo` correto e `retro_due_at` no formato ISO-8601 ≈ D+7.
+- [ ] **AC9 — Sugestão `/reflect --on-failure N` em Fases 3/5/6.** Trigger UMA parada deliberada (escolha um cenário):
+  - Fase 3: introduza erro deliberado no plano que dispare REPROVADO no adversarial-review.
+  - Fase 5: simule finding P0 no Codex review da primeira iteração Ralph.
+  - Fase 6: deixe um teste falhar 3× (loop auto-fix esgotado).
+- [ ] **AC9b — Output contém markdown explícito.** Confirme que `/full-cycle` imprime `**Antes de escalar para humano:** sugira /reflect --on-failure <N> ...` no momento da parada — não apenas no arquivo, mas no output da sessão.
+
+Após preencher os 4 checks, atualize `prd.json` (ou a próxima `/reflect --retro` automática) marcando US-02 como `passes: true`.
 
 ## Guardrails
 
