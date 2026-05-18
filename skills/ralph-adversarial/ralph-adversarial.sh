@@ -609,7 +609,7 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
         MERGE)
             echo "  Story $STORY_ID APROVADA"
             jq --arg id "$STORY_ID" '(.userStories[] | select(.id == $id)).passes = true' prd.json > prd.tmp && mv prd.tmp prd.json
-            git add prd.json
+            git add prd.json 2>/dev/null || true  # tolera prd.json em .gitignore (dotclaude, etc.)
             git commit -m "[$STORY_ID] Marcada como passes:true após review" --allow-empty
             set_retry_count "$STORY_ID" 0
             ;;
