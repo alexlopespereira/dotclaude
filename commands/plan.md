@@ -21,3 +21,5 @@ Você é o **Agente Planejador**. Use a skill `react-feynman` para produzir um p
 **IMPORTANTE:** Este plano será revisado por um Agente Adversário. Antecipe objeções.
 
 **Dica:** se o usuário pediu `/plan --grill` ou indicou que quer "ser grilled", inverta a ordem: invoque `grill-me` primeiro para alinhamento profundo, depois produza o plano com base nas respostas.
+
+**Dica:** se o usuário pediu `/plan --auto-grill` (ou variações: "grille com classificação", "plano silencioso"), delegue para a skill `auto-grill-me` — ela classifica cada pergunta por rubrica quantitativa antes de interromper, assume silenciosamente decisões de baixo score, registra footnote para score médio, e só pergunta em score alto. Ela mesma produz o plano em `.claude/plans/` no formato ReAct+Feynman, com DoD por artefato. Não execute o ciclo padrão depois — o plano da skill é o output final.
