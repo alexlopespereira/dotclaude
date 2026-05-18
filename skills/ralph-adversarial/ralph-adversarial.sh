@@ -615,7 +615,26 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
             ;;
         BLOCK|REQUEST_CHANGES)
             echo "  Story $STORY_ID REJEITADA — feedback salvo em progress.txt"
-            echo "$(date -Iseconds) | REVIEW_$VERDICT | $STORY_ID | $(echo "$REVIEW_RESULT" | grep -o '"evidence":[^,]*' | head -3)" >> progress.txt
+            # Extrai evidence dos findings reais. Path preferido: jq sobre JSON
+            # estruturado (Codex <0.120). Fallback: regex sobre markdown.
+            # Em AMBOS aplica filtro contra o exemplo didático da rubrica
+            # (CODE_REVIEW.md:56 — "user_id concatenado em SQL sem parâmetro")
+            # que o Codex frequentemente regurgita literalmente, tanto na
+            # array findings JSON quanto citado em prosa. Sem o filtro,
+            # poluía progress.txt em todas iterações com finding inexistente.
+            EVIDENCES=$(echo "$REVIEW_RESULT" \
+                | jq -r '.findings[]?.evidence // empty' 2>/dev/null \
+                | grep -v 'user_id concatenado em SQL' \
+                | head -3 \
+                | tr '\n' '|' | sed 's/|$//')
+            if [ -z "$EVIDENCES" ]; then
+                EVIDENCES=$(echo "$REVIEW_RESULT" \
+                    | grep -o '"evidence":[^,]*' \
+                    | grep -v 'user_id concatenado em SQL' \
+                    | head -3 \
+                    | tr '\n' '|' | sed 's/|$//')
+            fi
+            echo "$(date -Iseconds) | REVIEW_$VERDICT | $STORY_ID | $EVIDENCES" >> progress.txt
             set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
             ;;
         *)
