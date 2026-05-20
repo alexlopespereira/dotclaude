@@ -80,6 +80,29 @@ Para apenas planejar (sem executar/merge), use `/full-planning-cycle`.
    Se exit != 0: **PARE** com erro claro mostrando qual story/campo falhou. Se exit 0: prossiga para Fase 5.
 4. **Gate de custo financeiro (Princípio 11 cláusula (e)):** se `prd.json` tem `hasFinancialCost: true`, pause e pergunte ao humano "Plano envolve custo recorrente. Confirma execução do Ralph? (y/N)" antes de prosseguir.
 
+## Fase 4.5 — Auto-invoke `/test-spec` (TDD bake-in)
+
+Antes da Fase 5 Ralph, gere test specs táticos derivados das DoDs referenciadas no plano. O Ralph implementer lê o plano com a seção `## Test Specs` populada — TDD vira parte do contexto fresco de cada iteração, não disciplina manual.
+
+1. **Resolva o plano alvo:**
+   ```bash
+   PLAN_PATH=$(jq -r '.sourcePlan // empty' prd.json)
+   test -n "$PLAN_PATH" && test -f "$PLAN_PATH" || {
+     echo "AVISO: prd.json não declara sourcePlan ou plano não existe — pulando /test-spec." >&2
+     # NÃO aborta o pipeline — Fase 4.5 é best-effort (specs são aid, não gate)
+   }
+   ```
+
+2. **Execute `/test-spec <plan-path>`** (modo plan path da skill `testing` — anexa seção `## Test Specs` no plano com specs para cada `tarefa-N`/`cat-N-base` referenciado como artefato).
+
+3. **Comportamento non-blocking.** Se `/test-spec` falhar (DOD.md ausente, TEST-PATTERNS.md ainda não criado em repo virgem, regex parser quebrado), registre o aviso mas **NÃO interrompa o pipeline** — specs são input de qualidade, não pré-requisito hard. Erro vira finding na Fase 9 reflect.
+
+4. **Após sucesso**, anuncie quantos blocos de spec foram anexados (`grep -c '^### Specs para' "$PLAN_PATH"`) — visibilidade no log do `/full-cycle`.
+
+5. **Propague para Fase 5:** o Ralph lê `$PLAN_PATH` no contexto fresco de cada iteração via `sourcePlan` do prd.json. Specs anexas viajam automaticamente — nenhuma instrumentação extra no Ralph.
+
+**Skip condition:** se o plano já tem seção `## Test Specs` populada (idempotência — re-rodar `/full-cycle` sobre o mesmo plano não duplica), pular sem regenerar. Use `--regenerate` em `/test-spec` se quiser forçar refresh.
+
 ## Fase 5 — Execução Ralph Adversarial
 
 1. Leia `~/.claude/skills/ralph-adversarial/SKILL.md`.
