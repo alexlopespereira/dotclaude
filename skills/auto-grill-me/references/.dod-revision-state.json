@@ -1,7 +1,7 @@
 {
   "cat-1-base": {
     "bullets_sha256": "e216d899d6fcf61dcdef936b949d74194f509366d0dc2be0be543dae0da56d48",
-    "last_seen_iso": "2026-05-18T12:52:42Z",
+    "last_seen_iso": "2026-05-20T02:24:09Z",
     "slug": "dod-base-categoria-1",
     "title_current": "DoD-base — Categoria 1"
   },
@@ -49,7 +49,7 @@
   },
   "tarefa-1": {
     "bullets_sha256": "8306993c47d305099995730ed0004c66c001288f2b3beafb4ccf290ce5c77cef",
-    "last_seen_iso": "2026-05-18T12:52:42Z",
+    "last_seen_iso": "2026-05-20T02:24:09Z",
     "slug": "tarefa-1-slash-command-novo-refactor",
     "title_current": "Tarefa 1 — Slash command novo / refactor"
   },
@@ -115,7 +115,7 @@
   },
   "tarefa-2": {
     "bullets_sha256": "a773c0370038218139735b5e64297661f9c3288bdac780b4fc43ec70ca0ed33c",
-    "last_seen_iso": "2026-05-18T12:52:42Z",
+    "last_seen_iso": "2026-05-20T02:24:09Z",
     "slug": "tarefa-2-skill-nova",
     "title_current": "Tarefa 2 — Skill nova"
   },

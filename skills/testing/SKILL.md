@@ -1,6 +1,6 @@
 ---
 name: testing
-description: Princípios e procedimentos de teste para agentic coding. Cobre TDD red-green-refactor, qualidade de asserções, Playwright token-efficient (CLI > MCP), e Definition of Done. Use quando implementar features, corrigir bugs, escrever testes, ou antes de qualquer commit.
+description: Princípios de teste para agentic coding — TDD red-green-refactor, asserções fortes, Playwright token-efficient (CLI > MCP), Definition of Done, lifecycle de test specs derivadas de DoDs (TEST-PATTERNS.md). Use ao implementar features, corrigir bugs, escrever testes, gerar tactical test spec, test spec por tarefa, TDD a partir de DoD, ou antes de qualquer commit.
 ---
 
 # Skill: Testing para Agentic Coding
@@ -102,6 +102,76 @@ Nunca logar via UI em cada teste. Use projeto `setup` que salva
 - [ ] Snapshot updates revisados linha a linha com justificativa.
 - [ ] Verificação manual documentada (comando, URL ou screenshot).
 - [ ] Bug fix referencia issue ID no teste de regressão.
+
+## Lifecycle de Test Specs
+
+Test specs Gherkin-lite vivem em `skills/testing/references/TEST-PATTERNS.md`
+(mirror estrutural de `skills/auto-grill-me/references/DOD.md`). Cada heading
+`### Tarefa N` / `### DoD-base — Categoria N` lá corresponde 1:1 ao heading
+homônimo na DOD.md, com contador `(usos: X · desde rev: Y)` paralelo.
+Geração via `/test-spec [tarefa-N | cat-N-base | <plan-path>]`.
+
+### Política de granularidade (não-negociável)
+
+- **1 spec = 1 asserção atômica.** Bullets de DoD com N asserções viram N
+  specs com sufixo `-A/-B/-C` (`spec-3-A`, `spec-3-B`).
+- **Bullets puramente declarativos (review humano)** — ex.: "executado em
+  sessão real", "revisado por outra sessão" — recebem prefixo
+  `[CAT3-MANUAL]` na descrição e **geram 0 specs automatizáveis**. Compatível
+  com a sintaxe rígida da skill `prd` (Ralph filtra `[CAT3-MANUAL]` antes do
+  prompt para não inflacionar prd.json com critérios não-binários).
+- **Heading literal idêntico à DOD.md**: `### Tarefa N — <título> (usos: X · desde rev: Y)`
+  ou `### DoD-base — Categoria N (usos: X · desde rev: Y)`. **Nunca** prefixe
+  `Test specs para` — o regex parser do `bin/test-spec-reset-rev.sh` é literal
+  `^### Tarefa` / `^### DoD-base`.
+- **Ids referenciados em plano mas ausentes em DOD.md** (caso real iter US-01):
+  Ramo-3 do `/test-spec` tolera com `[CAT3-MANUAL] (tarefa-N): ausente no
+  DOD.md em HEAD` — não aborta. Lifecycle DOD↔plano descasa quando plano
+  sugere ids novos antes de a DoD versionar.
+
+### Scripts utilitários
+
+- `bin/test-spec-reset-rev.sh <spec_id>` — zera `desde rev` do heading +
+  atualiza `last_seen_iso` no snapshot.
+- `bin/test-spec-reset-rev.sh --show [--sort=desde-rev|usos|id]` — tabela
+  legível para revisão.
+- `bin/test-spec-reset-rev.sh --gc` — remove entries órfãs do snapshot.
+- `bin/test-spec-migrate-add-counters.sh` — one-shot idempotente para
+  bootstrap: adiciona `(usos: 0 · desde rev: 0)` a 28 headings e cria
+  `.test-spec-revision-state.json` (sha256 do bullet block + metadata).
+  Ambos clones literais de `dod-*.sh` (apenas `TARGET_FILE`/`SNAPSHOT_FILE`
+  diferem) — decisão deliberada (footnote #6 do plano).
+
+### Snapshot
+
+`references/.test-spec-revision-state.json` — schema idêntico ao
+`.dod-revision-state.json`: chaves `dod_id` (`tarefa-N` / `cat-N-base`),
+valores `{bullets_sha256, slug, title_current, last_seen_iso}`. Hash do
+bullet block é a única fonte de verdade para "este bloco mudou desde a
+última revisão" — reset detectado naturalmente via mismatch quando o usuário
+roda `--show`/`<spec_id>`.
+
+## Gotchas
+
+- **Drift entre DOD.md e TEST-PATTERNS.md (mirror lag).** TEST-PATTERNS.md é
+  mirror estrutural manual de DOD.md, não regenerado automaticamente: quando
+  a DOD.md ganha um `### Tarefa N` novo, TEST-PATTERNS.md fica defasado até a
+  próxima rodada de `/test-spec`. Mitigação: convenção de revisão — alterar
+  DoD em PR separado e gerar specs no PR seguinte; nunca refatorar a fonte e
+  o mirror no mesmo commit (impossível bisect).
+- **Hash-sensitivity disparando reset constante em specs (tradeoff herdado).**
+  `bullets_sha256` muda em qualquer edição do bullet block — incluindo
+  rewording sem mudança semântica. Reset zera `desde rev`, então um typo-fix
+  reseta o contador. Tradeoff aceito: false-positive em rewording é o preço
+  de captura confiável de mudanças reais. Mitigação: agrupar rewording em
+  commits dedicados e rodar `--show` antes/depois para baseline visual.
+- **Concorrência multi-slot Boris via `mkdir <lockdir>`.** Os scripts usam
+  `mkdir "$LOCK_DIR"` como exclusão mútua POSIX (`flock` clássico não existe
+  no Darwin). Em workflow Boris com 5 slots paralelos no mesmo repo, dois
+  slots rodando `/test-spec` simultaneamente em `tarefa-N` diferentes
+  serializam pelo lockdir; o segundo retry após 50 tentativas (5s) com exit
+  3. Mitigação: se o lock ficar travado por crash, rode `rmdir
+  skills/testing/references/.test-spec-*.lock` manualmente.
 
 ## Anti-padrões a bloquear
 

@@ -39,20 +39,20 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 
 ## Categoria 1 — Claude Code internals (slash commands, skills, hooks, princípios globais)
 
-### DoD-base — Categoria 1 (usos: 0 · desde rev: 0)
+### DoD-base — Categoria 1 (usos: 1 · desde rev: 1)
 - [ ] arquivo vive em `~/.claude/` (global) ou `.claude/` (projeto) — escopo escolhido documentado no commit
 - [ ] frontmatter YAML mínimo presente (`description` + `name` quando aplicável); descrição inclui *o que faz* + *quando usar* (gatilhos)
 - [ ] testado em sessão real do Claude Code (não só lido) — log do uso no commit message ou `CHANGELOG.md`
 - [ ] commitado em git com mensagem `feat(claude): ...`
 
-### Tarefa 1 — Slash command novo / refactor (usos: 0 · desde rev: 0)
+### Tarefa 1 — Slash command novo / refactor (usos: 1 · desde rev: 1)
 - [ ] arquivo em `.claude/commands/<nome>.md` OU migrado para skill — escolha justificada (skill se houver assets/scripts)
 - [ ] frontmatter declara `allowed-tools` explicitamente (ex.: `Bash(git:*), Read, Edit`) — não usar wildcard total
 - [ ] argumentos via `$ARGUMENTS` ou `$1`/`$2` com `argument-hint` definido
 - [ ] inline bash (`!\`git status\``) usado para pré-computar contexto e evitar round-trip do modelo
 - [ ] executado 1x em sessão real e produz o output esperado sem follow-up manual
 
-### Tarefa 2 — Skill nova (usos: 0 · desde rev: 0)
+### Tarefa 2 — Skill nova (usos: 1 · desde rev: 1)
 - [ ] estrutura é uma **pasta** (não só arquivo) — mesmo que vazia inicialmente, prevê `examples/`, `references/`
 - [ ] `SKILL.md` tem seção **Gotchas** com erros reais observados em uso
 - [ ] descrição no frontmatter contém **trigger phrases**
