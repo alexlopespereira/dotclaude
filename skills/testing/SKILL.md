@@ -151,6 +151,103 @@ bullet block é a única fonte de verdade para "este bloco mudou desde a
 última revisão" — reset detectado naturalmente via mismatch quando o usuário
 roda `--show`/`<spec_id>`.
 
+### Convenção `// spec:` em código de teste
+
+Camada complementar ao mirror DOD.md ↔ TEST-PATTERNS.md: marker textual em
+**código de teste** que aponta para a spec validada. Permite que
+`/reflect --learn` cruze DoD → spec → teste e emita finding
+`tdd_gap_marker_missing` quando um teste novo não declara qual spec valida.
+Política de granularidade do spec id permanece em `references/TEST-PATTERNS.md`
+(header daquele arquivo) — esta subseção adiciona apenas a camada de marker
+no código.
+
+**Sintaxe.** Comment de linha na sintaxe nativa da linguagem, payload
+`spec: tarefa-X-spec-N[-A]` (ou `cat-N-base-spec-N`). O regex canônico em
+`bin/reflect-learn-bundle.sh` é `(//|#)[[:space:]]*spec:[[:space:]]*tarefa-[0-9]+-spec-[0-9]+(-[A-Z])?`
+— tolera whitespace entre o comment char e `spec:`. Suportado em ≥3
+linguagens:
+
+| Linguagem        | Comment   | Marker                          |
+|------------------|-----------|---------------------------------|
+| JavaScript/TypeScript | `//`  | `// spec: tarefa-1-spec-3-A`    |
+| Python           | `#`       | `# spec: tarefa-1-spec-3-A`     |
+| Shell (bash/zsh) | `#`       | `# spec: tarefa-1-spec-3-A`     |
+
+Outras linguagens cuja sintaxe de comment de linha case com `//` ou `#`
+(Go, Rust, C/C++/Java, Ruby, etc.) entram automaticamente — o marker é
+**texto**, não construção de linguagem.
+
+**Localização.** O marker fica na linha **imediatamente acima** do bloco
+de teste que valida a spec — `describe`/`it`/`test` (JS/TS), `def test_<...>`
+(Python), função `test_<...>` ou bloco de asserção (shell). Markers inline
+no fim da linha do `it(...)` também são capturados pelo grep, mas a
+convenção preferida é linha dedicada (mais fácil de auditar via `git diff`).
+
+Quando o mesmo teste valida **múltiplas specs** (ex.: refactor que cobre
+`spec-3-A` e `spec-3-B`), acumule múltiplos markers consecutivos — um por
+linha, sem linha em branco entre eles:
+
+```ts
+// spec: tarefa-1-spec-3-A
+// spec: tarefa-1-spec-3-B
+it("rejeita allowed-tools wildcard", () => { /* ... */ });
+```
+
+**Enforcement.** A convenção é **SOFT** (best-effort, não bloqueante):
+
+- `/reflect --learn` (via `bin/reflect-learn-bundle.sh`) grepa os paths
+  canônicos `tests/`, `skills/*/bin/test-*.sh` e `bin/tests/test_*.sh`
+  por markers e cruza com as specs da DoD aplicada na PR. Specs sem
+  marker correspondente viram finding `tdd_gap_marker_missing` no
+  `proposal.json`.
+- **Não há hook PreToolUse bloqueante** nessa fatia — o finding é input
+  para revisão humana, **não bloqueia merge**. Ausência de marker em
+  teste legado nunca trava PR.
+- Custo do soft enforcement: drift entre DoD declarada e teste efetivo
+  fica visível no proposal, mas só corrige se o autor escolher. Trade-off
+  deliberado: forçar marker via hook bloquearia bug-fixes urgentes onde
+  o teste de regressão existe mas o autor esqueceu o marker.
+
+**Exemplo concreto (multi-linguagem).** Spec alvo: `tarefa-1-spec-3-A`
+em `references/TEST-PATTERNS.md`:
+
+> "dado o corpo do command, quando faço `grep -E '\$ARGUMENTS|\$1|\$2'`,
+> então há ≥1 match (se o command toma input do usuário)"
+
+Marker no teste, três sabores:
+
+```ts
+// JS/TS — tests/commands.test.ts
+// spec: tarefa-1-spec-3-A
+it("commands com $ARGUMENTS em body", () => {
+  const body = readFileSync("commands/foo.md", "utf-8");
+  expect(body).toMatch(/\$ARGUMENTS|\$1|\$2/);
+});
+```
+
+```python
+# Python — tests/test_commands.py
+# spec: tarefa-1-spec-3-A
+def test_command_body_has_arguments_placeholder():
+    body = Path("commands/foo.md").read_text()
+    assert re.search(r"\$ARGUMENTS|\$1|\$2", body)
+```
+
+```bash
+# Shell — skills/testing/bin/test-commands-have-arguments.sh
+# spec: tarefa-1-spec-3-A
+test_command_body_has_arguments() {
+  grep -qE '\$ARGUMENTS|\$1|\$2' commands/foo.md \
+    || { echo "FAIL: $0"; exit 1; }
+}
+test_command_body_has_arguments
+```
+
+O exemplo shell é o padrão do dotclaude — testes vivem em
+`skills/*/bin/test-*.sh` e `bin/tests/test_*.sh`. Veja
+`skills/auto-grill-me/bin/test-dod-add-bullet-ids.sh` para referência
+canônica do estilo.
+
 ## Gotchas
 
 - **Drift entre DOD.md e TEST-PATTERNS.md (mirror lag).** TEST-PATTERNS.md é

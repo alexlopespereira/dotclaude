@@ -156,12 +156,39 @@ Rode `/checkout-sync-all <REPO>` para:
 - atualizar `main` em todos os slots
 - remover branches locais já mergeadas
 
-## Fase 9 — Reflexão sobre DoD (auto-baseline)
+## Fase 9 — Reflexão sobre DoD (gate heurístico --learn vs --baseline)
 
-Após o sync dos slots, invoque automaticamente `/reflect --baseline` para classificar a adequação do Definition of Done aplicado a esta PR. Gera relatório baseline em `.claude/reflections/<ts>-<slug>-baseline.md` e agenda follow-up retro D+7 via `~/.claude/cache/reflect/reminders.jsonl`.
+Após o sync dos slots, invoque automaticamente `/reflect` para classificar a adequação do Definition of Done aplicado a esta PR. O modo é decidido por gate heurístico inline (AC9 do US-02): `--learn` quando o ciclo correu **anômalo** (precisa LLM analisar a TDD-chain por US), `--baseline` quando correu **limpo** (compliance retroativa basta).
 
 ```bash
-PR_NUMBER=$(gh pr list --state merged --limit 1 --base main --json number --jq .[0].number) && /reflect $PR_NUMBER --baseline
+PR_NUMBER=$(gh pr list --state merged --limit 1 --base main --json number --jq .[0].number)
+
+# Gate heurístico: NEED_LEARN se QUALQUER destes for verdadeiro
+NEED_LEARN=false
+
+# (a) prd.json tem alguma US escalada
+if test -f prd.json && jq -e '.userStories[]? | select(.passes=="ESCALATED")' prd.json >/dev/null 2>&1; then
+  NEED_LEARN=true
+fi
+
+# (b) progress.txt registrou ≥2 REVIEW_BLOCK ou REVIEW_REQUEST_CHANGES.
+# Gotcha: `grep -c` exit 1 em zero matches imprime "0" no stdout — combinar
+# com `|| echo 0` produz "0\n0" e quebra `[ -ge ]` ("integer expression
+# expected"). Padrão correto: `VAR=$(...) || VAR=0` (fallback substitui,
+# não concatena).
+if test -f progress.txt; then
+  REVIEW_COUNT=$(grep -cE 'REVIEW_BLOCK|REVIEW_REQUEST_CHANGES' progress.txt 2>/dev/null) || REVIEW_COUNT=0
+  if [ "$REVIEW_COUNT" -ge 2 ]; then NEED_LEARN=true; fi
+fi
+
+# (c) auto-fix loop disparou (marcador AUTOFIX_TRIGGERED em progress.txt)
+if test -f progress.txt && grep -q 'AUTOFIX_TRIGGERED' progress.txt 2>/dev/null; then
+  NEED_LEARN=true
+fi
+
+REFLECT_NESTED=1 \
+  REFLECT_LEARN_GATE=$([ "$NEED_LEARN" = "true" ] && echo 1 || echo 0) \
+  /reflect $PR_NUMBER $([ "$NEED_LEARN" = "true" ] && echo --learn || echo --baseline)
 ```
 
 **Comportamento non-blocking.** Se `/reflect` falhar (ex.: PR não correlaciona com plano, `gh` offline, sessão `/auto-grill-me` ausente), registre o aviso mas **NÃO interrompa o pipeline** — reflexão é auditoria, não gate. O pipeline já considerou Fase 8 (sync) como término efetivo da entrega; Fase 9 apenas anexa metadado de qualidade.

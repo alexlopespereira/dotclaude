@@ -1,6 +1,6 @@
 ---
-description: Reflexão / supervisão DoD pós-merge — classifica adequação do Definition of Done aplicado a uma PR. Trigger phrases — "reflexão", "supervisão DoD", "retrabalho", "pós-merge", "definition of done review", "retrospectiva". Três modos — --baseline (DoD compliance imediato), --retro (algoritmo D1 v2 completo após D+7), --on-failure (auditoria em gate de parada).
-argument-hint: "[pr-number] [--baseline|--retro|--on-failure <N>] [--quick] [--context-file <path>] [--from-stdin]"
+description: Reflexão / supervisão DoD pós-merge — classifica adequação do Definition of Done aplicado a uma PR. Trigger phrases — "reflexão", "supervisão DoD", "retrabalho", "pós-merge", "definition of done review", "retrospectiva". Quatro modos — --baseline (DoD compliance imediato), --retro (algoritmo D1 v2 completo após D+7), --on-failure (auditoria em gate de parada), --learn (LLM consome bundle TDD-chain por US e propõe melhorias DoD/TEST-PATTERNS).
+argument-hint: "[pr-number] [--baseline|--retro|--on-failure <N>|--learn] [--quick] [--context-file <path>] [--from-stdin]"
 allowed-tools: Bash(git:*), Bash(gh:*), Bash(jq *), Bash(mkdir *), Bash(test *), Bash(date *), Bash(find *), Bash(basename *), Bash(dirname *), Bash(cat *), Bash(grep *), Bash(awk *), Bash(sed *), Bash(sort *), Bash(uniq *), Bash(wc *), Bash(ls *), Bash(touch *), Bash(pwd *), Read, Write, Glob, Grep
 ---
 
@@ -19,10 +19,11 @@ Audita uma PR mergeada confrontando a Definition of Done aplicada no plano origi
 ## Parse de argumentos ($ARGUMENTS = `$ARGUMENTS`)
 
 1. **`$1` numérico** → `PR_NUM=$1`. Se ausente ou começa com `--`, resolve via `gh pr list --state merged --limit 1 --base main --json number --jq '.[0].number // empty'`. Se ainda vazio → erro `nenhuma PR mergeada em main — passe número explicitamente` e aborta.
-2. **Modo (exatamente 1)** — default `--retro` em invocação standalone. Default `--baseline` quando ambiente `REFLECT_NESTED=1` (ciclo automático Fase 9 do `/full-cycle*`).
+2. **Modo (exatamente 1)** — default `--retro` em invocação standalone. Default `--baseline` quando ambiente `REFLECT_NESTED=1` (ciclo automático Fase 9 do `/full-cycle*`). Default `--learn` quando ambiente `REFLECT_NESTED=1` **E** `REFLECT_LEARN_GATE=1` (heurística de gate na Fase 9 disparou — vide `commands/full-cycle.md`).
    - `--baseline` → DoD compliance retroativa (sem detecção de retrabalho).
    - `--retro` → algoritmo D1 v2 completo (6 camadas).
    - `--on-failure <N>` → auditoria de fase parada (N ∈ {3,5,6}); exige `--context-file <path>` ou `--from-stdin`.
+   - `--learn` → LLM analisa chain `US → DoD bullet → spec TDD → teste implementado → resultado` por user story e propõe melhorias estruturadas em DoD/TEST-PATTERNS. Mutuamente exclusivo com os outros 3.
 3. **Modificadores**
    - `--quick` → válido com `--baseline` **e** `--on-failure` (mas não com `--retro`). Subset do algoritmo — em `--baseline` limita comparação à seção da DoD detectada (≤ 30 bullets) e pula fetch de PR comments; em `--on-failure` reduz cross-ref de critérios à categoria da fase parada (sem expansão para DoD-base inteira) e também pula fetch de PR comments. Usado pelo `/full-cycle-simple` (Fase 9 + sugestões em paradas). Combinação `--retro --quick` é rejeitada com erro de parse.
    - `--context-file <path>` / `--from-stdin` → fontes para `--on-failure`.
@@ -230,6 +231,120 @@ Foco — `qual critério DoD teria capturado essa falha`. Ignore detecção de r
 3. Liste **critérios faltantes**: itens da DoD-base que teriam disparado o gate antes de chegar à fase atual.
 4. **`--quick`** — escopo do cross-ref limitado à **categoria da fase parada** (Fase 3 → categoria do plano/parecer; Fase 5 → categoria das stories escaladas; Fase 6 → categoria do test runner output). Não expande para DoD-base inteira. Pula fetch de PR comments. Resultado: relatório mais curto, mesmo formato.
 5. Relatório — `<ts>-<slug>-failure-<N>.md` com seções: Resumo da falha, DoD aplicada, Critérios faltantes, Recomendação para próxima iteração. Em `--quick` adicione linha `quick_scope: <categoria>` no front-matter do relatório.
+
+### Modo `--learn` (US-02 — TDD-chain feedback)
+
+Consome a chain rastreável `US → DoD bullet → spec TDD → teste implementado → resultado` por user story e pede a uma LLM (`claude --print --max-turns 1`) propostas estruturadas para evoluir DoD/TEST-PATTERNS. Saída tripla em `~/.claude/cache/reflect/proposals/<ts>-<slug>/`: `report.md` (humano), `proposed.diff` (git-applyable), `proposal.json` (tooling).
+
+> **Gotcha (AC4 — RESSALVA ALTA #2):** o subprocess `claude --print` usa timeout HARD-CODED **600s (10min)** dentro do helper `bin/reflect-learn-bundle.sh`. NÃO herda `RALPH_HANG_TIMEOUT=2700` do Ralph — análise de bundle é tarefa curta (~30s esperado); 45min vira hang silencioso.
+
+> **Gotcha (AC5 — RESSALVA ALTA #3):** `bin/reflect-learn-bundle.sh` grava `raw-llm-output.txt` SEMPRE (sucesso ou falha), e o parser jq é fail-graceful — se a LLM não emite JSON válido, `proposal.json` carrega finding `llm_output_unparseable` apontando pro raw. Smoke test em `bin/tests/test_reflect_learn_bundle.sh`.
+
+**Sub-step 1 — GC de proposals antigos (AC10):**
+
+```bash
+mkdir -p ~/.claude/cache/reflect/proposals
+find ~/.claude/cache/reflect/proposals -maxdepth 1 -type d -mtime +90 -print -exec rm -rf {} + 2>/dev/null || true
+```
+
+Anote `gc: N proposal(s) > 90d removidos` no relatório.
+
+**Sub-step 2 — Itera por user story e invoca o helper:**
+
+```bash
+test -f prd.json || { echo "[warn] prd.json ausente no cwd — --learn requer PRD"; exit 0; }
+TS=$(date -u +'%Y-%m-%dT%H-%M-%SZ')
+PR_SLUG=$(awk '{print tolower($0)}' <<<"$TITLE" | sed -E 's/[^a-z0-9]+/-/g; s/^-|-$//g' | cut -c1-50)
+OUT_DIR="$HOME/.claude/cache/reflect/proposals/${TS}-${PR_SLUG}"
+mkdir -p "$OUT_DIR"
+
+# Para cada US do prd.json: monta bundle + chama LLM + gera 3 outputs em subdir.
+US_IDS=$(jq -r '.userStories[]?.id // empty' prd.json)
+for US in $US_IDS; do
+  US_SUBDIR="$OUT_DIR/$US"
+  bash ~/.claude/bin/reflect-learn-bundle.sh "$PR_NUM" "$US" --with-llm "$US_SUBDIR" || true
+done
+```
+
+**Sub-step 3 — Parse de outputs e agregação (AC5 — fail-graceful):**
+
+Cada `proposal.json` de US foi gerado pelo helper com schema `{summary, proposals[], findings[]}`. Quando a LLM falhou ou output não parseou, `findings[]` contém `{type: "llm_output_unparseable", raw_path, llm_exit_code}` — propagar sem mascarar.
+
+**Sub-step 4 — Triplo output agregado (AC8):**
+
+- `report.md` (raiz de `$OUT_DIR`): índice das US analisadas + sumário por US (1 linha) + ponteiro pra subdir.
+- `proposed.diff` (raiz): concatenação dos diffs por-US separados por `## US-XX`.
+- `proposal.json` (raiz): `{"per_us": {<US-ID>: <proposal>}}` consolidado.
+
+```bash
+{
+  echo "# Reflect --learn — PR #$PR_NUM"
+  echo ""
+  echo "Generated: $(date -u +%FT%TZ)"
+  echo ""
+  echo "| US | Summary | Proposals | Findings |"
+  echo "|----|---------|-----------|----------|"
+  for US in $US_IDS; do
+    PJ="$OUT_DIR/$US/proposal.json"
+    [ -f "$PJ" ] || continue
+    SUM=$(jq -r '.summary // ""' "$PJ" | head -1)
+    NP=$(jq '(.proposals // []) | length' "$PJ")
+    NF=$(jq '(.findings // []) | length' "$PJ")
+    echo "| $US | ${SUM:0:60} | $NP | $NF |"
+  done
+  echo ""
+  echo "## Detalhes por US"
+  for US in $US_IDS; do
+    echo ""
+    echo "### $US"
+    [ -f "$OUT_DIR/$US/report.md" ] && cat "$OUT_DIR/$US/report.md"
+  done
+} > "$OUT_DIR/report.md"
+
+# Diff agregado
+{
+  for US in $US_IDS; do
+    [ -f "$OUT_DIR/$US/proposed.diff" ] || continue
+    echo "## $US"
+    cat "$OUT_DIR/$US/proposed.diff"
+    echo ""
+  done
+} > "$OUT_DIR/proposed.diff"
+
+# JSON agregado
+jq -n --arg pr "$PR_NUM" --arg ts "$TS" '{pr: $pr, generated_at: $ts, per_us: {}}' > "$OUT_DIR/proposal.json"
+for US in $US_IDS; do
+  PJ="$OUT_DIR/$US/proposal.json"
+  [ -f "$PJ" ] || continue
+  TMP="$OUT_DIR/proposal.json.tmp"
+  jq --arg us "$US" --slurpfile child <(cat "$PJ") '.per_us[$us] = $child[0]' "$OUT_DIR/proposal.json" > "$TMP" && mv "$TMP" "$OUT_DIR/proposal.json"
+done
+```
+
+**Sub-step 5 — Logging em reminders.jsonl (anti-fadiga, AC10 do US-01 da PR anterior):**
+
+```bash
+jq -nc --arg pr "$PR_NUM" --arg ts "$TS" --arg repo "$REPO" --arg out "$OUT_DIR" \
+   '{kind:"learn", pr:$pr, repo:$repo, created_at:$ts, out_dir:$out}' \
+   >> ~/.claude/cache/reflect/reminders.jsonl
+```
+
+**Sub-step 6 — Reporta ao usuário:**
+
+```
+Modo --learn concluído.
+Outputs em: $OUT_DIR
+- report.md: <N> US analisadas
+- proposed.diff: agregado (revise com `git apply --check $OUT_DIR/proposed.diff`)
+- proposal.json: jq-parseable
+- gc: <N> proposal(s) > 90d removidos
+```
+
+**Restrições do modo `--learn`:**
+- NÃO aplica o diff — humano revisa com `git apply --check` e decide.
+- NÃO commita arquivos.
+- NÃO escreve em `docs/definition_of_done.md` ou `skills/auto-grill-me/references/DOD.md` diretamente — apenas em `~/.claude/cache/reflect/proposals/<ts>-<slug>/`.
+- Custo recorrente: cada US consome quota da subscription Claude Code; volume baixo esperado (1-3 USs por `/full-cycle`).
 
 ## Etapa 3 — Persistir relatório
 
