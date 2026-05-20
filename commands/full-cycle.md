@@ -147,6 +147,8 @@ PR_NUMBER=$(gh pr list --state merged --limit 1 --base main --json number --jq .
 
 **Classificação:** AC8 e AC9 da US-02 são **Cat 3 (humano-validated post-merge)** por limite físico do Ralph adversarial — slash command recursivo dentro do worker é inviável. A automação Cat 1/2 esbarraria em loop infinito (`/full-cycle` invocando `/reflect` invocando `/full-cycle`...). Este bloco lista o checklist manual que substitui a evidência empírica esperada pelo Codex.
 
+**Convenção mais ampla:** este caso particular se encaixa no padrão geral `[CAT3-MANUAL]` — qualquer AC prefixado com `[CAT3-MANUAL]` em qualquer PRD é filtrado pelo Ralph antes do prompt ser enviado a Claude/Codex, e a validação fica a cargo de um checklist humano pós-merge como o abaixo. Sintaxe formal e exemplos em `skills/prd/SKILL.md`.
+
 **Checklist (rode UMA vez após merge do próximo PR via `/full-cycle`):**
 
 - [ ] **AC8 — Baseline gravado.** Inspecione `.claude/reflections/<ts>-<slug>-baseline.md` no cwd (ou `~/.claude/cache/reflect/<repo>/<ts>-<slug>-baseline.md` em fallback). Verifique que contém: cabeçalho `Plan match: <marker|slug-exact|fuzzy|none>`, `Session correlated: <true|false>`, seção `CI checks` listando pelo menos 1 check (ou `ci_checks: nenhum`), e seção `Aviso retrospectiva` com data D+7 ≈ correta.

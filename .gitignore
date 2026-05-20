@@ -17,6 +17,7 @@
 # DE WORKER PARALELO" for the rationale (Codex review WT must not see
 # them, history stays free of framework noise).
 progress-*.txt
+progress-*.jsonl
 agents-delta-*.md
 
 # Ralph orchestrator stash dir + ephemeral review worktrees.
@@ -28,6 +29,7 @@ agents-delta-*.md
 # dotclaude is the framework, not a target project).
 prd.json
 progress.txt
+progress.jsonl
 AGENTS.md
 
 # Playwright MCP runtime artifacts (snapshots, console logs, traces)

@@ -94,6 +94,49 @@ parse_verdict() {
     return 0
 }
 
+# emit_progress_event — dual-output writer para progress.txt + progress.jsonl.
+#
+# Uso:
+#   emit_progress_event <event> <story_id> <verdict|""> <evidences_newline_sep>
+#
+# Escreve uma linha humano-legível em progress.txt (pipe-concat das evidences,
+# formato compat com ralph-adversarial.sh) E uma linha JSON em progress.jsonl
+# com evidences como ARRAY de strings.
+#
+# Schema progress.jsonl:
+#   {"ts": "ISO-8601", "event": "...", "story_id": "...",
+#    "evidences": [...], "verdict": "..." | null}
+#
+# Evidences ausentes → array vazio. Verdict vazio → null.
+emit_progress_event() {
+    local event="$1" story_id="$2" verdict="$3" evidences_raw="${4:-}"
+    local ts evidences_concat evidences_json
+    ts=$(date -Iseconds)
+
+    # progress.txt: pipe-concat compat (mesmo formato de ralph-adversarial.sh:706)
+    if [ -n "$evidences_raw" ]; then
+        evidences_concat=$(printf '%s' "$evidences_raw" | tr '\n' '|' | sed 's/|$//')
+    else
+        evidences_concat=""
+    fi
+    echo "${ts} | ${event} | ${story_id} | ${evidences_concat}" >> progress.txt
+
+    # progress.jsonl: schema estruturado, evidences como array (não concat).
+    if [ -n "$evidences_raw" ]; then
+        evidences_json=$(printf '%s' "$evidences_raw" | jq -R . | jq -s .)
+    else
+        evidences_json='[]'
+    fi
+    jq -nc \
+        --arg ts "$ts" \
+        --arg event "$event" \
+        --arg story_id "$story_id" \
+        --argjson evidences "$evidences_json" \
+        --arg verdict "$verdict" \
+        '{ts: $ts, event: $event, story_id: $story_id, evidences: $evidences, verdict: (if $verdict == "" then null else $verdict end)}' \
+        >> progress.jsonl
+}
+
 # Execução direta (não-sourced): parseia stdin ou args.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     parse_verdict "$@"

@@ -37,6 +37,12 @@ ITERATION=0
 # AC9: timeout para hang detection (default 45min); usuário pode override por env var.
 TIMEOUT=${RALPH_HANG_TIMEOUT:-2700}
 
+# US-02: stream-timeout retry. Detecta "API Error: Stream idle timeout" no
+# log do agente primary; em modo dry-run (default) só registra candidato.
+# Quando ativo, retry sem incrementar set_retry_count e budget separado.
+RALPH_API_TIMEOUT_RETRY="${RALPH_API_TIMEOUT_RETRY:-0}"
+MAX_API_TIMEOUT_RETRIES="${MAX_API_TIMEOUT_RETRIES:-3}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REVIEW_FILE="$SCRIPT_DIR/CODE_REVIEW.md"
 IMPL_PROMPT_FILE="$SCRIPT_DIR/IMPL_PROMPT.md"
@@ -242,15 +248,18 @@ source "$SCRIPT_DIR/detect-quota.sh"
 build_codex_review_prompt() {
     local story_id="$1"
     local story_title="$2"
+    local acs_filtered="${3:-}"
     local header footer rubric
 
     read -r -d '' header <<HEADER || true
 Você é revisor adversário de código no loop Ralph Adversarial.
 Revise o commit HEAD — implementa a user story: ${story_id} - ${story_title}.
 
+ACCEPTANCE CRITERIA (já filtrados — Cat 3 [CAT3-MANUAL] removidos; revise apenas estes):
+${acs_filtered}
+
 INVESTIGAÇÃO (rode antes de concluir):
 - git show HEAD  (diff + commit message com ac_trace)
-- Consulte prd.json para os acceptance criteria de ${story_id}
 - Leia progress.txt para contexto de iterações anteriores
 
 NÃO modifique nenhum arquivo do worktree durante esta revisão.
@@ -281,15 +290,18 @@ FOOTER
 review_with_claude_sonnet() {
     local story_id="$1"
     local story_title="$2"
+    local acs_filtered="${3:-}"
     local header footer rubric prompt
 
     read -r -d '' header <<HEADER || true
 Você é revisor adversário de código no loop Ralph Adversarial.
 Revise o commit HEAD — implementa a user story: ${story_id} - ${story_title}.
 
+ACCEPTANCE CRITERIA (já filtrados — Cat 3 [CAT3-MANUAL] removidos; revise apenas estes):
+${acs_filtered}
+
 INVESTIGAÇÃO (rode antes de concluir):
 - git show HEAD  (diff + commit message com ac_trace)
-- Consulte prd.json para os acceptance criteria de ${story_id}
 - Leia progress.txt para contexto de iterações anteriores
 
 RUBRICA OBRIGATÓRIA (aplique linha a linha — não improvise):
@@ -326,8 +338,9 @@ FOOTER
 review_with_codex_prompted() {
     local story_id="$1"
     local story_title="$2"
+    local acs_filtered="${3:-}"
     local prompt
-    prompt=$(build_codex_review_prompt "$story_id" "$story_title")
+    prompt=$(build_codex_review_prompt "$story_id" "$story_title" "$acs_filtered")
     codex exec --full-auto "$prompt" 2>&1 \
         || printf '%s\n%s\n' '## Verdict: BLOCK' '(codex exec failed)'
 }
@@ -411,7 +424,9 @@ echo "=========================================="
 
 # F8 (US-09 lint): mktemp_safe over `mktemp -t` (8 X's, TMPDIR-safe fallback).
 RETRY_FILE="$(mktemp_safe file ralph-retry)"
-trap 'rm -f "$RETRY_FILE"' EXIT
+# US-02: budget separado para stream-timeout (não consome MAX_RETRIES_PER_STORY).
+API_TIMEOUT_FILE="$(mktemp_safe file ralph-api-timeout)"
+trap 'rm -f "$RETRY_FILE" "$API_TIMEOUT_FILE"' EXIT
 
 get_retry_count() {
     local story_id="$1"
@@ -429,6 +444,22 @@ set_retry_count() {
     grep -v "^${story_id}:" "$RETRY_FILE" > "${RETRY_FILE}.tmp" 2>/dev/null || true
     echo "${story_id}:${count}" >> "${RETRY_FILE}.tmp"
     mv "${RETRY_FILE}.tmp" "$RETRY_FILE"
+}
+
+# US-02: contador independente para API_TIMEOUT (budget MAX_API_TIMEOUT_RETRIES).
+get_api_timeout_count() {
+    local story_id="$1"
+    local count
+    count=$(grep "^${story_id}:" "$API_TIMEOUT_FILE" 2>/dev/null | tail -1 | cut -d: -f2 || true)
+    echo "${count:-0}"
+}
+
+set_api_timeout_count() {
+    local story_id="$1"
+    local count="$2"
+    grep -v "^${story_id}:" "$API_TIMEOUT_FILE" > "${API_TIMEOUT_FILE}.tmp" 2>/dev/null || true
+    echo "${story_id}:${count}" >> "${API_TIMEOUT_FILE}.tmp"
+    mv "${API_TIMEOUT_FILE}.tmp" "$API_TIMEOUT_FILE"
 }
 
 # ─── Loop Principal ─────────────────────────────────────────
@@ -479,7 +510,14 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
     # corrente é anexada como bloco JSON sob "## Story atual" para o agente
     # extrair id/title/AC. Pré-condição arquitetural para Fase 2 (templates
     # cwd-agnósticos permitem reuso por múltiplos slots).
-    STORY_BLOCK=$(jq -r --arg id "$STORY_ID" '.userStories[] | select(.id == $id)' prd.json)
+    #
+    # Filtro [CAT3-MANUAL]: ACs prefixados com marker (regex ancorada
+    # ^AC<N>(.[a-z])?:\s*\[CAT3-MANUAL\], case-insensitive) são humano-validated
+    # pós-merge e ficam invisíveis para Claude (implementer) E Codex (reviewer).
+    # Filtro único aqui — STORY_BLOCK reutilizado para o prompt do reviewer via
+    # STORY_ACS_FILTERED. Convenção documentada em skills/prd/SKILL.md.
+    STORY_BLOCK=$(jq -r --arg id "$STORY_ID" '.userStories[] | select(.id == $id) | .acceptanceCriteria |= map(select(test("^AC[0-9]+(\\.[a-z])?:\\s*\\[CAT3-MANUAL\\]"; "i") | not))' prd.json)
+    STORY_ACS_FILTERED=$(jq -r '.acceptanceCriteria[]' <<<"$STORY_BLOCK")
     CLAUDE_PROMPT=$(printf '%s\n\n## Story atual\n%s\n' "$(cat "$IMPL_PROMPT_FILE")" "$STORY_BLOCK")
 
     # AC2: agente lançado em background, em novo process group via $SETSID_CMD.
@@ -490,9 +528,17 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
 
     launch_agent_pgrouped "$PRIMARY_AGENT" "$CLAUDE_PROMPT" "$LOGFILE"
 
+    # US-02: regex restrita 'API Error: Stream idle timeout' (case-insensitive).
+    # NÃO inclui "partial response received" nem '"verdict": "partial"' (false-
+    # positives da rubrica adversária — ver tests/test_stream_timeout_detect.sh).
+    API_TIMEOUT_DETECTED=false
+
     if wait_with_timeout "$AGENT_PID" "$TIMEOUT"; then
         # Agente saiu naturalmente.
         tail -20 "$LOGFILE" || true
+        if grep -qiE 'API Error:[[:space:]]*Stream idle timeout' "$LOGFILE" 2>/dev/null; then
+            API_TIMEOUT_DETECTED=true
+        fi
         rm -f "$LOGFILE"
     else
         # AC4: timeout — matar process group inteiro (cobre MCP servers forkados).
@@ -530,6 +576,29 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
     LAST_MSG=$(git log -1 --format="%s" 2>/dev/null)
 
     if [[ "$LAST_MSG" != *"$STORY_ID"* ]]; then
+        # US-02: stream-timeout detection antes da FALHA_COMMIT clássica.
+        # Dry-run (default) só registra candidato e segue para FALHA_COMMIT;
+        # modo ativo retry sem bumpar set_retry_count, com budget próprio.
+        if [ "$API_TIMEOUT_DETECTED" = true ]; then
+            if [ "$RALPH_API_TIMEOUT_RETRY" = "1" ]; then
+                CURRENT_API_TIMEOUTS=$(get_api_timeout_count "$STORY_ID")
+                if [ "$CURRENT_API_TIMEOUTS" -ge "$MAX_API_TIMEOUT_RETRIES" ]; then
+                    echo "  API_BUDGET_EXHAUSTED: $STORY_ID atingiu $MAX_API_TIMEOUT_RETRIES timeouts. Escalando (separado de ESCALAÇÃO normal)."
+                    echo "$(date -Iseconds) | API_BUDGET_EXHAUSTED | $STORY_ID | budget $MAX_API_TIMEOUT_RETRIES esgotado" >> progress.txt
+                    jq --arg id "$STORY_ID" '(.userStories[] | select(.id == $id)).passes = "ESCALATED_API_TIMEOUT"' prd.json > prd.tmp && mv prd.tmp prd.json
+                    continue
+                fi
+                NEXT_API_TIMEOUTS=$((CURRENT_API_TIMEOUTS + 1))
+                echo "  API_TIMEOUT: $STORY_ID — retry $NEXT_API_TIMEOUTS/$MAX_API_TIMEOUT_RETRIES (set_retry_count preservado em $CURRENT_RETRIES)"
+                echo "$(date -Iseconds) | API_TIMEOUT | $STORY_ID | retry $NEXT_API_TIMEOUTS/$MAX_API_TIMEOUT_RETRIES (set_retry_count preserved)" >> progress.txt
+                set_api_timeout_count "$STORY_ID" "$NEXT_API_TIMEOUTS"
+                continue
+            else
+                # Dry-run: log candidato e cai no FALHA_COMMIT (comportamento original).
+                echo "  API_TIMEOUT_CANDIDATE: regex match em log; RALPH_API_TIMEOUT_RETRY=0 (dry-run) — tratando como FALHA_COMMIT."
+                echo "$(date -Iseconds) | API_TIMEOUT_CANDIDATE | $STORY_ID | dry-run: regex match (RALPH_API_TIMEOUT_RETRY=0)" >> progress.txt
+            fi
+        fi
         echo "  AVISO: $PRIMARY_AGENT não commitou com $STORY_ID no message."
         echo "$(date -Iseconds) | FALHA_COMMIT | $STORY_ID | $PRIMARY_AGENT não produziu commit válido" >> progress.txt
         set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
@@ -568,7 +637,7 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
         else
             echo "[B] Claude Sonnet (fallback) — Revisando código..."
         fi
-        REVIEW_RESULT=$(review_with_claude_sonnet "$STORY_ID" "$STORY_TITLE")
+        REVIEW_RESULT=$(review_with_claude_sonnet "$STORY_ID" "$STORY_TITLE" "$STORY_ACS_FILTERED")
     else
         REVIEWER="codex"
         echo ""
@@ -578,7 +647,7 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
         # Forçamos prompt custom via "codex exec --full-auto" para garantir
         # saída determinística (## Verdict: ...) reconhecida por parse-verdict.sh.
         set +e
-        REVIEW_RESULT=$(review_with_codex_prompted "$STORY_ID" "$STORY_TITLE")
+        REVIEW_RESULT=$(review_with_codex_prompted "$STORY_ID" "$STORY_TITLE" "$STORY_ACS_FILTERED")
         CODEX_EXIT=$?
         set -e
 
@@ -587,7 +656,7 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
             echo "$(date -Iseconds) | CODEX_QUOTA | Fallback Claude Sonnet ativado durante $STORY_ID" >> progress.txt
             CODEX_UNAVAILABLE=true
             REVIEWER="claude-sonnet"
-            REVIEW_RESULT=$(review_with_claude_sonnet "$STORY_ID" "$STORY_TITLE")
+            REVIEW_RESULT=$(review_with_claude_sonnet "$STORY_ID" "$STORY_TITLE" "$STORY_ACS_FILTERED")
         elif [ $CODEX_EXIT -ne 0 ]; then
             REVIEW_RESULT=$(printf '%s\n%s\n' "$REVIEW_RESULT" '{"verdict":"BLOCK","error":"codex_exec_failed"}')
         fi
@@ -622,24 +691,25 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
             # que o Codex frequentemente regurgita literalmente, tanto na
             # array findings JSON quanto citado em prosa. Sem o filtro,
             # poluía progress.txt em todas iterações com finding inexistente.
-            EVIDENCES=$(echo "$REVIEW_RESULT" \
+            # Coleta newline-separated (NÃO pipe-concat) para emit_progress_event
+            # preservar array nativo em progress.jsonl. O concat com '|' acontece
+            # em emit_progress_event apenas no path progress.txt (compat byte-a-byte).
+            EVIDENCES_NL=$(echo "$REVIEW_RESULT" \
                 | jq -r '.findings[]?.evidence // empty' 2>/dev/null \
                 | grep -v 'user_id concatenado em SQL' \
-                | head -3 \
-                | tr '\n' '|' | sed 's/|$//')
-            if [ -z "$EVIDENCES" ]; then
-                EVIDENCES=$(echo "$REVIEW_RESULT" \
+                | head -3)
+            if [ -z "$EVIDENCES_NL" ]; then
+                EVIDENCES_NL=$(echo "$REVIEW_RESULT" \
                     | grep -o '"evidence":[^,]*' \
                     | grep -v 'user_id concatenado em SQL' \
-                    | head -3 \
-                    | tr '\n' '|' | sed 's/|$//')
+                    | head -3)
             fi
-            echo "$(date -Iseconds) | REVIEW_$VERDICT | $STORY_ID | $EVIDENCES" >> progress.txt
+            emit_progress_event "REVIEW_$VERDICT" "$STORY_ID" "$VERDICT" "$EVIDENCES_NL"
             set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
             ;;
         *)
             echo "  Veredicto não identificado — tratando como REQUEST_CHANGES"
-            echo "$(date -Iseconds) | REVIEW_UNKNOWN | $STORY_ID | Veredicto não parseado" >> progress.txt
+            emit_progress_event "REVIEW_UNKNOWN" "$STORY_ID" "UNKNOWN" "Veredicto não parseado"
             set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
             ;;
     esac
@@ -987,8 +1057,12 @@ launch_review() {
         # Custom prompt forces "## Verdict:" line; runs in dedicated WT.
         local story_title=""
         story_title=$(jq -r --arg id "$story_id" '.userStories[] | select(.id == $id) | .title // ""' "$orch_slot/prd.json" 2>/dev/null)
+        # Mesma sintaxe do filter [CAT3-MANUAL] do path sequencial (linha ~495).
+        # Mantém o reviewer paralelo cego para ACs humano-validated pós-merge.
+        local acs_filtered=""
+        acs_filtered=$(jq -r --arg id "$story_id" '.userStories[] | select(.id == $id) | .acceptanceCriteria | map(select(test("^AC[0-9]+(\\.[a-z])?:\\s*\\[CAT3-MANUAL\\]"; "i") | not)) | .[]' "$orch_slot/prd.json" 2>/dev/null)
         local codex_prompt
-        codex_prompt=$(build_codex_review_prompt "$story_id" "$story_title")
+        codex_prompt=$(build_codex_review_prompt "$story_id" "$story_title" "$acs_filtered")
         ( cd "$review_wt" && exec "${SETSID_CMD[@]}" codex exec --full-auto "$codex_prompt" >"$logfile" 2>&1 ) &
     fi
     local pid=$!
