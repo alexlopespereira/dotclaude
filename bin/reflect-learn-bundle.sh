@@ -78,12 +78,12 @@ if [[ -f "$DOD_PATH" ]]; then
   )"
 fi
 
-# ─── 3) Specs (tarefa-X-spec-N[-A]) do TEST-PATTERNS.md (best-effort) ─────
+# ─── 3) Specs (tarefa-X-spec-N[-A] OU cat-N-base-spec-N[-A]) do TEST-PATTERNS.md (best-effort) ─────
 SPECS_RAW=""
 if [[ -f "$SPECS_PATH" ]]; then
   SPECS_RAW="$(
-    grep -E '^- \[ \] spec-[^ ]+ \(tarefa-[0-9]+-spec-[0-9]+(-[A-Z])?\):' "$SPECS_PATH" 2>/dev/null \
-      | sed -E 's/^- \[ \] spec-[^ ]+ \((tarefa-[0-9]+-spec-[0-9]+(-[A-Z])?)\): (.*)$/\1\t\3/' \
+    grep -E '^- \[ \] spec-[^ ]+ \((tarefa-[0-9]+|cat-[0-9]+-base)-spec-[0-9]+(-[A-Z])?\):' "$SPECS_PATH" 2>/dev/null \
+      | sed -E 's/^- \[ \] spec-[^ ]+ \(((tarefa-[0-9]+|cat-[0-9]+-base)-spec-[0-9]+(-[A-Z])?)\): (.*)$/\1\t\4/' \
       || true
   )"
 fi
@@ -97,13 +97,13 @@ if [[ -d "$TEST_ROOT" ]]; then
   MARKERS_RAW="$(
     {
       [[ -d "$TEST_ROOT/tests" ]] && \
-        grep -rEon '(//|#)[[:space:]]*spec:[[:space:]]*tarefa-[0-9]+-spec-[0-9]+(-[A-Z])?' \
+        grep -rEon '(//|#)[[:space:]]*spec:[[:space:]]*(tarefa-[0-9]+|cat-[0-9]+-base)-spec-[0-9]+(-[A-Z])?' \
           "$TEST_ROOT/tests" 2>/dev/null || true
       ( cd "$TEST_ROOT" 2>/dev/null || exit 0
         shopt -s nullglob 2>/dev/null || true
         for f in skills/*/bin/test-*.sh bin/tests/test_*.sh; do
           [[ -f "$f" ]] || continue
-          grep -EonH '(//|#)[[:space:]]*spec:[[:space:]]*tarefa-[0-9]+-spec-[0-9]+(-[A-Z])?' "$f" 2>/dev/null || true
+          grep -EonH '(//|#)[[:space:]]*spec:[[:space:]]*(tarefa-[0-9]+|cat-[0-9]+-base)-spec-[0-9]+(-[A-Z])?' "$f" 2>/dev/null || true
         done
       )
     }
@@ -118,7 +118,7 @@ if [[ -n "$MARKERS_RAW" ]]; then
       | jq -R -s '
           split("\n")
           | map(select(length > 0))
-          | map(capture("^(?<loc>[^:]+:[0-9]+):.*?spec:[[:space:]]*(?<id>tarefa-[0-9]+-spec-[0-9]+(-[A-Z])?)"))
+          | map(capture("^(?<loc>[^:]+:[0-9]+):.*?spec:[[:space:]]*(?<id>(tarefa-[0-9]+|cat-[0-9]+-base)-spec-[0-9]+(-[A-Z])?)"))
           | group_by(.id)
           | map({key: .[0].id, value: ([.[].loc] | unique)})
           | from_entries

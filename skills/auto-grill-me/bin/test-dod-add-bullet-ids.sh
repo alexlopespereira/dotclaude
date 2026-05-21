@@ -233,5 +233,65 @@ if [[ "$PRE_STATE_SHA" != "$POST_STATE_SHA" ]]; then
 fi
 echo "PASS AC3 — re-run detecta migration, exit 0, DOD.md e snapshot preservados"
 
+# --- AC4: lock contention → exit 3 após ~5s de retries ---
+# Setup: pre-criar lockdir no $TMP/references/ ANTES de invocar $CMD novamente.
+# DOD.md já foi migrado em AC6/AC7; vamos forçar uma re-tentativa via
+# `$TMP/references/DOD.md` revertida (cp do pre-snapshot) pra fazer o script
+# tentar adquirir lock e falhar.
+LOCK_PATH="$TMP/references/.dod-add-bullet-ids.lock"
+mkdir "$LOCK_PATH"
+START_TS=$(date +%s)
+set +e
+"$CMD" >/tmp/ac4-out.txt 2>/tmp/ac4-err.txt
+AC4_EC=$?
+set -e
+END_TS=$(date +%s)
+AC4_ELAPSED=$((END_TS - START_TS))
+rmdir "$LOCK_PATH" 2>/dev/null || true
+if [[ "$AC4_EC" -ne 3 ]]; then
+  echo "FAIL AC4: lock contention exit esperado=3, obtido=$AC4_EC" >&2
+  cat /tmp/ac4-err.txt >&2
+  exit 1
+fi
+if [[ "$AC4_ELAPSED" -lt 4 || "$AC4_ELAPSED" -gt 8 ]]; then
+  echo "FAIL AC4: tempo de retry esperado ~5s (4-8), obtido ${AC4_ELAPSED}s" >&2
+  exit 1
+fi
+if ! grep -q 'lock .* ocupado' /tmp/ac4-err.txt; then
+  echo "FAIL AC4: mensagem de erro esperada não encontrada em stderr" >&2
+  cat /tmp/ac4-err.txt >&2
+  exit 1
+fi
+echo "PASS AC4 — lock contention exit 3 após ${AC4_ELAPSED}s + mensagem correta"
+
+# --- AC9: dod-reset-rev.sh --show continua funcionando após migration ---
+# Backward compat: parser de heading do dod-reset-rev.sh ignora bullets, então
+# DOD.md com [bN] deve continuar processável. Setup: copia dod-reset-rev.sh
+# pra $TMP/bin/ (mesmo skill_dir relativo) — script vai resolver
+# $TMP/references/DOD.md isolado do real.
+RESET_REV_SRC="$SCRIPT_DIR/dod-reset-rev.sh"
+if [[ ! -x "$RESET_REV_SRC" ]]; then
+  echo "FAIL AC9: $RESET_REV_SRC inexistente ou não-executável" >&2
+  exit 1
+fi
+cp "$RESET_REV_SRC" "$TMP/bin/dod-reset-rev.sh"
+set +e
+RESET_OUT=$("$TMP/bin/dod-reset-rev.sh" --show 2>&1)
+AC9_EC=$?
+set -e
+if [[ "$AC9_EC" -ne 0 ]]; then
+  echo "FAIL AC9: dod-reset-rev.sh --show exit=$AC9_EC pós-migration:" >&2
+  echo "$RESET_OUT" >&2
+  exit 1
+fi
+# Output esperado: header tabular + 28 linhas de data (tarefa-N + cat-N-base)
+DATA_LINES=$(echo "$RESET_OUT" | grep -cE '^[[:space:]]*[0-9]+[[:space:]]+[0-9]+[[:space:]]+(tarefa-[0-9]+|cat-[0-9]+-base)' || true)
+if [[ "$DATA_LINES" -ne 28 ]]; then
+  echo "FAIL AC9: dod-reset-rev.sh --show retornou $DATA_LINES linhas de data, esperado 28" >&2
+  echo "$RESET_OUT" >&2
+  exit 1
+fi
+echo "PASS AC9 — dod-reset-rev.sh --show processa DOD.md migrado (28 entries)"
+
 echo ""
 echo "ALL TESTS PASSED"
