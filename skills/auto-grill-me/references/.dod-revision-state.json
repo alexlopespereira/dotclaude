@@ -1,170 +1,170 @@
 {
   "cat-1-base": {
-    "bullets_sha256": "b22280013ce150bf26da5fc7588013612824cff843cd6f224238e73dbce44e84",
-    "last_seen_iso": "2026-05-20T21:16:39Z",
+    "bullets_sha256": "0b26ee93c6ee03b4919b4d670d4289fbc4322b884270dfb5cfa7855da657f63f",
+    "last_seen_iso": "2026-05-21T03:14:14Z",
     "slug": "dod-base-categoria-1",
-    "title_current": "DoD-base — Categoria 1"
+    "title_current": "Categoria 1"
   },
   "cat-2-base": {
     "bullets_sha256": "7d52987499811d599772480fb39f57d77c91ac9459b1401eb578247d902225da",
-    "last_seen_iso": "2026-05-20T21:16:39Z",
+    "last_seen_iso": "2026-05-21T18:29:38Z",
     "slug": "dod-base-categoria-2",
-    "title_current": "DoD-base — Categoria 2"
+    "title_current": "DoD-base \u2014 Categoria 2"
   },
   "cat-3-base": {
     "bullets_sha256": "276156bb88c4fa8f25a5083def3adfdb512fb6f67ecd6f17a0135806daa001af",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "dod-base-categoria-3",
-    "title_current": "DoD-base — Categoria 3"
+    "title_current": "DoD-base \u2014 Categoria 3"
   },
   "cat-4-base": {
     "bullets_sha256": "6496ed8080f6a9fc03ab2102b1ee02892c613972799b029508b774a894e4bda9",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "dod-base-categoria-4",
-    "title_current": "DoD-base — Categoria 4"
+    "title_current": "DoD-base \u2014 Categoria 4"
   },
   "cat-5-base": {
     "bullets_sha256": "1962997390b154f4012f7b220f2a293cb2f5ebf4fdf2460a07d2c5074e567322",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "dod-base-categoria-5",
-    "title_current": "DoD-base — Categoria 5"
+    "title_current": "DoD-base \u2014 Categoria 5"
   },
   "cat-6-base": {
     "bullets_sha256": "12572ecf91cdd374e397984180e0b663c604c6f394a911b7750e9ba151f36f76",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "dod-base-categoria-6",
-    "title_current": "DoD-base — Categoria 6"
+    "title_current": "DoD-base \u2014 Categoria 6"
   },
   "cat-7-base": {
     "bullets_sha256": "b5d5324bb97a90d8b3a619b1514e00aa740fab70c206402f993f69c5a9ae50d4",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "dod-base-categoria-7",
-    "title_current": "DoD-base — Categoria 7"
+    "title_current": "DoD-base \u2014 Categoria 7"
   },
   "cat-8-base": {
     "bullets_sha256": "22a868dd2a99ff3a07f6cfb1a1ba8511d84729e6d88176ec0c0ce88e56f62e6f",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "dod-base-categoria-8",
-    "title_current": "DoD-base — Categoria 8"
+    "title_current": "DoD-base \u2014 Categoria 8"
   },
   "tarefa-1": {
-    "bullets_sha256": "34366ca85ade54e4c0aaeb71e6dc2591450231316d70de18c0d88d506237e3b9",
-    "last_seen_iso": "2026-05-20T21:16:39Z",
+    "bullets_sha256": "ebfa2149d85aa3058441a2274eca809503cfce8513320bde77dfd88e18597431",
+    "last_seen_iso": "2026-05-21T03:14:14Z",
     "slug": "tarefa-1-slash-command-novo-refactor",
-    "title_current": "Tarefa 1 — Slash command novo / refactor"
+    "title_current": "Slash command novo / refactor"
   },
   "tarefa-10": {
     "bullets_sha256": "5540836ae9e2a8bb5d29590146df03c82ea71b2094e28b29761d7c9c98f0bdd7",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-10-outer-loop-mutation-agent-karpathy-program-md",
-    "title_current": "Tarefa 10 — Outer-loop mutation agent (Karpathy `program.md`)"
+    "title_current": "Tarefa 10 \u2014 Outer-loop mutation agent (Karpathy `program.md`)"
   },
   "tarefa-11": {
     "bullets_sha256": "63acd431c40de3ba5728b29e0781cdb674abcda61e00b774140f3eb1d04161bb",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-11-edge-function-supabase-sentry",
-    "title_current": "Tarefa 11 — Edge function (Supabase + Sentry)"
+    "title_current": "Tarefa 11 \u2014 Edge function (Supabase + Sentry)"
   },
   "tarefa-12": {
     "bullets_sha256": "579c206133182f8d7e8f89df84cd1148724c830a1617b2aec6ca7ae96948a681",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-12-backend-gcp-deploy-cloud-run-secret-manager-cloud-build",
-    "title_current": "Tarefa 12 — Backend GCP deploy (Cloud Run + Secret Manager + Cloud Build)"
+    "title_current": "Tarefa 12 \u2014 Backend GCP deploy (Cloud Run + Secret Manager + Cloud Build)"
   },
   "tarefa-13": {
     "bullets_sha256": "b11ecff6714da917703399e644348f1a062ee2cf06503b074fc474c75ebdfafc",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-13-pipeline-de-dados-cron-github-actions-systemd",
-    "title_current": "Tarefa 13 — Pipeline de dados cron (GitHub Actions / systemd)"
+    "title_current": "Tarefa 13 \u2014 Pipeline de dados cron (GitHub Actions / systemd)"
   },
   "tarefa-14": {
     "bullets_sha256": "2aece882e60aea970ba6a916dcc9faf9bb45d97dd20a1fcf79c6dc0224ba7f53",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-14-dashboard-web-timeline-fastapi-flask",
-    "title_current": "Tarefa 14 — Dashboard web timeline (FastAPI/Flask)"
+    "title_current": "Tarefa 14 \u2014 Dashboard web timeline (FastAPI/Flask)"
   },
   "tarefa-15": {
     "bullets_sha256": "52aa4f4e08cb6276b30bbf4bf541de8c7a33e74dfe34af868fcf91952f9fe264",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-15-cli-tool-python-auth-integra-o-backend",
-    "title_current": "Tarefa 15 — CLI tool Python (auth + integração backend)"
+    "title_current": "Tarefa 15 \u2014 CLI tool Python (auth + integra\u00e7\u00e3o backend)"
   },
   "tarefa-16": {
     "bullets_sha256": "668142789496db9a62629054ab58c71260551695967397cece83c50d2c4eb01e",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-16-sync-entre-repos-relacionados-templates-tpl",
-    "title_current": "Tarefa 16 — Sync entre repos relacionados (templates `.tpl`)"
+    "title_current": "Tarefa 16 \u2014 Sync entre repos relacionados (templates `.tpl`)"
   },
   "tarefa-17": {
     "bullets_sha256": "3d816a8e9536a2af19c99903de8a1d3858be42f5d4a89ce54a3502bb80a31bbc",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-17-tema-dawn-produ-o-www-acme-com-br",
-    "title_current": "Tarefa 17 — Tema Dawn produção (`www.exemplo-loja.com.br`)"
+    "title_current": "Tarefa 17 \u2014 Tema Dawn produ\u00e7\u00e3o (`www.exemplo-loja.com.br`)"
   },
   "tarefa-18": {
     "bullets_sha256": "4b23720a7aff3b79f4cdd253ba762058a050337722833a1b7cf8f983fd320d51",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-18-config-de-segundo-agente-cli-codex-cli-ralph-adversarial",
-    "title_current": "Tarefa 18 — Config de segundo agente CLI (Codex CLI / Ralph Adversarial)"
+    "title_current": "Tarefa 18 \u2014 Config de segundo agente CLI (Codex CLI / Ralph Adversarial)"
   },
   "tarefa-19": {
     "bullets_sha256": "da72bb6b87e639a2e33fec683290120d2e1a2918f63120507d66375163915d79",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-19-conte-do-educacional-versionado-latex-pdf",
-    "title_current": "Tarefa 19 — Conteúdo educacional versionado (LaTeX/PDF)"
+    "title_current": "Tarefa 19 \u2014 Conte\u00fado educacional versionado (LaTeX/PDF)"
   },
   "tarefa-2": {
     "bullets_sha256": "09820043adafe666ecfe3605611e92909ba5768b4111493d2a898e610c62a701",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-2-skill-nova",
-    "title_current": "Tarefa 2 — Skill nova"
+    "title_current": "Tarefa 2 \u2014 Skill nova"
   },
   "tarefa-20": {
     "bullets_sha256": "76a00916aadf55a6a9e6ca09e89d47751cd7af09e84e460a5bc57a4c8c3d7b2b",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-20-parsing-de-input-n-o-estruturado-regex",
-    "title_current": "Tarefa 20 — Parsing de input não-estruturado (regex)"
+    "title_current": "Tarefa 20 \u2014 Parsing de input n\u00e3o-estruturado (regex)"
   },
   "tarefa-3": {
-    "bullets_sha256": "e9e6a53dc58b80695ff8f29ce3cbabe1ff4eb79c27509caa66d1706b10b51214",
-    "last_seen_iso": "2026-05-20T21:16:39Z",
+    "bullets_sha256": "841bcdababea7e4301c0c355edb06b0d46bc951737957dc27f7ac9837930a631",
+    "last_seen_iso": "2026-05-21T03:14:14Z",
     "slug": "tarefa-3-princ-pio-global-na-claude-claude-md",
-    "title_current": "Tarefa 3 — Princípio global na `~/.claude/CLAUDE.md`"
+    "title_current": "Princ\u00edpio global na `~/.claude/CLAUDE.md`"
   },
   "tarefa-4": {
     "bullets_sha256": "2470634305079ec02f6f7928d2aa57f2f0888f9974e027ea5cf7e06639f223ef",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-4-plano-t-cnico-react-feynman",
-    "title_current": "Tarefa 4 — Plano técnico ReAct+Feynman"
+    "title_current": "Tarefa 4 \u2014 Plano t\u00e9cnico ReAct+Feynman"
   },
   "tarefa-5": {
     "bullets_sha256": "983a413f6f7f435afd16f66bc589be5316c7816985d0e1b5022b7140334b3acf",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-5-p-gina-nova-storefront",
-    "title_current": "Tarefa 5 — Página nova Storefront"
+    "title_current": "Tarefa 5 \u2014 P\u00e1gina nova Storefront"
   },
   "tarefa-6": {
     "bullets_sha256": "020bf9320183db9ad1fc1fab8fa90871cf2f356f2605b9892ef1d47d67e3bd34",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-6-refatora-o-padroniza-o-design-system",
-    "title_current": "Tarefa 6 — Refatoração / padronização design system"
+    "title_current": "Tarefa 6 \u2014 Refatora\u00e7\u00e3o / padroniza\u00e7\u00e3o design system"
   },
   "tarefa-7": {
     "bullets_sha256": "a14632981d49066352700f11f20b2a8a65647978125c4aa50ef54533e52bbc1c",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-7-bug-fix-produ-o-storefront",
-    "title_current": "Tarefa 7 — Bug fix produção Storefront"
+    "title_current": "Tarefa 7 \u2014 Bug fix produ\u00e7\u00e3o Storefront"
   },
   "tarefa-8": {
     "bullets_sha256": "e3ceb9e984cb800f18d52398bf0c1c08345327c920bea565768b8e5086c0dd88",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-8-hook-pretooluse-stop",
-    "title_current": "Tarefa 8 — Hook PreToolUse / Stop"
+    "title_current": "Tarefa 8 \u2014 Hook PreToolUse / Stop"
   },
   "tarefa-9": {
     "bullets_sha256": "7e56bdcb87a81b315923509b0a1ec5cb7999fe43199026edeb119960c0aeb45b",
     "last_seen_iso": "2026-05-20T21:16:39Z",
     "slug": "tarefa-9-agente-aut-nomo-com-heartbeat-loop",
-    "title_current": "Tarefa 9 — Agente autônomo com heartbeat loop"
+    "title_current": "Tarefa 9 \u2014 Agente aut\u00f4nomo com heartbeat loop"
   }
 }

@@ -39,13 +39,13 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 
 ## Categoria 1 — Claude Code internals (slash commands, skills, hooks, princípios globais)
 
-### DoD-base — Categoria 1 (usos: 1 · desde rev: 1)
+### DoD-base — Categoria 1 (usos: 2 · desde rev: 2)
 - [ ] [b1] arquivo vive em `~/.claude/` (global) ou `.claude/` (projeto) — escopo escolhido documentado no commit
 - [ ] [b2] frontmatter YAML mínimo presente (`description` + `name` quando aplicável); descrição inclui *o que faz* + *quando usar* (gatilhos)
 - [ ] [b3] testado em sessão real do Claude Code (não só lido) — log do uso no commit message ou `CHANGELOG.md`
 - [ ] [b4] commitado em git com mensagem `feat(claude): ...` (prefix `[US-XX]` aceito quando gerado pelo Ralph)
 
-### Tarefa 1 — Slash command novo / refactor (usos: 1 · desde rev: 1)
+### Tarefa 1 — Slash command novo / refactor (usos: 2 · desde rev: 2)
 - [ ] [b1] arquivo em `.claude/commands/<nome>.md` OU migrado para skill — escolha justificada (skill se houver assets/scripts)
 - [ ] [b2] frontmatter declara `allowed-tools` explicitamente (ex.: `Bash(git:*), Read, Edit`) — não usar wildcard total
 - [ ] [b3] argumentos via `$ARGUMENTS` ou `$1`/`$2` com `argument-hint` definido
@@ -59,7 +59,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b4] auto-invocação testada: prompt que *deveria* disparar a skill dispara sem `/skill-name` explícito
 - [ ] [b5] `/doctor` confirma que a skill não está com descrição truncada por budget overflow
 
-### Tarefa 3 — Princípio global na `~/.claude/CLAUDE.md` (usos: 0 · desde rev: 0)
+### Tarefa 3 — Princípio global na `~/.claude/CLAUDE.md` (usos: 1 · desde rev: 1)
 - [ ] [b1] regra é **acionável e binária** ("nunca commitar `.env`") — não aspiracional
 - [ ] [b2] tem **origem rastreável**: link para o incidente/PR/post que motivou a regra
 - [ ] [b3] arquivo total continua ≤ 2.5k tokens — verificado com `wc -w` ou `/context`
@@ -79,7 +79,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 
 ## Categoria 2 — Planejamento e revisão técnica
 
-### DoD-base — Categoria 2 (usos: 0 · desde rev: 0)
+### DoD-base — Categoria 2 (usos: 1 · desde rev: 1)
 - [ ] [b1] artefato é **versionado** (markdown em git) — não chat efêmero
 - [ ] [b2] linguagem segue o framework escolhido (ReAct: Thought/Action/Observation; Feynman: `[FATO]`/`[INFERÊNCIA]`/`[SUPOSIÇÃO]`) com marcadores explícitos
 - [ ] [b3] declara **critério de parada** binário

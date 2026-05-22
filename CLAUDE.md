@@ -50,6 +50,14 @@ Use `/research-status` para listar pesquisas.
 Use `/research-synthesize` para sintetizar pesquisa pendente.
 Use `/diagnose [bug]` para loop disciplinado de diagnóstico (Phase 1 = construir feedback loop).
 
+### Nativas do Claude Code (built-in, v2.1.139–146)
+
+Use `/code-review [low|high]` para review local multi-agent do diff atual — substitui a skill nativa `simplify` (renomeada em v2.1.146).
+Use `/goal <condição>` para autonomy goal-driven leve — alternativa a `/plan` quando o overhead estruturado é overkill.
+Use `claude agents` (subcomando CLI) para dashboard unificado de sessions running/blocked/completed.
+Use `/resume` para retomar background sessions com modelo/effort/permissions preservados.
+Use `/schedule` para cron remoto de agentes recorrentes — alternativa a `/loop` (polling auto-paced).
+
 ## Skills de alinhamento e exploração (Tier 1 — Matt Pocock)
 
 - **`grill-me`** — interview adversário para alinhar plano/design. Pergunta uma de cada vez. Invocada manualmente ou via `/plan --grill`.

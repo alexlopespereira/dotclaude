@@ -123,6 +123,20 @@ Antes da Fase 5 Ralph, gere test specs táticos derivados das DoDs referenciadas
 
 **Antes de escalar para humano:** sugira `/reflect --on-failure 5 --context-file <path-com-findings-P0>` para entender qual critério DoD teria capturado os findings P0 antes do Ralph escalar.
 
+## Fase 5.5 — Code review nativo (holístico pós-Ralph)
+
+Após Ralph completar (Fase 5 verde), **antes dos testes finais**, execute `/code-review high` para captar simplificações/reuse que o reviewer Codex iteração-por-iteração não vê. Complementa (não substitui) o adversarial do Ralph: o Codex revisa cada commit isoladamente; `/code-review` olha o diff agregado.
+
+Invoque `/code-review high` na sessão interativa do `/full-cycle`. Anote findings num bloco `## Code review findings` no `progress.txt` (cwd atual). Princípio 11 aplica — transição interna não pede confirmação humana.
+
+**Gate:**
+- **Findings P0 (crítico / segurança / correctness):** PARE — não prossiga para Fase 6. Sugira `/reflect --on-failure 5.5 --context-file <path-com-findings-P0>` antes de escalar pra humano.
+- **Findings P1/P2 (simplificação / dead code / nits):** registre no `progress.txt` e prossiga para Fase 6. Humano decide no review do PR se aborda antes do merge.
+
+**Escopo do `/code-review`.** O comando nativo (v2.1.146) analisa por default o diff do working tree / último commit. No modelo Boris (Fase 5 já commitou em `main` local), rode com `git diff origin/main..HEAD` em mente — se a primeira execução mostrar escopo errado, ajustar com argumento ou flag de range na próxima iteração do `/full-cycle`.
+
+**Non-blocking se indisponível.** Se `/code-review` não existir (Claude Code < v2.1.146) ou falhar, registre o aviso e prossiga para Fase 6 — é layer adicional de qualidade, não gate hard.
+
 ## Fase 6 — Testes finais
 
 Antes de abrir PR, rode a suíte de testes do projeto no cwd atual:
