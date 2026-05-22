@@ -28,6 +28,10 @@ Só reporte se TODOS forem verdadeiros:
   (b) Surgical: toda linha mudada rastreia para um AC? Refactor drive-by?
 - **TESTING**: novo teste cobre novo comportamento + pelo menos 1
   caso negativo? Testes existentes ainda válidos?
+  - Caso negativo (assertion "NÃO contém X") deve **provar precondição**
+    antes de avaliar ausência. Rejeitar `|| true` em chains que disparam
+    o caminho testado. Aceitar (a) HTTP 2xx assertado, (b) positive marker
+    co-presente, ou (c) side-effect observable em backing store.
 
 ### Severidade
 - **P0** — bloqueia merge. Bug, vuln, data-loss, build quebrado, AC não

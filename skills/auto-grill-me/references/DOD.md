@@ -183,6 +183,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b3] erros enviados para Sentry com `release` tag = commit SHA
 - [ ] [b4] deploy é idempotente — rodar 2x produz mesma revisão (mesmo image digest)
 - [ ] [b5] revert documentado: comando exato testado em staging
+- [ ] [b6] smoke test com ramo negativo (assertion "NÃO contém X") prova precondição antes de avaliar a observable. Rejeitar `|| true` em chains críticas. Aceitar (a) HTTP 2xx assertado, (b) positive marker co-presente no mesmo response, (c) side-effect observable em backing store (cache hit/miss, log, contador).
 
 ### Tarefa 11 — Edge function (Supabase + Sentry) (usos: 0 · desde rev: 0)
 - [ ] [b1] `Sentry.init` chamado no início do handler, ANTES de qualquer `await`

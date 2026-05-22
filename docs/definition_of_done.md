@@ -176,6 +176,17 @@
 - [ ] erros enviados para Sentry (ou equivalente) com `release` tag = commit SHA
 - [ ] deploy é idempotente — rodar 2x produz a mesma revisão (mesmo image digest)
 - [ ] revert documentado: comando exato (`gcloud run services update-traffic --to-revisions=PREV=100`) testado em staging
+- [ ] smoke test com ramo negativo (assertion "NÃO contém X") prova precondição antes de avaliar a observable. Rejeitar `|| true` em chains críticas. Aceitar (a) HTTP 2xx assertado, (b) positive marker co-presente no mesmo response, (c) side-effect observable em backing store (cache hit/miss, log, contador).
+
+**Anti-vacuous em ramo negativo.** Smoke tests que afirmam "NÃO contém X" são especialmente perigosos quando o caminho que dispara o ramo negativo pode falhar silenciosamente upstream (HTTP error swallowed, CSRF block, parser cache stale, network timeout). O teste passa verde sem nunca exercer o caminho que diz testar — *vacuous PASS*. Para defender:
+
+- **Não use `|| true`** em chains que disparam o caminho do ramo negativo. O exit code da request precisa ser assertado.
+- Provas aceitáveis de que a precondição foi exercida:
+  - **(a)** HTTP 2xx (ou 303 se redirect) na request que dispara o caminho — assertado explicitamente.
+  - **(b)** Positive marker co-presente no mesmo response que indica que o handler rodou (ex: presença de `class="wikiapp-leaderboard"` confirma que o parser tag PHP foi executado, antes de checar ausência de `NAME_NEG`).
+  - **(c)** Side-effect observable num backing store: `memcached_get` direto da chave esperada, log de hit/miss, contador Prometheus incrementado.
+
+Caso real (PR #88 wikiapp-2, 2026-05-21): smoke `action=purge` retornava 4xx silencioso (anônimo sem CSRF), parser cache nunca era limpo, e o GET subsequente lia cache stale sem o `NAME_NEG` esperado — teste passava verde por motivo errado. Reviewer Codex (Claude Sonnet fallback iter4) capturou apenas como P1 REQUEST_CHANGES; com a cláusula CODE_REVIEW.md anti-vacuous, viraria P0 BLOCK direto na iter1.
 
 ### 11. Edge function instrumentation (Supabase + Sentry)
 - [ ] `Sentry.init` chamado no início do handler, ANTES de qualquer `await`
