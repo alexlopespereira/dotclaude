@@ -1,15 +1,22 @@
 #!/bin/bash
-# wrapper-launch.sh — Lock multi-slot pro perfil Chrome dedicado.
+# wrapper-launch.sh — Lock multi-slot pro perfil Chrome dedicado (per-slot).
 #
 # Workflow Boris tem 5 checkouts paralelos; 2+ sessões Claude Code podem
 # tentar usar o browser simultaneamente. Chromium ProcessSingleton quebra
-# nesse caso (lockfile no perfil + processo zumbi). Este wrapper serializa
-# via mkdir atomic lock (macOS não tem flock CLI; só syscall em libc).
+# nesse caso (lockfile no perfil + processo zumbi).
 #
-# Robustez contra SIGKILL do cliente MCP: lock guarda PID do wrapper.
-# Se mkdir falhar mas o PID dono não está vivo, considera lock órfão e
-# limpa. Mitiga: trap não roda em SIGKILL, então lock pode ficar preso
-# após `claude mcp list` timeout-killar o wrapper.
+# Solução: profile separado por slot em ~/.claude/chrome-profile-<slot>/.
+# Cada slot é independente — sem fila, sem competição. Custo: re-login
+# em cada slot (cookies não compartilhados entre profiles).
+#
+# Resolução do slot:
+#   1. env $CLAUDE_SLOT_NAME se definida (override explícito)
+#   2. basename($PWD) se bate <repo>-<N> (pool Boris)
+#   3. "default" (repos diretos, worktrees, etc.)
+#
+# Robustez: lock ainda existe per-profile pra cobrir múltiplas Claude Code
+# sessions no MESMO slot (raro, mas possível). Trap limpa em SIGINT/TERM/HUP.
+# SIGKILL deixa órfão — acquire_lock detecta via kill -0 no PID gravado.
 #
 # Invocado pelo MCP em ~/.claude.json (escopo user):
 #   playwright -> /Users/dev/.claude/skills/browser-actions/wrapper-launch.sh
@@ -18,9 +25,21 @@
 
 set -euo pipefail
 
-LOCK_DIR="$HOME/.claude/chrome-profile/.lock"
+# Resolver slot
+SLOT="${CLAUDE_SLOT_NAME:-}"
+if [ -z "$SLOT" ]; then
+  CWD_BASE=$(basename "$PWD")
+  if [[ "$CWD_BASE" =~ ^([a-z0-9-]+)-([1-5])$ ]]; then
+    SLOT="$CWD_BASE"
+  else
+    SLOT="default"
+  fi
+fi
+
+PROFILE_DIR="$HOME/.claude/chrome-profile-${SLOT}"
+LOCK_DIR="$PROFILE_DIR/.lock"
 PID_FILE="$LOCK_DIR/pid"
-mkdir -p "$(dirname "$LOCK_DIR")"
+mkdir -p "$PROFILE_DIR"
 
 acquire_lock() {
   if mkdir "$LOCK_DIR" 2>/dev/null; then
@@ -42,8 +61,10 @@ acquire_lock() {
 }
 
 if ! acquire_lock; then
-  echo "ERRO: outro slot Claude Code já está usando o perfil Chrome dedicado." >&2
-  echo "Aguarde aquela sessão terminar, ou rmdir $LOCK_DIR se for lock órfão." >&2
+  echo "ERRO: outra Claude Code session já está usando o profile do slot '$SLOT'." >&2
+  echo "      profile: $PROFILE_DIR" >&2
+  echo "      lock:    $LOCK_DIR" >&2
+  echo "Aguarde aquela sessão terminar, ou rode reset.sh se for lock órfão." >&2
   exit 99
 fi
 
@@ -55,6 +76,6 @@ trap cleanup EXIT INT TERM HUP
 # Não usa exec — wrapper precisa continuar vivo pra trap rodar e limpar lock.
 # Sinais propagam ao filho automaticamente (mesmo grupo de processo).
 npx -y @playwright/mcp@latest \
-  --user-data-dir "$HOME/.claude/chrome-profile" \
+  --user-data-dir "$PROFILE_DIR" \
   --browser chrome \
   "$@"

@@ -38,13 +38,14 @@ claude mcp add --transport stdio --scope user playwright -- \
 Wrapper internamente lança:
 ```
 npx -y @playwright/mcp@latest \
-  --user-data-dir "$HOME/.claude/chrome-profile" \
+  --user-data-dir "$HOME/.claude/chrome-profile-<slot>" \
   --browser chrome
 ```
 
-**Pré-requisitos** (provisionados pela Fatia 1 do handoff):
-- `~/.claude/chrome-profile/` existe, `chmod 700`, excluído do Time Machine.
-- `/Applications/Google Chrome.app/` instalado (verificado).
+Onde `<slot>` é resolvido per-call: `$CLAUDE_SLOT_NAME` se setada, ou `basename($PWD)` quando bate o padrão `<repo>-<N>` (pool Boris), ou `"default"` (fallback para repos diretos / worktrees / sessões sem pool). Profile é criado on-demand — **primeira sessão em cada slot exige re-login** nos sites usados (cookies não compartilham entre slots).
+
+**Pré-requisitos:**
+- `/Applications/Google Chrome.app/` instalado.
 - Wrapper executável (`chmod +x`).
 
 **Validação:** `claude mcp list | grep playwright` deve mostrar `✓ Connected`.
@@ -193,19 +194,23 @@ transfer, transferir, withdraw, sacar, confirm purchase
 
 **Exceções (a)–(e) do Princípio 11 também se aplicam.** Blocklist do P12 é **adicional**, não substitui.
 
-## Lock multi-slot (workflow Boris)
+## Profile per-slot (workflow Boris)
 
-Workflow Boris Cherny tem 5 checkouts paralelos (`~/Projects/checkouts/<repo>-{1..5}`). 2+ sessões Claude Code podem tentar usar o browser ao mesmo tempo. Chromium tem ProcessSingleton: o segundo processo apontando pro mesmo `--user-data-dir` quebra (lockfile + processo zumbi).
+Workflow Boris Cherny tem 5 checkouts paralelos (`~/Projects/checkouts/<repo>-{1..5}`). 2+ sessões Claude Code podem tentar usar o browser ao mesmo tempo. **Solução: profile Chrome separado por slot** — cada slot usa `~/.claude/chrome-profile-<slot>/` independente. Sem fila, sem competição entre slots.
 
-`wrapper-launch.sh` resolve via `mkdir` atomic lock em `~/.claude/chrome-profile/.lock` (diretório, não arquivo):
+`wrapper-launch.sh` resolve `<slot>` em ordem:
 
-- Primeira invocação: `mkdir` cria o diretório atomicamente, lança `@playwright/mcp@latest`. Lock vive enquanto o processo wrapper vive.
-- Segunda invocação concorrente: `mkdir` falha (errno EEXIST), wrapper aborta com exit 99 + mensagem clara. Claude Code da segunda sessão recebe erro do MCP, deve reportar ao usuário ("outro slot está usando o browser").
-- Quando primeira sessão termina (Claude Code encerra ou MCP é morto via SIGTERM/SIGINT/SIGHUP): trap do wrapper roda `rmdir` e libera o lock pra próxima sessão.
+1. `$CLAUDE_SLOT_NAME` (env var, override explícito — use quando rodar fora de pool).
+2. `basename($PWD)` quando bate `<repo>-<N>` regex (pool Boris).
+3. `"default"` (fallback para repos diretos, worktrees, sessões sem pool).
 
-**macOS não tem `flock` CLI nativo** (só a syscall em libc). `mkdir` atomic lock é a alternativa POSIX-portável usada aqui — zero dependência externa. Validado empiricamente durante a Fatia 1 (S3 do handoff falhou; trocamos por `mkdir`).
+Lock per-profile (`~/.claude/chrome-profile-<slot>/.lock`) ainda existe para cobrir o caso raro de 2 sessões Claude Code no MESMO slot. Trap remove em SIGINT/TERM/HUP; SIGKILL deixa órfão (detectado na próxima invocação via `kill -0` no PID gravado).
 
-**Se o lock ficar travado** (processo zumbi após crash duro): `rmdir ~/.claude/chrome-profile/.lock` resolve. O diretório é puramente um marcador — vazio, sem estado.
+**Trade-off aceito:** cookies/login não compartilham entre slots. Primeira sessão em cada slot exige re-auth nos sites usados. Ganho: zero risco de corromper Chrome user-data por escrita concorrente; sintoma "Playwright inacessível em quase todas as sessões" elimina.
+
+**Lock travado num slot específico:** `rmdir ~/.claude/chrome-profile-<slot>/.lock`. Recovery global (todos os slots + processos zumbi): `bash ~/.claude/skills/browser-actions/reset.sh`.
+
+**Limpeza de MCP duplicado em checkouts** (one-shot): `bash ~/.claude/skills/browser-actions/cleanup-stale-mcp.sh` — remove entries `playwright` legadas dos `.mcp.json` per-checkout (mantém só o wrapper user-scope global).
 
 ## Troubleshooting
 
@@ -217,7 +222,7 @@ Workflow Boris Cherny tem 5 checkouts paralelos (`~/Projects/checkouts/<repo>-{1
 | `document.cookie` vazio (ou só com tracking) mesmo logado | Cookies de sessão são `httpOnly`/`SameSite=Strict` | Validado 2026-05-06. Sinais primários: **redirect-pra-login** ou **meta `user-login`** (ver "Protocolo de auth assistida"). `document.cookie` só serve como triagem. |
 | localStorage-only auth (raro) | Sem cookies, auth via JWT em localStorage | Aceitar fricção: pre-check via `browser_evaluate(() => localStorage.getItem('token'))`. |
 | Extensões bloqueando seletores | Snapshot retorna estranho, click falha em elementos visíveis | Lock garante que é Chrome dedicado sem extensões — descartar essa hipótese cedo. Se acontecer mesmo assim, abrir DevTools e inspecionar. |
-| MCP não conecta após reconfig | `claude mcp list` mostra erro de timeout/conexão | (1) wrapper executável? `ls -l wrapper-launch.sh`. (2) lock órfão? `rmdir ~/.claude/chrome-profile/.lock`. (3) Chrome instalado? `ls /Applications/Google\ Chrome.app`. (4) `flock` CLI ausente — usar `mkdir` atomic lock (já default). |
+| MCP não conecta após reconfig | `claude mcp list` mostra erro de timeout/conexão | (1) wrapper executável? `ls -l wrapper-launch.sh`. (2) lock órfão em algum slot? `bash ~/.claude/skills/browser-actions/reset.sh`. (3) Chrome instalado? `ls /Applications/Google\ Chrome.app`. (4) MCP duplicado em `.mcp.json` do checkout? `claude mcp list` mostra 2 entries playwright → rodar `bash ~/.claude/skills/browser-actions/cleanup-stale-mcp.sh`. |
 | `--browser chrome` falha | MCP sobe mas browser não abre | Fallback: editar wrapper pra usar `--executable-path "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"` (S4 do handoff). |
 
 ## Delimitação vs skill `testing`
@@ -232,7 +237,7 @@ Não há conflito — são domínios diferentes.
 
 `~/.claude/chrome-profile/` acumula cookies, localStorage, IndexedDB, histórico, indefinidamente. Não rotaciona automaticamente.
 
-**Limpeza geral** (força re-login em tudo): `rm -rf ~/.claude/chrome-profile/ && mkdir -p ~/.claude/chrome-profile && chmod 700 ~/.claude/chrome-profile`. Sugerido **trimestralmente** ou após exposição (laptop emprestado, suspeita de comprometimento).
+**Limpeza geral** (força re-login em todos os slots): `rm -rf ~/.claude/chrome-profile-*/`. Cada slot recria o profile na próxima invocação. Sugerido **trimestralmente** ou após exposição (laptop emprestado, suspeita de comprometimento). **Limpeza por slot:** `rm -rf ~/.claude/chrome-profile-<slot>/`.
 
 **Limpeza por domínio** (futuro): granularidade por host ainda não existe. Manualmente: abrir o perfil, DevTools → Application → Cookies → deletar.
 
@@ -263,7 +268,9 @@ Quando Claude operar num novo domínio (eTLD+1), adicionar uma linha aqui com da
 
 - Princípio 12 — `CLAUDE.md` (escada CLI > MCP > API > Playwright MCP).
 - Hook de blocklist — `~/.claude/hooks/block-browser-mutations.sh`.
-- Lockfile — `~/.claude/chrome-profile/.lock`.
-- Perfil — `~/.claude/chrome-profile/`.
+- Lockfile per-slot — `~/.claude/chrome-profile-<slot>/.lock`.
+- Perfis per-slot — `~/.claude/chrome-profile-<slot>/` (`<slot>` resolvido em runtime).
 - Wrapper — `~/.claude/skills/browser-actions/wrapper-launch.sh`.
+- Recovery global — `~/.claude/skills/browser-actions/reset.sh`.
+- Patch de MCP duplicado em checkouts — `~/.claude/skills/browser-actions/cleanup-stale-mcp.sh`.
 - Blocklist estrutural — `~/.claude/skills/browser-actions/blocklist.json`.

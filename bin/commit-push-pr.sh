@@ -170,14 +170,38 @@ PR_FLAGS=("--title" "$TITLE" "--body" "$BODY" "--base" "$DEFAULT" "--head" "$BRA
 PR_URL=$(gh pr create "${PR_FLAGS[@]}" 2>&1 | tail -1)
 echo "✓ PR aberto: $PR_URL"
 
-# Auto-merge: enfileira squash merge quando CI/checks passarem (não força merge imediato).
-# Em DRAFT: gh impede auto-merge — pular silenciosamente.
+# Auto-merge resiliente: detecta se base está protegida.
+#   - Protegida → --auto (aguarda checks/reviews, caminho original).
+#   - Não-protegida → soft merge direto (gh pr merge sem --auto): mergeia agora.
+# Em DRAFT: gh impede merge — pular silenciosamente.
 if [ "$AUTO_MERGE" = "true" ] && [ "$DRAFT" != "true" ]; then
-  if gh pr merge "$BRANCH_NAME" --auto "--$MERGE_METHOD" --delete-branch >/dev/null 2>&1; then
-    echo "✓ Auto-merge ($MERGE_METHOD) habilitado — PR mergeará quando CI passar e branch será deletada."
+  REPO_FULL=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || echo "")
+  BASE_PROTECTED=0
+  if [ -n "$REPO_FULL" ] && gh api "repos/$REPO_FULL/branches/$DEFAULT/protection" --silent 2>/dev/null; then
+    BASE_PROTECTED=1
+  fi
+
+  if [ "$BASE_PROTECTED" -eq 1 ]; then
+    MERGE_OUT=$(gh pr merge "$BRANCH_NAME" --auto "--$MERGE_METHOD" --delete-branch 2>&1)
+    MERGE_RC=$?
+    if [ "$MERGE_RC" -eq 0 ]; then
+      echo "✓ Auto-merge ($MERGE_METHOD) habilitado — aguarda CI/reviews."
+    else
+      echo "AVISO: --auto rejeitado. Mensagem do gh:"
+      echo "$MERGE_OUT" | sed 's/^/    /'
+      echo "       Force-merge com: /force-merge $BRANCH_NAME"
+    fi
   else
-    echo "AVISO: auto-merge não habilitado (branch protection pode exigir reviews antes de auto-merge, ou repo não tem auto-merge ligado)."
-    echo "       Force-merge com: /force-merge $BRANCH_NAME"
+    echo "→ Base '$DEFAULT' sem branch protection — mergeando direto (soft)."
+    MERGE_OUT=$(gh pr merge "$BRANCH_NAME" "--$MERGE_METHOD" --delete-branch 2>&1)
+    MERGE_RC=$?
+    if [ "$MERGE_RC" -eq 0 ]; then
+      echo "✓ PR mergeado ($MERGE_METHOD, branch remota deletada)."
+    else
+      echo "ERRO: merge soft falhou. Mensagem do gh:"
+      echo "$MERGE_OUT" | sed 's/^/    /'
+      echo "       Tente: /force-merge $BRANCH_NAME"
+    fi
   fi
 fi
 
