@@ -94,8 +94,9 @@ Itens, divididos em dois tiers:
 
 1. **Detectar storage** da wiki:
    - Se `graphify-out/graph.json` existe → `STORE=graphify-out/memory/` (graphify ingere o arquivo como nó → `graphify query`/`explain` de bônus).
-   - Senão → `STORE=.claude/intent/` (criar com `mkdir -p`; versionado no git).
+   - Senão → `STORE=.claude/intent/` (criar com `mkdir -p`).
    - O **formato do arquivo é idêntico** nos dois casos — graphify é enhancement, não requisito.
+   - **Verificar versionamento** (a promessa "pergunta uma vez, reusa entre máquinas/colaboradores" só vale se o intent for pro git): rodar `git check-ignore "$STORE/system_intent_project.md"`. Se **ignorado** (ex: repo com `.claude/` no `.gitignore` — comum), **AVISAR**: `⚠ intent ficará LOCAL nesta máquina (não compartilhado via git)` e oferecer: (a) `git add -f` ao persistir (force-track só o intent); (b) um path versionado que o repo não ignore; (c) aceitar local-only. `graphify-out/memory/` em geral **não** é ignorado (convenção Graphify versiona) → repos graphified não disparam o aviso. **Não** prometer "versionado" sem essa checagem.
 2. **Fundamentar** as respostas plausíveis: explore o repo + `$ARGUMENTS` + `CONTEXT.md`/`docs/adr/`/`README` antes de propor qualquer resposta. "Plausível" sem exploração é chute.
 3. **Tier de projeto:**
    - Ler `$STORE/system_intent_project.md`. **Se existe → carregar, usar, NÃO perguntar** (imprimir 1 linha: `System Intent de projeto carregado de <path>`).
