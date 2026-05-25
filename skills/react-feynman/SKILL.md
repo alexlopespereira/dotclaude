@@ -74,6 +74,74 @@ Sempre presente; "Nenhum." se o plano não envolve SaaS pago.
 |---------|-----------------|-----------------------|-------------------------------|--------------------------------------|
 |         |                 |                       |                               |                                      |
 
+## Modo HST — Hierarchical Systems Thinking (`/plan --hst`)
+
+Quando `/plan` recebe `--hst`, produza o plano nas **6 fases HST abaixo** em vez do **Template: Plano** padrão. Regras que continuam valendo *dentro* das fases:
+
+- **ReAct** (Thought → Action → Observation) roda durante a exploração de cada fase.
+- **Marcadores Feynman** (`[FATO]`/`[INFERÊNCIA]`/`[SUPOSIÇÃO]`) anotam toda afirmação.
+- O plano ainda termina com **Custos recorrentes** (tabela acima) e segue para **revisão adversária**.
+- Não comece detalhando componentes nem propondo tarefas isoladas — desça a hierarquia de cima pra baixo.
+
+### Fase 1 — System Intent (com gate de persistência na "wiki")
+
+Itens, divididos em dois tiers:
+
+- **Projeto** (perguntado **uma vez** por repo, depois reusado): `usuários` · `stakeholders` · `restrições globais`
+- **Feature** (por plano): `objetivo central da solução` · `entradas` · `saídas` · `fora-de-escopo`
+
+**Protocolo do gate** (a ordem importa):
+
+1. **Detectar storage** da wiki:
+   - Se `graphify-out/graph.json` existe → `STORE=graphify-out/memory/` (graphify ingere o arquivo como nó → `graphify query`/`explain` de bônus).
+   - Senão → `STORE=.claude/intent/` (criar com `mkdir -p`; versionado no git).
+   - O **formato do arquivo é idêntico** nos dois casos — graphify é enhancement, não requisito.
+2. **Fundamentar** as respostas plausíveis: explore o repo + `$ARGUMENTS` + `CONTEXT.md`/`docs/adr/`/`README` antes de propor qualquer resposta. "Plausível" sem exploração é chute.
+3. **Tier de projeto:**
+   - Ler `$STORE/system_intent_project.md`. **Se existe → carregar, usar, NÃO perguntar** (imprimir 1 linha: `System Intent de projeto carregado de <path>`).
+   - Se ausente → para **cada** item (usuários, stakeholders, restrições globais), gere uma resposta plausível + 1–2 alternativas e pergunte via `AskUserQuestion`, com a recomendada primeiro e `"Other"` para edição livre. **Batch:** os 3 itens cabem em **1 tela** (≤4 perguntas/chamada). Persistir (ver Persistência).
+4. **Tier de feature:**
+   - Derivar um `slug` do enunciado do problema. **Listar** os `system_intent_feature_*.md` existentes em `$STORE`. **Mostrar** o slug proposto + os existentes e deixar o usuário **confirmar ou apontar para um existente** (via `AskUserQuestion`).
+   - Se o arquivo do slug resolvido existe → carregar, usar, **NÃO perguntar**.
+   - Se ausente → para **cada** item (objetivo, entradas, saídas, fora-de-escopo), pergunte via `AskUserQuestion` (os 4 itens cabem em **1 tela**). Persistir.
+5. **`--refresh-intent`:** ignora o hit, re-pergunta e sobrescreve (via delete-then-rewrite).
+
+**Persistência (delete-then-rewrite — idempotente):**
+
+- Projeto: `$STORE/system_intent_project.md` · Feature: `$STORE/system_intent_feature_<slug>.md`.
+- Ao **atualizar** um arquivo que já existe: **apague-o antes de reescrever**. Em repo graphified isso é o que garante update limpo do conceito — o arquivo deletado entra em `prune_sources` no próximo `graphify update` (remove os nós antigos), e a reescrita regrava (regrow limpo). Sem o delete, o build "only grows" e deixa nós stale (graphify atualiza por *delete→prune→regrow*, não por overwrite).
+- O **lookup do gate lê o arquivo direto** (autoritativo, determinístico). Não dependa de `graphify query` para decidir pular as perguntas — o grafo pode estar momentaneamente stale.
+- Frontmatter (ingestable pelo graphify *e* legível como arquivo plano):
+
+```yaml
+---
+type: "system-intent"
+scope: "project"        # ou "feature"
+feature_slug: "<slug>"  # só no tier de feature
+date: "<ISO-8601>"
+contributor: "claude-code"
+---
+```
+
+Corpo: cada item do tier como uma subseção (`## Usuários`, `## Stakeholders`, …) com o conteúdo confirmado.
+
+`[SUPOSIÇÃO]` Repo multi-contexto (`CONTEXT-MAP.md`): MVP usa **um** `system_intent_project.md` na raiz; estender para um por contexto se necessário.
+
+### Fase 2 — High-Level Architecture
+Visão arquitetural de alto nível: divida a solução em grandes camadas/blocos e explique a função de cada um em 1–2 frases. Sem entrar em componente individual ainda.
+
+### Fase 3 — Modular Breakdown
+Para **cada módulo**: Responsabilidade · Entradas · Saídas · Dependências · Regras de negócio · Riscos · Critérios de sucesso.
+
+### Fase 4 — Interaction Map
+Como os módulos interagem; fluxo principal de ponta a ponta; gargalos, dependências críticas e pontos de falha.
+
+### Fase 5 — Component Deep Dive
+Para **cada componente**: dados necessários · processos internos · exceções · integrações.
+
+### Fase 6 — Roadmap (compatível com `/prd-convert`)
+Organize a implementação em fases: **MVP** · **melhorias** · **versão escalável**. **Cada item do MVP é uma "fatia"/user story** — esse é o formato que `/prd-convert` consome para gerar `prd.json`, então um plano `--hst` continua alimentando o loop Ralph sem adaptação. Termine com **Decisões Pendentes** e a tabela de **Custos recorrentes**.
+
 ## Template: Revisão Adversária (Codex como Red Team)
 
 ## Revisão Adversária: [Título do Plano]

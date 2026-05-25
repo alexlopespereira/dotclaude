@@ -40,7 +40,7 @@
 
 ## Skills disponíveis
 
-Use `/plan` para produzir um plano completo com templates ReAct + Feynman. Suporta `--grill` para iniciar com sessão de alinhamento.
+Use `/plan` para produzir um plano completo com templates ReAct + Feynman. Suporta `--grill` para iniciar com sessão de alinhamento e `--hst` para o Modo Hierarchical Systems Thinking (6 fases top-down + System Intent persistido na wiki por tier projeto/feature — pergunta uma vez, reusa depois).
 Use `/adversarial-review` para gerar o parecer de revisão adversária.
 Use `/full-planning-cycle [--grill]` para executar planejamento + auto-revisão em sequência (para só quando aprovado; não executa).
 Use `/full-cycle` para o ciclo end-to-end: planejamento + revisão + prd.json + Ralph Adversarial (execução automática).
