@@ -94,6 +94,40 @@ parse_verdict() {
     return 0
 }
 
+# extract_verdict_json — isola o ÚLTIMO objeto JSON com .verdict de um transcript
+# misto de reviewer (Codex/Claude). O transcript inclui o `cat progress.txt` que o
+# reviewer imprime no início (pipe-delimited, com substrings "evidence": que NÃO são
+# JSON). Sem isolar o bloco, o fallback grep de evidence raspava o transcript inteiro
+# e re-injetava evidência velha/cross-story em progress.txt (bug observado 2026-05-25).
+# Usa python3 (json.raw_decode) — respeita strings/escapes/nesting, ao contrário de
+# brace-counting em awk (que quebra com `}` dentro de string de evidence).
+# Lê stdin (ou $1). Emite o bloco JSON (compactado) ou vazio se nenhum tiver .verdict.
+extract_verdict_json() {
+    local input
+    if [ $# -gt 0 ]; then input="$*"; else input=$(cat); fi
+    printf '%s' "$input" | python3 -c '
+import sys, json
+data = sys.stdin.read()
+dec = json.JSONDecoder()
+best = None
+i, n = 0, len(data)
+while i < n:
+    if data[i] == "{":
+        try:
+            obj, end = dec.raw_decode(data, i)
+        except ValueError:
+            i += 1
+            continue
+        if isinstance(obj, dict) and "verdict" in obj:
+            best = obj          # mantem o ULTIMO bloco com .verdict
+        i = end
+    else:
+        i += 1
+if best is not None:
+    sys.stdout.write(json.dumps(best, ensure_ascii=False))
+'
+}
+
 # emit_progress_event — dual-output writer para progress.txt + progress.jsonl.
 #
 # Uso:

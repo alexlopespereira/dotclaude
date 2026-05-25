@@ -694,12 +694,17 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
             # Coleta newline-separated (NÃO pipe-concat) para emit_progress_event
             # preservar array nativo em progress.jsonl. O concat com '|' acontece
             # em emit_progress_event apenas no path progress.txt (compat byte-a-byte).
-            EVIDENCES_NL=$(echo "$REVIEW_RESULT" \
+            # Isola o bloco JSON do veredicto ANTES de extrair evidence. Sem isso,
+            # o fallback grep raspava o transcript INTEIRO — incluindo o `cat
+            # progress.txt` que o reviewer imprime no início — re-injetando
+            # evidência velha/cross-story em progress.txt (fix 2026-05-25).
+            VERDICT_JSON=$(extract_verdict_json "$REVIEW_RESULT")
+            EVIDENCES_NL=$(printf '%s' "$VERDICT_JSON" \
                 | jq -r '.findings[]?.evidence // empty' 2>/dev/null \
                 | grep -v 'user_id concatenado em SQL' \
                 | head -3)
-            if [ -z "$EVIDENCES_NL" ]; then
-                EVIDENCES_NL=$(echo "$REVIEW_RESULT" \
+            if [ -z "$EVIDENCES_NL" ] && [ -n "$VERDICT_JSON" ]; then
+                EVIDENCES_NL=$(printf '%s' "$VERDICT_JSON" \
                     | grep -o '"evidence":[^,]*' \
                     | grep -v 'user_id concatenado em SQL' \
                     | head -3)
