@@ -113,7 +113,7 @@ sync_to_claude() {
                 # Capturamos a saída primeiro porque `pipefail` + diff (exit 1 quando há diff) faz
                 # `diff -rq | grep -q` retornar não-zero mesmo com match — bug clássico do pipefail.
                 local diff_out
-                diff_out=$(diff -rq "$REPO_DIR/$d" "$CLAUDE_DIR/$d" 2>/dev/null || true)
+                diff_out=$(diff -rq -x '.DS_Store' "$REPO_DIR/$d" "$CLAUDE_DIR/$d" 2>/dev/null || true)
                 if echo "$diff_out" | grep -q '^Files .* differ$'; then
                     echo "ERRO: $d/ tem arquivos divergentes em ~/.claude/." >&2
                     blocked=1
@@ -137,7 +137,7 @@ sync_to_claude() {
     for d in "${DIRS[@]}"; do
         if [ -d "$REPO_DIR/$d" ]; then
             mkdir -p "$CLAUDE_DIR/$d"
-            rsync -a --delete "$REPO_DIR/$d/" "$CLAUDE_DIR/$d/"
+            rsync -a --delete --exclude='.DS_Store' "$REPO_DIR/$d/" "$CLAUDE_DIR/$d/"
             echo "  ✓ $d/"
         fi
     done
@@ -163,7 +163,7 @@ sync_to_repo() {
     done
     for d in "${DIRS[@]}"; do
         if [ -d "$CLAUDE_DIR/$d" ]; then
-            rsync -a --delete "$CLAUDE_DIR/$d/" "$REPO_DIR/$d/"
+            rsync -a --delete --exclude='.DS_Store' "$CLAUDE_DIR/$d/" "$REPO_DIR/$d/"
             echo "  ✓ $d/"
         fi
     done
@@ -192,7 +192,7 @@ show_status() {
     for d in "${DIRS[@]}"; do
         if [ -d "$REPO_DIR/$d" ] && [ -d "$CLAUDE_DIR/$d" ]; then
             local changes
-            changes=$(diff -rq "$REPO_DIR/$d" "$CLAUDE_DIR/$d" 2>/dev/null || true)
+            changes=$(diff -rq -x '.DS_Store' "$REPO_DIR/$d" "$CLAUDE_DIR/$d" 2>/dev/null || true)
             if [ -n "$changes" ]; then
                 echo "  ≠ $d/ (diferente)"
                 echo "$changes" | sed 's/^/      /'
