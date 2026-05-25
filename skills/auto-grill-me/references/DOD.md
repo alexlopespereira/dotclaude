@@ -96,7 +96,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 
 ## Categoria 3 — Shopify (Storefront + Dawn + design system)
 
-### DoD-base — Categoria 3 (usos: 0 · desde rev: 0)
+### DoD-base — Categoria 3 (usos: 1 · desde rev: 1)
 - [ ] [b1] mudança previewada em **theme preview URL** antes do `theme push`
 - [ ] [b2] Theme Check sem erros novos (`shopify theme check`)
 - [ ] [b3] PageSpeed/Lighthouse mobile: nenhuma regressão >5 pontos em LCP/CLS vs baseline
@@ -121,7 +121,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b5] mudanças em `_blocks.liquid` testadas em ≥3 níveis de nesting (Horizon suporta 8)
 - [ ] [b6] arquivos custom prefixados (ex.: `acme-*`) para sobreviver a `git merge upstream/main`
 
-### Tarefa 7 — Bug fix produção Storefront (usos: 0 · desde rev: 0)
+### Tarefa 7 — Bug fix produção Storefront (usos: 1 · desde rev: 1)
 - [ ] [b1] reproduzido em theme preview ANTES do fix
 - [ ] [b2] fix tem **smallest possible diff** — refactoring proibido na mesma PR
 - [ ] [b3] testado em theme preview pós-fix com URL pública compartilhada

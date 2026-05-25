@@ -13,7 +13,7 @@
   },
   "cat-3-base": {
     "bullets_sha256": "276156bb88c4fa8f25a5083def3adfdb512fb6f67ecd6f17a0135806daa001af",
-    "last_seen_iso": "2026-05-20T21:16:39Z",
+    "last_seen_iso": "2026-05-23T17:25:33Z",
     "slug": "dod-base-categoria-3",
     "title_current": "DoD-base \u2014 Categoria 3"
   },
@@ -151,7 +151,7 @@
   },
   "tarefa-7": {
     "bullets_sha256": "a14632981d49066352700f11f20b2a8a65647978125c4aa50ef54533e52bbc1c",
-    "last_seen_iso": "2026-05-20T21:16:39Z",
+    "last_seen_iso": "2026-05-23T17:25:33Z",
     "slug": "tarefa-7-bug-fix-produ-o-storefront",
     "title_current": "Tarefa 7 \u2014 Bug fix produ\u00e7\u00e3o Storefront"
   },
