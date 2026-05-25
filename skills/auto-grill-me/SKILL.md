@@ -24,7 +24,7 @@ Para cada decisão da árvore de design:
    - `35 ≤ score ≤ 60` → **Tipo 3**: assume, imprime **uma linha** `▸ assumi: <decisão em 1 frase> (footnote #N)`, armazena footnote completa em buffer (formato [§7](references/RUBRICA.md)).
    - `score > 60` → **Tipo 1**: pergunta ao usuário **uma pergunta por vez** com recomendação explícita (verbatim grill-me style). Aguarda resposta antes de continuar.
 7. **Logar a decisão** em `decisions.jsonl` (ver §Audit log).
-8. **Se um artefato emergir** ("vamos precisar de um hook", "isso vai virar uma skill"): usar o índice de mapping em [DOD.md](references/DOD.md) para escolher candidato de categoria/tarefa. Rodar meta-classificação via rubrica sobre o mapping (mesmo algoritmo §3–§6 — usar G3/G6 para avaliar confiança no mapping). **Copiar verbatim (bullet-por-bullet)** o `DoD-base` da categoria + a `Tarefa N` específica do DOD.md e adicioná-los à seção "Artefatos a produzir" do plano em formação. `DoD-base` aparece **1× por categoria por plano** (dedupe — por economia de ruído, não por verbatim estrito); cada `Tarefa N` é sempre verbatim integral. Incremento de `usos` é acumulado em memória e aplicado em batch no `Stop criterion` (ver §Contadores de uso).
+8. **Se um artefato emergir** ("vamos precisar de um hook", "isso vai virar uma skill"): usar o índice de mapping em [DOD.md](references/DOD.md) para escolher candidato de categoria/tarefa. Rodar meta-classificação via rubrica sobre o mapping (mesmo algoritmo §3–§6 — usar G3/G6 para avaliar confiança no mapping). **Copiar verbatim (bullet-por-bullet)** o `DoD-base` da categoria + a `Tarefa N` específica do DOD.md e adicioná-los à seção "Artefatos a produzir" do plano em formação. `DoD-base` aparece **1× por categoria por plano** (dedupe — por economia de ruído, não por verbatim estrito); cada `Tarefa N` é sempre verbatim integral. Cada inserção de DoD é acumulada em memória e **emitida como evento `use` no `Stop criterion`** (ver §Contadores de uso).
 
 ## Stop criterion
 
@@ -60,51 +60,45 @@ Append por decisão (Tipo 1/2/3) em `~/.claude/cache/auto-grill/<basename-cwd>-d
 
 ## Contadores de uso
 
-Cada DoD em [`references/DOD.md`](references/DOD.md) carrega dois contadores no próprio heading:
-
-```
-### <Tarefa N|DoD-base> — <Título> (usos: X · desde rev: Y)
-```
+Cada DoD em [`references/DOD.md`](references/DOD.md) tem dois contadores **derivados** — eles **não** vivem mais no heading (o sufixo inline `(usos: N · desde rev: N)` foi removido na migração; o `DOD.md` é source-puro: o heading é só `### <Tarefa N|DoD-base> — <Título>`):
 
 - `usos` — histórico total de inserções deste DoD em planos produzidos pela skill.
 - `desde rev` — inserções desde a última revisão substantiva dos bullets daquele DoD.
 
-### Regex parser único
+Os números são derivados sob demanda de um **log append-only per-machine** (`~/.claude/telemetry/dod-usage.<machine-id>.jsonl`) pelo fold content-based [`bin/lib/usage-fold.sh`](../../bin/lib/usage-fold.sh). A skill **não edita contador inline no `DOD.md`** — apenas **emite eventos**.
 
-```
-^### (Tarefa \d+|DoD-base) — (.+?) \(usos: (\d+) · desde rev: (\d+)\)$
-```
+### Emissão de eventos `use` (batch no Stop criterion)
 
-Captura: `dod_kind` (`Tarefa N` ou `DoD-base`), `title_current`, `usos`, `desde rev`. O snapshot em `references/.dod-revision-state.json` indexa por `dod_id` — `tarefa-N` para Tarefas, `cat-N-base` para DoD-base — com `slug`, `title_current`, `bullets_sha256` e `last_seen_iso` como metadata.
+Durante a sessão a skill acumula em memória os `dod_id` inseridos no plano em formação (com multiplicidade — cada inserção conta 1 uso). **Apenas no encerramento (Stop criterion)** — antes de imprimir o plano final — emite **um evento `use` por inserção** via o writer [`bin/lib/usage-log.sh`](../../bin/lib/usage-log.sh):
 
-### Incremento (batch no Stop criterion)
+1. Computa o sha atual dos bullets de cada DoD via `dod_bullets_sha references/DOD.md` (função de `bin/lib/usage-fold.sh`) → TSV `dod_id<TAB>sha`. O sha é content-based (hash dos bullets do DoD, não do heading).
+2. Para cada `dod_id` inserido, emite `log_event use <dod_id> --sha <sha-atual> --prefix dod` (1 chamada por uso).
 
-Durante a sessão a skill acumula `Map<dod_id, {delta_usos, delta_rev, hash_recalculado}>` em memória conforme insere DoDs no plano em formação. **Apenas no encerramento (Stop criterion)** — antes de imprimir o plano final — aplica todos os deltas em uma única passagem por `DOD.md`, sob lock `mkdir <lockdir>` (macOS-compatível; `flock` não existe no Darwin). Lock falhou após retry → aborta com exit 3 e instrui rodar de novo.
+O append é atômico (`O_APPEND`) e **lockless** — **não há lock `mkdir`**; o lock era artefato do edit-in-place inline e foi eliminado junto com a migração para log append-only. O writer **nunca reescreve** o `DOD.md`.
 
-### Reset de "desde rev" (hash-driven)
+**O evento `use` carrega o sha atual dos bullets do DoD aplicado.** É assim que o fold deriva `desde rev` de forma content-based: `desde rev` = #eventos `use` cujo `sha` == sha atual dos bullets do DoD no `DOD.md` (computado na hora). Imune a clock-skew cross-host — não depende de ordenação por `ts`.
 
-Para cada DoD inserido na sessão:
+### Reset de "desde rev" (content-based)
 
-1. Recalcula `sha256` do bullet block (heading exclusive até o próximo `###` exclusive; trailing whitespace removido por linha antes do hash).
-2. Compara com `bullets_sha256` registrado em `.dod-revision-state.json`.
-3. Hash divergiu → zera `desde rev` e atualiza snapshot. Hash igual → incrementa `desde rev` normal.
+Quando os bullets de um DoD mudam, o sha atual muda → os eventos `use` antigos (sha antigo) deixam de casar e `desde rev` "zera" naturalmente no fold, sem reescrever nada. Para marcar a revisão explicitamente sem esperar o próximo uso, emita um evento `revision` com o novo sha via o fallback abaixo.
 
 Fallback manual via `bin/`:
 
-- `bin/dod-reset-rev.sh <dod_id>` — zera `desde rev` explicitamente (ex.: `dod-reset-rev.sh tarefa-5`).
-- `bin/dod-reset-rev.sh --show [--sort=desde-rev|usos|id]` — tabela legível; default ordena por `desde rev` DESC.
-- `bin/dod-reset-rev.sh --gc` — remove entries órfãs do snapshot.
-- `bin/dod-migrate-add-counters.sh` — one-shot idempotente que injeta o padrão `(usos: 0 · desde rev: 0)` nos 28 headings e cria o snapshot inicial.
+- `bin/dod-reset-rev.sh <dod_id>` — "reset": emite 1 evento `revision` @ sha atual dos bullets (ex.: `dod-reset-rev.sh tarefa-5`). Não edita inline.
+- `bin/dod-reset-rev.sh --show [--sort=desde-rev|usos|id]` — tabela derivada via fold; default ordena por `desde rev` DESC.
+- `bin/dod-usage-migrate.sh` — seeder one-shot idempotente que semeia o log a partir dos contadores que eram inline (migração inicial).
+
+(O subcomando `--gc` foi aposentado: sem snapshot `.json`, não há entradas órfãs a coletar.)
 
 ### Bootstrap zero-config
 
-Heading sem o padrão `(usos: N · desde rev: N)` na primeira inserção pela skill → a skill cria com `(usos: 1 · desde rev: 1)` automaticamente e gera entry correspondente no snapshot. Semanticamente correto: foi inserida agora, então foi usada 1× desde sua criação. Não há estado `(0 · 0)` produzido pela skill em runtime — só pelo script de migração inicial.
+DoD inserido pela primeira vez → a skill apenas emite o evento `use` com o sha atual; o fold passa a derivar `usos: 1 · desde rev: 1` automaticamente. Não há estado a inicializar no `DOD.md` (source-puro) — o log é a única fonte de verdade dos números.
 
 ### Invariantes estruturais
 
-- **Append-only:** `Tarefa N` e `Categoria N` são append-only — **renumeração quebra contadores** (a chave do snapshot é `tarefa-N`/`cat-N-base`, não slug). Adicionar nova Tarefa = próximo número global livre; nunca renumerar Tarefas existentes. Renomear o `<Título>` é seguro (preservado em `title_current` como metadata).
+- **Append-only:** `Tarefa N` e `Categoria N` são append-only — **renumeração quebra os contadores** (o `dod_id` derivado do heading — `tarefa-N`/`cat-N-base` — é a chave no log). Adicionar nova Tarefa = próximo número global livre; nunca renumerar Tarefas existentes. Renomear o `<Título>` é seguro (não entra no `dod_id` nem no sha dos bullets).
 - **Dedupe DoD-base:** `DoD-base` aparece **1× por categoria por plano por economia de ruído, não por verbatim estrito**. Cada `Tarefa N` específica é sempre verbatim integral.
-- **Sem subheadings dentro de Tarefa:** delimitação de bullet block usa "do heading até o próximo `###`". Adicionar `### Subtítulo` dentro de uma Tarefa quebra o hash e cala bullets posteriores. Para subtópico use `####` ou texto plano.
+- **Sem subheadings dentro de Tarefa:** delimitação de bullet block usa "do heading até o próximo `###`". Adicionar `### Subtítulo` dentro de uma Tarefa quebra o sha dos bullets e cala bullets posteriores. Para subtópico use `####` ou texto plano.
 
 <!-- FATIA-2: substituir G6 verbalized direto por self-consistency check (3 amostras, ajuste por concordância). Wang et al. ICLR 2023, arXiv:2203.11171. Atualizar §3 da RUBRICA.md em paralelo. -->
 
@@ -116,4 +110,4 @@ Heading sem o padrão `(usos: N · desde rev: N)` na primeira inserção pela sk
 
 2. **Cluster de decisões score 53–60 = sinal de calibragem.** Em sessões reais é comum 2–3 decisões caírem exatamente no limite superior do Tipo 3 (perto de 60). São candidatos a força-Tipo-1 manual OU sinal de que o threshold 60 está alto demais para o domínio. Recomendação da rubrica (Sprint 3): revisar mensalmente `decisions.jsonl`; se ≥30% das decisões ficam na faixa 53–60, baixar threshold superior de 60 para 55. Antes desse volume, não recalibrar — pode ser variância normal.
 
-3. **Concorrência entre slots Boris e drift de snapshot.** O batch de incremento no `Stop criterion` serializa escrita em `references/DOD.md` via `mkdir <lockdir>` — `flock` não está instalado no macOS (Darwin), então o padrão clássico de fd-lock não funciona; `mkdir` é atomic em qualquer POSIX. Se dois slots Boris invocarem `auto-grill-me` simultaneamente, o segundo a chegar no lock retenta com `sleep 0.1` até ~5s e aborta com exit 3 se não conseguir — rodar de novo após o primeiro liberar. **Drift de snapshot:** quando você edita `references/DOD.md` manualmente (corrigir typo num bullet, refinar redação) sem rodar a skill, o `bullets_sha256` em `.dod-revision-state.json` fica defasado. A próxima invocação da skill detectará divergência de hash e zerará `desde rev` — correto se a edição foi semântica; falso-positivo se foi cosmética. Para reset explícito sem esperar a próxima invocação: `bin/dod-reset-rev.sh <dod_id>`.
+3. **Concorrência entre slots Boris e edição manual de bullets.** O batch no `Stop criterion` agora só faz **append** no log per-machine (`~/.claude/telemetry/dod-usage.<machine-id>.jsonl`) — `O_APPEND` é atômico sob o lock do inode (POSIX, FS local), e cada máquina escreve seu próprio arquivo (`machine-id`, não hostname). **Não há lock `mkdir`** nem escrita compartilhada em `DOD.md`: dois slots Boris invocando `auto-grill-me` simultaneamente não colidem (paths disjuntos, sem race). **Edição manual de bullets:** quando você edita `references/DOD.md` (corrigir typo, refinar redação) sem rodar a skill, o sha atual dos bullets muda → no próximo fold os eventos `use` antigos deixam de casar e `desde rev` re-deriva pra baixo — correto se a edição foi semântica; "falso-positivo" se foi cosmética. Para marcar a revisão explicitamente: `bin/dod-reset-rev.sh <dod_id>` (emite evento `revision` @ sha atual).

@@ -39,34 +39,34 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 
 ## Categoria 1 — Claude Code internals (slash commands, skills, hooks, princípios globais)
 
-### DoD-base — Categoria 1 (usos: 2 · desde rev: 2)
+### DoD-base — Categoria 1
 - [ ] [b1] arquivo vive em `~/.claude/` (global) ou `.claude/` (projeto) — escopo escolhido documentado no commit
 - [ ] [b2] frontmatter YAML mínimo presente (`description` + `name` quando aplicável); descrição inclui *o que faz* + *quando usar* (gatilhos)
 - [ ] [b3] testado em sessão real do Claude Code (não só lido) — log do uso no commit message ou `CHANGELOG.md`
 - [ ] [b4] commitado em git com mensagem `feat(claude): ...` (prefix `[US-XX]` aceito quando gerado pelo Ralph)
 
-### Tarefa 1 — Slash command novo / refactor (usos: 2 · desde rev: 2)
+### Tarefa 1 — Slash command novo / refactor
 - [ ] [b1] arquivo em `.claude/commands/<nome>.md` OU migrado para skill — escolha justificada (skill se houver assets/scripts)
 - [ ] [b2] frontmatter declara `allowed-tools` explicitamente (ex.: `Bash(git:*), Read, Edit`) — não usar wildcard total
 - [ ] [b3] argumentos via `$ARGUMENTS` ou `$1`/`$2` com `argument-hint` definido
 - [ ] [b4] inline bash (`!\`git status\``) usado para pré-computar contexto e evitar round-trip do modelo
 - [ ] [b5] executado 1x em sessão real e produz o output esperado sem follow-up manual
 
-### Tarefa 2 — Skill nova (usos: 1 · desde rev: 1)
+### Tarefa 2 — Skill nova
 - [ ] [b1] estrutura é uma **pasta** (não só arquivo) — mesmo que vazia inicialmente, prevê `examples/`, `references/`
 - [ ] [b2] `SKILL.md` tem seção **Gotchas** com erros reais observados em uso
 - [ ] [b3] descrição no frontmatter contém **trigger phrases**
 - [ ] [b4] auto-invocação testada: prompt que *deveria* disparar a skill dispara sem `/skill-name` explícito
 - [ ] [b5] `/doctor` confirma que a skill não está com descrição truncada por budget overflow
 
-### Tarefa 3 — Princípio global na `~/.claude/CLAUDE.md` (usos: 1 · desde rev: 1)
+### Tarefa 3 — Princípio global na `~/.claude/CLAUDE.md`
 - [ ] [b1] regra é **acionável e binária** ("nunca commitar `.env`") — não aspiracional
 - [ ] [b2] tem **origem rastreável**: link para o incidente/PR/post que motivou a regra
 - [ ] [b3] arquivo total continua ≤ 2.5k tokens — verificado com `wc -w` ou `/context`
 - [ ] [b4] regra não duplica algo que o modelo já faz por default
 - [ ] [b5] passou por uma sessão de teste onde a regra **deveria** ter sido disparada e foi
 
-### Tarefa 8 — Hook PreToolUse / Stop (usos: 0 · desde rev: 0)
+### Tarefa 8 — Hook PreToolUse / Stop
 - [ ] [b1] script tem shebang explícito e é `chmod +x`
 - [ ] [b2] hook **lê stdin** (JSON do evento) e respeita contrato: `exit 0` = ok, `exit 2` = block + stderr
 - [ ] [b3] hooks `Stop` checam `stop_hook_active` flag para evitar loop infinito
@@ -79,12 +79,12 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 
 ## Categoria 2 — Planejamento e revisão técnica
 
-### DoD-base — Categoria 2 (usos: 1 · desde rev: 1)
+### DoD-base — Categoria 2
 - [ ] [b1] artefato é **versionado** (markdown em git) — não chat efêmero
 - [ ] [b2] linguagem segue o framework escolhido (ReAct: Thought/Action/Observation; Feynman: `[FATO]`/`[INFERÊNCIA]`/`[SUPOSIÇÃO]`) com marcadores explícitos
 - [ ] [b3] declara **critério de parada** binário
 
-### Tarefa 4 — Plano técnico ReAct+Feynman (usos: 0 · desde rev: 0)
+### Tarefa 4 — Plano técnico ReAct+Feynman
 - [ ] [b1] estrutura segue Yao et al. 2022: `Thought N → Action N → Observation N` para cada decisão não-trivial
 - [ ] [b2] toda afirmação categórica marcada como `[FATO]` cita fonte; `[INFERÊNCIA]` explica o salto lógico; `[SUPOSIÇÃO]` lista o que valida/invalida
 - [ ] [b3] inclui seção **"O que vai falhar primeiro"** (pre-mortem) com ≥3 modos de falha concretos
@@ -96,14 +96,14 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 
 ## Categoria 3 — Shopify (Storefront + Dawn + design system)
 
-### DoD-base — Categoria 3 (usos: 1 · desde rev: 1)
+### DoD-base — Categoria 3
 - [ ] [b1] mudança previewada em **theme preview URL** antes do `theme push`
 - [ ] [b2] Theme Check sem erros novos (`shopify theme check`)
 - [ ] [b3] PageSpeed/Lighthouse mobile: nenhuma regressão >5 pontos em LCP/CLS vs baseline
 - [ ] [b4] `settings_data.json` não sobrescrito sem `theme pull` prévio
 - [ ] [b5] commit referencia versão do tema base (ex.: `Horizon vX.Y.Z`)
 
-### Tarefa 5 — Página nova Storefront (usos: 0 · desde rev: 0)
+### Tarefa 5 — Página nova Storefront
 - [ ] [b1] template JSON em `templates/page.<handle>.json` (não duplicar `.liquid`)
 - [ ] [b2] header da página renderizado via snippet canônico (`render 'acme-section-heading'`) — sem H1 inline
 - [ ] [b3] **nunca** redeclarar `max-width` dentro de `.section--page-width` (regra crítica)
@@ -113,7 +113,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b7] testado em viewport ≤375px (iPhone SE) — Horizon é mobile-first
 - [ ] [b8] cada block tem `id` único; CSS encapsulada via `{% style %}` prefixado com esse id
 
-### Tarefa 6 — Refatoração / padronização design system (usos: 0 · desde rev: 0)
+### Tarefa 6 — Refatoração / padronização design system
 - [ ] [b1] tokens consolidados em `assets/acme-tokens.css` — nenhum valor mágico em arquivo individual
 - [ ] [b2] blocos refatorados respeitam `prefers-reduced-motion`
 - [ ] [b3] schemas de blocos têm **toggles** explícitos para variações (não duplicar bloco)
@@ -121,7 +121,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b5] mudanças em `_blocks.liquid` testadas em ≥3 níveis de nesting (Horizon suporta 8)
 - [ ] [b6] arquivos custom prefixados (ex.: `acme-*`) para sobreviver a `git merge upstream/main`
 
-### Tarefa 7 — Bug fix produção Storefront (usos: 1 · desde rev: 1)
+### Tarefa 7 — Bug fix produção Storefront
 - [ ] [b1] reproduzido em theme preview ANTES do fix
 - [ ] [b2] fix tem **smallest possible diff** — refactoring proibido na mesma PR
 - [ ] [b3] testado em theme preview pós-fix com URL pública compartilhada
@@ -129,7 +129,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b5] root cause documentado em `CHANGELOG.md` ou commit body — não só "fix"
 - [ ] [b6] se causado por upstream update do Horizon: marcado com tag `upstream-conflict`
 
-### Tarefa 17 — Tema Dawn produção (`www.exemplo-loja.com.br`) (usos: 0 · desde rev: 0)
+### Tarefa 17 — Tema Dawn produção (`www.exemplo-loja.com.br`)
 - [ ] [b1] versão Dawn upstream registrada no commit (ex.: `Dawn 15.3.0`)
 - [ ] [b2] custom code isolado em arquivos prefixados `acme-*` — **nunca** edita `theme.liquid`, `header.liquid`, `footer.liquid` core sem snippet wrapper
 - [ ] [b3] `templates/` editados são duplicados (ex.: `product.acme.json`), não sobrescritos
@@ -141,14 +141,14 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 
 ## Categoria 4 — Agentes autônomos (heartbeat, outer-loop, sync entre repos)
 
-### DoD-base — Categoria 4 (usos: 0 · desde rev: 0)
+### DoD-base — Categoria 4
 - [ ] [b1] agente tem **kill switch** acessível (`pkill -f <agent>` ou flag em arquivo) testado
 - [ ] [b2] estado persistente (memory, `blocked.log`) em arquivo versionável — não só RAM
 - [ ] [b3] cada iteração gera log estruturado (JSON ou key=value) parseável
 - [ ] [b4] segredos via env vars / Secret Manager / `.env` gitignored — **nunca** hardcoded
 - [ ] [b5] custo por iteração mensurado e logado — circuit breaker se ultrapassar budget
 
-### Tarefa 9 — Agente autônomo com heartbeat loop (usos: 0 · desde rev: 0)
+### Tarefa 9 — Agente autônomo com heartbeat loop
 - [ ] [b1] intervalo configurável via `autoresearch_config.yaml` (default + override por agente)
 - [ ] [b2] `bootstrap-experiments.sh` é **idempotente**
 - [ ] [b3] `run-heartbeats.sh` registra cada batida em `heartbeats.log` com timestamp ISO-8601 + agent name
@@ -157,7 +157,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b6] revert: matar todos os agentes via `orchestrator.sh stop` em <30s
 - [ ] [b7] sandbox: agente roda com `--dangerously-skip-permissions` **apenas** dentro de container/worktree isolado
 
-### Tarefa 10 — Outer-loop mutation agent (Karpathy `program.md`) (usos: 0 · desde rev: 0)
+### Tarefa 10 — Outer-loop mutation agent (Karpathy `program.md`)
 - [ ] [b1] estrutura de 3 arquivos: `prepare.py` **read-only**, `train.py` único editável, `program.md` spec em inglês
 - [ ] [b2] `program.md` declara explicitamente "**Do not modify** `prepare.py`"
 - [ ] [b3] avaliação tem **budget fixo** (wall-clock 5min / tokens / steps) — agente não decide quando parar
@@ -165,7 +165,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b5] melhorias commitadas via git automaticamente; regressões revertidas via `git reset --hard`
 - [ ] [b6] `program.md` versionado e revisado como código
 
-### Tarefa 16 — Sync entre repos relacionados (templates `.tpl`) (usos: 0 · desde rev: 0)
+### Tarefa 16 — Sync entre repos relacionados (templates `.tpl`)
 - [ ] [b1] placeholders seguem convenção única (`{{ AGENT_NAME }}`, `{{ CODENAME }}`) — listados em `TEMPLATE_VARS.md`
 - [ ] [b2] script de sync é **dry-run capable**
 - [ ] [b3] direção explícita no nome (`sync-from-template.sh` vs `sync-to-template.sh`) — nunca bidirecional implícito
@@ -177,7 +177,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 
 ## Categoria 5 — Backend, edge functions e observabilidade (GCP, Supabase, Sentry)
 
-### DoD-base — Categoria 5 (usos: 0 · desde rev: 0)
+### DoD-base — Categoria 5
 - [ ] [b1] secret hygiene: nenhum valor sensível em código, YAML versionado, ou logs — apenas referências
 - [ ] [b2] health check ou smoke test executável (`curl /health` retorna 200 com `{status: "ok"}`)
 - [ ] [b3] erros enviados para Sentry com `release` tag = commit SHA
@@ -185,7 +185,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b5] revert documentado: comando exato testado em staging
 - [ ] [b6] smoke test com ramo negativo (assertion "NÃO contém X") prova precondição antes de avaliar a observable. Rejeitar `|| true` em chains críticas. Aceitar (a) HTTP 2xx assertado, (b) positive marker co-presente no mesmo response, (c) side-effect observable em backing store (cache hit/miss, log, contador).
 
-### Tarefa 11 — Edge function (Supabase + Sentry) (usos: 0 · desde rev: 0)
+### Tarefa 11 — Edge function (Supabase + Sentry)
 - [ ] [b1] `Sentry.init` chamado no início do handler, ANTES de qualquer `await`
 - [ ] [b2] tags custom: `Sentry.setTag('region', Deno.env.get('SB_REGION'))` + `execution_id`
 - [ ] [b3] `tracesSampleRate` explícito — produção ≤0.1, dev = 1.0
@@ -194,7 +194,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b6] DSN vem de env var (`SENTRY_DSN`); testado localmente com `supabase functions serve`
 - [ ] [b7] payload sensível (auth headers, PII) redacted via `beforeSend` hook
 
-### Tarefa 12 — Backend GCP deploy (Cloud Run + Secret Manager + Cloud Build) (usos: 0 · desde rev: 0)
+### Tarefa 12 — Backend GCP deploy (Cloud Run + Secret Manager + Cloud Build)
 - [ ] [b1] `cloudbuild.yaml` em git; `gcloud builds submit` reproduz o deploy
 - [ ] [b2] secrets via `--set-secrets ENV_VAR=SECRET_NAME:latest` — **nunca** `--set-env-vars` com valor sensível
 - [ ] [b3] separador `^@^` usado em `--set-env-vars` quando valor contém vírgula
@@ -209,14 +209,14 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 
 ## Categoria 6 — Pipelines de dados e dashboards (cron, FastAPI/Flask)
 
-### DoD-base — Categoria 6 (usos: 0 · desde rev: 0)
+### DoD-base — Categoria 6
 - [ ] [b1] schedule UTC (não local) e documentado no header do workflow/unit file
 - [ ] [b2] **idempotente**: rodar 2x no mesmo dia produz mesmo output (dedup por data ou hash)
 - [ ] [b3] saída persistida em destino versionável (git, GCS bucket com versioning, ou DB com `created_at`)
 - [ ] [b4] notificação de falha configurada — GitHub Actions NÃO envia email automático em scheduled workflows
 - [ ] [b5] `workflow_dispatch` (ou flag manual) presente para teste sem esperar o cron
 
-### Tarefa 13 — Pipeline de dados cron (GitHub Actions / systemd) (usos: 0 · desde rev: 0)
+### Tarefa 13 — Pipeline de dados cron (GitHub Actions / systemd)
 - [ ] [b1] schedule UTC com cron sintaticamente válido — validado em crontab.guru
 - [ ] [b2] tolera atrasos — GitHub Actions pode atrasar 15min em alta carga
 - [ ] [b3] filtro de domínio declarado em config, não hardcoded
@@ -225,7 +225,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b6] artefato (CSV/PNG) anexado via `actions/upload-artifact`
 - [ ] [b7] log inclui contagem de linhas in/out — detecta input vazio antes de overwrite
 
-### Tarefa 14 — Dashboard web timeline (FastAPI/Flask) (usos: 0 · desde rev: 0)
+### Tarefa 14 — Dashboard web timeline (FastAPI/Flask)
 - [ ] [b1] endpoint `/health` retorna 200 + JSON estruturado (não texto plano)
 - [ ] [b2] logging JSON estruturado em `lifespan` (structlog ou python-json-logger)
 - [ ] [b3] `/docs` (Swagger) desabilitado em produção via env (`ENV=production` → `docs_url=None`)
@@ -239,14 +239,14 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 
 ## Categoria 7 — CLI tools e config de agentes secundários
 
-### DoD-base — Categoria 7 (usos: 0 · desde rev: 0)
+### DoD-base — Categoria 7
 - [ ] [b1] `<cmd> --help` executa sem erro e lista subcomandos — smoke test mínimo
 - [ ] [b2] `<cmd> --version` retorna versão de `pyproject.toml` (single source of truth)
 - [ ] [b3] exit codes corretos: `0` sucesso, `1` erro genérico, `2` invalid args
 - [ ] [b4] sem dependências de rede no `--help`
 - [ ] [b5] instalável via `pip install -e .` (entry point em `pyproject.toml`)
 
-### Tarefa 15 — CLI tool Python (auth + integração backend) (usos: 0 · desde rev: 0)
+### Tarefa 15 — CLI tool Python (auth + integração backend)
 - [ ] [b1] biblioteca CLI escolhida (argparse / Click / Typer) justificada no README
 - [ ] [b2] subcomando segue padrão `gradecli register` (verbo final via `add_subparsers()`)
 - [ ] [b3] auth token lido de `~/.config/gradecli/token` (chmod 600) OU env var — **nunca** flag CLI
@@ -255,7 +255,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b6] timeout default em HTTP (≥10s, ≤60s); retry com backoff em 5xx
 - [ ] [b7] versão do servidor backend validada no startup
 
-### Tarefa 18 — Config de segundo agente CLI (Codex CLI / Ralph Adversarial) (usos: 0 · desde rev: 0)
+### Tarefa 18 — Config de segundo agente CLI (Codex CLI / Ralph Adversarial)
 - [ ] [b1] vars `PRIMARY_AGENT` e `REVIEWER_AGENT` configuráveis em `.env` ou shell rc
 - [ ] [b2] fallback para Sonnet quando Codex quota esgotada — detectado por exit code ou regex em stderr
 - [ ] [b3] cada agente tem **sandbox separado** (worktree git ou container)
@@ -268,13 +268,13 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 
 ## Categoria 8 — Conteúdo educacional e parsing de input não-estruturado
 
-### DoD-base — Categoria 8 (usos: 0 · desde rev: 0)
+### DoD-base — Categoria 8
 - [ ] [b1] artefato (PDF, dataset normalizado) versionado em git ou DVC
 - [ ] [b2] build/parse é **determinístico**: input idêntico → output byte-idêntico (verificável via `sha256sum`)
 - [ ] [b3] dependências externas pinadas (versão de pacote LaTeX, regex flags, locale)
 - [ ] [b4] caso edge documentado em testes (input vazio, malformado, com acento)
 
-### Tarefa 19 — Conteúdo educacional versionado (LaTeX/PDF) (usos: 0 · desde rev: 0)
+### Tarefa 19 — Conteúdo educacional versionado (LaTeX/PDF)
 - [ ] [b1] `SOURCE_DATE_EPOCH` setado no build LaTeX para PDF reproduzível byte-a-byte
 - [ ] [b2] sem `\date{\today}` — data específica hardcoded ou via variável
 - [ ] [b3] exercícios numerados via macro consistente (ex.: `\exercicio{N}`)
@@ -284,7 +284,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b7] CI (`xu-cheng/latex-action@v4`) compila o PDF; falha → PR bloqueado
 - [ ] [b8] tag git por versão publicada (`aula-03-v1`)
 
-### Tarefa 20 — Parsing de input não-estruturado (regex) (usos: 0 · desde rev: 0)
+### Tarefa 20 — Parsing de input não-estruturado (regex)
 - [ ] [b1] regex compilado uma vez (`re.compile`) com flags explícitas — nunca inline em loop
 - [ ] [b2] testes unitários cobrem ≥3 fixtures reais (anonimizadas) + ≥2 casos de borda
 - [ ] [b3] normalização de anos 2-dígitos documentada (regra: `≤30 → 20YY`, `>30 → 19YY`)

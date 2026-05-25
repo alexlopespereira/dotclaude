@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# test-dod-add-bullet-ids.sh — testes para US-01 (dod-add-bullet-ids.sh).
+# test-dod-add-bullet-ids.sh — testes para dod-add-bullet-ids.sh.
 #
 # Cobre:
 #   AC2  — --help → exit 0 + output não-vazio
-#   AC3  — idempotência: 2º run detecta migration e exit 0 sem mutar
+#   AC3 (US-04) — heading SEM o sufixo `(usos…)` (estado pós-US-03): o [bN] é
+#                 adicionado por match de prefixo e a detecção de cat-1-base
+#                 (AC10) funciona sem o espaço que o sufixo fornecia.
+#   AC3' (US-01) — idempotência: 2º run detecta migration e exit 0 sem mutar
 #   AC5  — write atômico (DOD.md inalterado em dry-run)
-#   AC6  — todos bullets dentro dos blocos recebem [bN] sequencial
-#   AC7  — todas as 28 entries marcadas, ≥100 bullets
-#   AC8  — bullets_sha256 resincronizado para todas as 28 entries no snapshot
-#          (entry inicial com bullets_sha256:"0" muda para sha real do bloco)
+#   AC6  — todos bullets dentro dos blocos recebem [bN] sequencial (reseta por bloco)
+#   AC7  — ≥100 bullets numerados
 #   AC10 — bullet b4 da DoD-base Cat 1 ganha sufixo "(prefix `[US-XX]` ...)"
+#   AC4  — lock contention → exit 3 após ~5s de retries
 #
-# Estratégia: monta esqueleto sintético em tmpdir (bin/ + references/) com
-# fixture cobrindo 28 headings (mesma cardinalidade do DOD.md real) e
-# ≥100 bullets totais. Copia o script alvo para o tmpdir — caminhos relativos
-# a `dirname BASH_SOURCE` mantêm a operação isolada do DOD.md real.
+# US-04: o snapshot `.dod-revision-state.json` foi removido (US-03); o script não
+# escreve mais .json de estado, então NÃO há fixture/asserção de snapshot.
+#
+# Estratégia: esqueleto sintético em tmpdir (bin/ + references/) com fixture
+# SOURCE-PURO (headings sem sufixo) cobrindo 28 headings e ≥100 bullets. Copia o
+# script alvo — caminhos relativos a `dirname BASH_SOURCE` isolam do DOD.md real.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="$SCRIPT_DIR/dod-add-bullet-ids.sh"
@@ -48,9 +52,9 @@ if ! grep -q '^uso:' <<< "$HELP_OUT"; then
 fi
 echo "PASS AC2 — --help retorna exit 0 + listagem"
 
-# Fixture DOD.md: 8 DoD-base (cat 1..8) + 20 Tarefa = 28 headings.
-# cat-1-base tem 5 bullets, sendo o 4º o bullet exato exigido pelo AC10.
-# Cada um dos outros 27 blocos tem 5 bullets genéricos → total: 5*28 = 140 ≥ 100.
+# Fixture DOD.md SOURCE-PURO (headings SEM sufixo `(usos…)` — estado pós-US-03).
+# 8 DoD-base (cat 1..8) + 20 Tarefa = 28 headings. cat-1-base tem 5 bullets, o
+# 4º é o bullet exato exigido pelo AC10. Total: 5*28 = 140 ≥ 100.
 build_fixture() {
   {
     echo "# Definition of Done — fixture sintético"
@@ -59,7 +63,7 @@ build_fixture() {
       echo ""
       echo "## Categoria $cat — Lorem"
       echo ""
-      echo "### DoD-base — Categoria $cat (usos: 0 · desde rev: 0)"
+      echo "### DoD-base — Categoria $cat"
       echo ""
       if [[ $cat -eq 1 ]]; then
         echo "- [ ] bullet alpha cat $cat"
@@ -77,7 +81,7 @@ build_fixture() {
     echo "## Categoria 3 — Tarefas"
     for n in $(seq 1 20); do
       echo ""
-      echo "### Tarefa $n — Algo (usos: 0 · desde rev: 0)"
+      echo "### Tarefa $n — Algo"
       echo ""
       for k in 1 2 3 4 5; do
         echo "- [ ] bullet $k tarefa $n"
@@ -86,26 +90,7 @@ build_fixture() {
   } > "$TMP/references/DOD.md"
 }
 
-build_snapshot() {
-  {
-    echo '{'
-    first=1
-    for cat in 1 2 3 4 5 6 7 8; do
-      [[ $first -eq 1 ]] || echo ','
-      first=0
-      printf '  "cat-%s-base": {"slug":"x","title_current":"x","bullets_sha256":"0","last_seen_iso":"2026-01-01T00:00:00Z"}' "$cat"
-    done
-    for t in $(seq 1 20); do
-      echo ','
-      printf '  "tarefa-%s": {"slug":"x","title_current":"x","bullets_sha256":"0","last_seen_iso":"2026-01-01T00:00:00Z"}' "$t"
-    done
-    echo ''
-    echo '}'
-  } > "$TMP/references/.dod-revision-state.json"
-}
-
 build_fixture
-build_snapshot
 
 # --- AC5 (dry-run): script imprime diff e NÃO muta DOD.md ---
 PRE_SHA="$(sha256sum "$TMP/references/DOD.md" | cut -d' ' -f1)"
@@ -129,7 +114,7 @@ if ! grep -q -- '--- dry-run: nada gravado em disco ---' <<< "$DRY_OUT"; then
 fi
 echo "PASS AC5 — --dry-run preserva DOD.md (sha inalterado)"
 
-# --- AC6 + AC7 + AC10: aplica migration real ---
+# --- AC6 + AC7 + AC10 + AC3(US-04): aplica migration real sobre fixture sem sufixo ---
 set +e
 RUN_OUT="$("$CMD" 2>&1)"
 EC=$?
@@ -140,7 +125,7 @@ if [[ "$EC" -ne 0 ]]; then
   exit 1
 fi
 
-# AC7: contagem total de bullets numerados ≥ 100 + casa com original
+# AC7: contagem total de bullets numerados ≥ 100
 TOTAL_BN=$(grep -cE '^- \[ \] \[b[0-9]+\] ' "$TMP/references/DOD.md")
 if [[ "$TOTAL_BN" -lt 100 ]]; then
   echo "FAIL AC7: $TOTAL_BN bullets numerados, esperado ≥ 100" >&2
@@ -148,8 +133,7 @@ if [[ "$TOTAL_BN" -lt 100 ]]; then
 fi
 echo "PASS AC7 — $TOTAL_BN bullets numerados (≥100)"
 
-# AC6: numeração reseta por bloco. Pega o primeiro bullet de Tarefa 1 e
-# verifica que é [b1] (não continuação de bloco anterior).
+# AC6: numeração reseta por bloco. Pega o primeiro bullet de Tarefa 1 → [b1].
 FIRST_TAREFA1_BULLET=$(awk '
   /^### Tarefa 1 — / { in_t1 = 1; next }
   /^### / { in_t1 = 0 }
@@ -159,7 +143,6 @@ if [[ "$FIRST_TAREFA1_BULLET" != "- [ ] [b1] bullet 1 tarefa 1" ]]; then
   echo "FAIL AC6: primeiro bullet de Tarefa 1 deveria ser '[b1]', obtido: '$FIRST_TAREFA1_BULLET'" >&2
   exit 1
 fi
-# Quinto bullet de Tarefa 5 deve ser [b5] (reset por bloco confirmado)
 FIFTH_TAREFA5_BULLET=$(awk '
   /^### Tarefa 5 — / { in_t5 = 1; n = 0; next }
   /^### / { in_t5 = 0 }
@@ -171,48 +154,23 @@ if [[ "$FIFTH_TAREFA5_BULLET" != "- [ ] [b5] bullet 5 tarefa 5" ]]; then
 fi
 echo "PASS AC6 — numeração [bN] reseta por bloco (verificado em Tarefa 1 e 5)"
 
-# AC10: bullet b4 da DoD-base cat 1 tem sufixo novo
+# AC10 + AC3(US-04): bullet b4 da DoD-base cat 1 (heading SEM sufixo) tem sufixo novo.
+# Antes do fix, a detecção de cat-1-base exigia o espaço do sufixo → falharia aqui.
+# shellcheck disable=SC2016  # literal com backticks/brackets — aspas simples são intencionais
 AC10_HITS=$(grep -cF '(prefix `[US-XX]` aceito quando gerado pelo Ralph)' "$TMP/references/DOD.md")
 if [[ "$AC10_HITS" -ne 1 ]]; then
-  echo "FAIL AC10: sufixo presente em $AC10_HITS linhas (esperado 1)" >&2
+  echo "FAIL AC10/AC3: sufixo presente em $AC10_HITS linhas (esperado 1) — heading sem sufixo não detectado?" >&2
   exit 1
 fi
-echo "PASS AC10 — bullet b4 cat-1-base recebeu sufixo de aprendizado meta"
+echo "PASS AC10/AC3(US-04) — cat-1-base detectado em heading SOURCE-PURO; b4 recebeu sufixo"
 
-# --- AC8: bullets_sha256 resincronizado para todas as 28 entries ---
-ZEROS=$(jq -r 'to_entries | map(select(.value.bullets_sha256 == "0")) | length' "$TMP/references/.dod-revision-state.json")
-if [[ "$ZEROS" -ne 0 ]]; then
-  echo "FAIL AC8: $ZEROS entries ainda com bullets_sha256=\"0\" (snapshot não resincronizou)" >&2
-  exit 1
-fi
-ENTRIES=$(jq 'keys | length' "$TMP/references/.dod-revision-state.json")
-if [[ "$ENTRIES" -ne 28 ]]; then
-  echo "FAIL AC8: snapshot tem $ENTRIES entries (esperado 28)" >&2
-  exit 1
-fi
-# Sanity: sha de cat-1-base do snapshot bate com sha do bloco extraído manualmente
-SNAP_SHA=$(jq -r '.["cat-1-base"].bullets_sha256' "$TMP/references/.dod-revision-state.json")
-MANUAL_SHA=$(awk '
-  function trim(s) { sub(/[ \t]+$/, "", s); return s }
-  /^### DoD-base — Categoria 1 \(usos: 0 · desde rev: 0\)$/ { in_b = 1; next }
-  /^### / || /^## / { in_b = 0 }
-  in_b { print trim($0) }
-' "$TMP/references/DOD.md" | sha256sum | cut -d' ' -f1)
-if [[ "$SNAP_SHA" != "$MANUAL_SHA" ]]; then
-  echo "FAIL AC8: snapshot sha de cat-1-base ($SNAP_SHA) != manual ($MANUAL_SHA)" >&2
-  exit 1
-fi
-echo "PASS AC8 — snapshot tem 28 entries; bullets_sha256 casa com sha manual do bloco cat-1-base"
-
-# --- AC3: idempotência — 2º run detecta migration e não muta ---
+# --- AC3 (US-01) idempotência: 2º run detecta migration e não muta ---
 PRE_DOD_SHA="$(sha256sum "$TMP/references/DOD.md" | cut -d' ' -f1)"
-PRE_STATE_SHA="$(sha256sum "$TMP/references/.dod-revision-state.json" | cut -d' ' -f1)"
 set +e
 RERUN_OUT="$("$CMD" 2>&1)"
 RERUN_EC=$?
 set -e
 POST_DOD_SHA="$(sha256sum "$TMP/references/DOD.md" | cut -d' ' -f1)"
-POST_STATE_SHA="$(sha256sum "$TMP/references/.dod-revision-state.json" | cut -d' ' -f1)"
 if [[ "$RERUN_EC" -ne 0 ]]; then
   echo "FAIL AC3: re-run exit esperado=0, obtido=$RERUN_EC" >&2
   echo "$RERUN_OUT" >&2
@@ -227,17 +185,16 @@ if [[ "$PRE_DOD_SHA" != "$POST_DOD_SHA" ]]; then
   echo "FAIL AC3: re-run mutou DOD.md (sha mudou)" >&2
   exit 1
 fi
-if [[ "$PRE_STATE_SHA" != "$POST_STATE_SHA" ]]; then
-  echo "FAIL AC3: re-run mutou snapshot (sha mudou)" >&2
+echo "PASS AC3 — re-run detecta migration, exit 0, DOD.md preservado"
+
+# --- US-04: nenhum .json de estado escrito pelo script ---
+if find "$TMP/references" -name '*revision-state.json' | grep -q .; then
+  echo "FAIL US-04: script escreveu snapshot .json (esperado nenhum — M7)" >&2
   exit 1
 fi
-echo "PASS AC3 — re-run detecta migration, exit 0, DOD.md e snapshot preservados"
+echo "PASS US-04 — nenhum snapshot .json escrito (resync removido)"
 
 # --- AC4: lock contention → exit 3 após ~5s de retries ---
-# Setup: pre-criar lockdir no $TMP/references/ ANTES de invocar $CMD novamente.
-# DOD.md já foi migrado em AC6/AC7; vamos forçar uma re-tentativa via
-# `$TMP/references/DOD.md` revertida (cp do pre-snapshot) pra fazer o script
-# tentar adquirir lock e falhar.
 LOCK_PATH="$TMP/references/.dod-add-bullet-ids.lock"
 mkdir "$LOCK_PATH"
 START_TS=$(date +%s)
@@ -263,35 +220,6 @@ if ! grep -q 'lock .* ocupado' /tmp/ac4-err.txt; then
   exit 1
 fi
 echo "PASS AC4 — lock contention exit 3 após ${AC4_ELAPSED}s + mensagem correta"
-
-# --- AC9: dod-reset-rev.sh --show continua funcionando após migration ---
-# Backward compat: parser de heading do dod-reset-rev.sh ignora bullets, então
-# DOD.md com [bN] deve continuar processável. Setup: copia dod-reset-rev.sh
-# pra $TMP/bin/ (mesmo skill_dir relativo) — script vai resolver
-# $TMP/references/DOD.md isolado do real.
-RESET_REV_SRC="$SCRIPT_DIR/dod-reset-rev.sh"
-if [[ ! -x "$RESET_REV_SRC" ]]; then
-  echo "FAIL AC9: $RESET_REV_SRC inexistente ou não-executável" >&2
-  exit 1
-fi
-cp "$RESET_REV_SRC" "$TMP/bin/dod-reset-rev.sh"
-set +e
-RESET_OUT=$("$TMP/bin/dod-reset-rev.sh" --show 2>&1)
-AC9_EC=$?
-set -e
-if [[ "$AC9_EC" -ne 0 ]]; then
-  echo "FAIL AC9: dod-reset-rev.sh --show exit=$AC9_EC pós-migration:" >&2
-  echo "$RESET_OUT" >&2
-  exit 1
-fi
-# Output esperado: header tabular + 28 linhas de data (tarefa-N + cat-N-base)
-DATA_LINES=$(echo "$RESET_OUT" | grep -cE '^[[:space:]]*[0-9]+[[:space:]]+[0-9]+[[:space:]]+(tarefa-[0-9]+|cat-[0-9]+-base)' || true)
-if [[ "$DATA_LINES" -ne 28 ]]; then
-  echo "FAIL AC9: dod-reset-rev.sh --show retornou $DATA_LINES linhas de data, esperado 28" >&2
-  echo "$RESET_OUT" >&2
-  exit 1
-fi
-echo "PASS AC9 — dod-reset-rev.sh --show processa DOD.md migrado (28 entries)"
 
 echo ""
 echo "ALL TESTS PASSED"

@@ -108,8 +108,16 @@ Nunca logar via UI em cada teste. Use projeto `setup` que salva
 Test specs Gherkin-lite vivem em `skills/testing/references/TEST-PATTERNS.md`
 (mirror estrutural de `skills/auto-grill-me/references/DOD.md`). Cada heading
 `### Tarefa N` / `### DoD-base — Categoria N` lá corresponde 1:1 ao heading
-homônimo na DOD.md, com contador `(usos: X · desde rev: Y)` paralelo.
-Geração via `/test-spec [tarefa-N | cat-N-base | <plan-path>]`.
+homônimo na DOD.md. Os contadores `usos`/`desde rev` são **derivados** — o
+sufixo inline `(usos: X · desde rev: Y)` foi removido na migração (US-03): o
+TEST-PATTERNS.md é **source-puro**, o heading é só `### <Tarefa N|DoD-base> —
+<Título>`. Os números vêm sob demanda de um **log append-only per-machine**
+(`~/.claude/telemetry/test-spec-usage.<machine-id>.jsonl`) pelo fold
+content-based [`bin/lib/usage-fold.sh --prefix test-spec`](../../bin/lib/usage-fold.sh)
+— as MESMAS libs M1/M2 do sistema DoD, só mudando o `--prefix` (sem código
+duplicado). Geração via `/test-spec [tarefa-N | cat-N-base | <plan-path>]`, que
+emite 1 evento `use` por spec materializada via
+[`bin/lib/usage-log.sh --prefix test-spec`](../../bin/lib/usage-log.sh).
 
 ### Política de granularidade (não-negociável)
 
@@ -120,8 +128,9 @@ Geração via `/test-spec [tarefa-N | cat-N-base | <plan-path>]`.
   `[CAT3-MANUAL]` na descrição e **geram 0 specs automatizáveis**. Compatível
   com a sintaxe rígida da skill `prd` (Ralph filtra `[CAT3-MANUAL]` antes do
   prompt para não inflacionar prd.json com critérios não-binários).
-- **Heading literal idêntico à DOD.md**: `### Tarefa N — <título> (usos: X · desde rev: Y)`
-  ou `### DoD-base — Categoria N (usos: X · desde rev: Y)`. **Nunca** prefixe
+- **Heading literal idêntico à DOD.md, source-puro**: `### Tarefa N — <título>`
+  ou `### DoD-base — Categoria N` — **sem** o sufixo `(usos…)` (removido em
+  US-03; a regex de heading casa o heading sem o sufixo). **Nunca** prefixe
   `Test specs para` — o regex parser do `bin/test-spec-reset-rev.sh` é literal
   `^### Tarefa` / `^### DoD-base`.
 - **Ids referenciados em plano mas ausentes em DOD.md** (caso real iter US-01):
@@ -131,25 +140,30 @@ Geração via `/test-spec [tarefa-N | cat-N-base | <plan-path>]`.
 
 ### Scripts utilitários
 
-- `bin/test-spec-reset-rev.sh <spec_id>` — zera `desde rev` do heading +
-  atualiza `last_seen_iso` no snapshot.
+Twins de `bin/dod-reset-rev.sh` / `bin/dod-usage-migrate.sh` do auto-grill-me,
+com `--prefix test-spec` — reusam as MESMAS libs M1/M2 (`bin/lib/usage-log.sh` +
+`bin/lib/usage-fold.sh`), **não** reimplementam writer/fold.
+
+- `bin/test-spec-reset-rev.sh <spec_id>` — "reset": emite 1 evento `revision`
+  @ sha atual dos bullets (ex.: `test-spec-reset-rev.sh tarefa-5`). Não edita
+  contador inline (não existe mais) nem snapshot (removido US-03). Append
+  lockless (`O_APPEND` atômico) — não há mais lock `mkdir`.
 - `bin/test-spec-reset-rev.sh --show [--sort=desde-rev|usos|id]` — tabela
-  legível para revisão.
-- `bin/test-spec-reset-rev.sh --gc` — remove entries órfãs do snapshot.
-- `bin/test-spec-migrate-add-counters.sh` — one-shot idempotente para
-  bootstrap: adiciona `(usos: 0 · desde rev: 0)` a 28 headings e cria
-  `.test-spec-revision-state.json` (sha256 do bullet block + metadata).
-  Ambos clones literais de `dod-*.sh` (apenas `TARGET_FILE`/`SNAPSHOT_FILE`
-  diferem) — decisão deliberada (footnote #6 do plano).
+  derivada via fold (`--prefix test-spec`); default ordena por `desde rev` DESC.
+- `bin/dod-usage-migrate.sh --prefix test-spec` — seeder one-shot idempotente
+  que semeia o log a partir dos contadores que eram inline (migração inicial).
+  O subcomando `--gc` foi aposentado: sem snapshot `.json`, não há entradas
+  órfãs a coletar.
 
-### Snapshot
+### Reset de "desde rev" (content-based)
 
-`references/.test-spec-revision-state.json` — schema idêntico ao
-`.dod-revision-state.json`: chaves `dod_id` (`tarefa-N` / `cat-N-base`),
-valores `{bullets_sha256, slug, title_current, last_seen_iso}`. Hash do
-bullet block é a única fonte de verdade para "este bloco mudou desde a
-última revisão" — reset detectado naturalmente via mismatch quando o usuário
-roda `--show`/`<spec_id>`.
+Quando os bullets de um spec mudam, o sha atual muda → os eventos `use` antigos
+(sha antigo) deixam de casar e `desde rev` "zera" naturalmente no fold, sem
+reescrever nada. Para marcar a revisão explicitamente sem esperar o próximo uso,
+emita um evento `revision` com o novo sha via `bin/test-spec-reset-rev.sh
+<spec_id>`. O `bullets_sha256` é a única fonte de verdade para "este bloco mudou
+desde a última revisão" — não há mais `.test-spec-revision-state.json` (o log é
+a fonte; `last_seen` é derivado pelo fold).
 
 ### Convenção `// spec:` em código de teste
 

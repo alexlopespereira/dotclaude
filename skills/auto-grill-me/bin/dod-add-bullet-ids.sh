@@ -4,9 +4,13 @@ set -euo pipefail
 # bin/dod-add-bullet-ids.sh — adiciona prefixo [bN] aos bullets do DOD.md (US-01).
 #
 # Para cada bullet `- [ ] ...` dentro de um bloco `### Tarefa N` ou
-# `### DoD-base — Categoria N`, prepende `[bN]` (N reseta a cada heading).
-# Em seguida recalcula `bullets_sha256` no `.dod-revision-state.json` para
-# todas as 28 entries no MESMO RUN — evita drift silencioso (Ressalva Alta #1).
+# `### DoD-base — Categoria N`, prepende `[bN]` (N reseta a cada heading). O match
+# de heading é por PREFIXO (sem o sufixo `(usos…)`, removido na migração US-03) —
+# AC3 do US-04. A derivação de dod_id continua correta.
+#
+# US-04: o resync do snapshot `.dod-revision-state.json` foi REMOVIDO — o snapshot
+# deixou de existir (US-03 AC6) e nenhum script escreve mais .json de estado (M7);
+# os shas dos bullets agora vivem nos eventos `revision` do log append-only.
 #
 # Idempotente: re-execuções detectam `[b\d+]` no DOD.md e saem com exit 0.
 #
@@ -24,22 +28,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 REFERENCES_DIR="$SKILL_DIR/references"
 DOD_FILE="$REFERENCES_DIR/DOD.md"
-STATE_FILE="$REFERENCES_DIR/.dod-revision-state.json"
 LOCK_DIR="$REFERENCES_DIR/.dod-add-bullet-ids.lock"
 
 TMP_DOD=""
-TMP_BULLETS=""
-TMP_STATE=""
-TMP_NEXT=""
-TMP_STATE_SORTED=""
 LOCK_HELD=0
 
 cleanup() {
   [[ -n "$TMP_DOD" && -e "$TMP_DOD" ]] && rm -f "$TMP_DOD"
-  [[ -n "$TMP_BULLETS" && -d "$TMP_BULLETS" ]] && rm -rf "$TMP_BULLETS"
-  [[ -n "$TMP_STATE" && -e "$TMP_STATE" ]] && rm -f "$TMP_STATE"
-  [[ -n "$TMP_NEXT" && -e "$TMP_NEXT" ]] && rm -f "$TMP_NEXT"
-  [[ -n "$TMP_STATE_SORTED" && -e "$TMP_STATE_SORTED" ]] && rm -f "$TMP_STATE_SORTED"
   # Só remove o lock se ESTE processo o adquiriu (mesmo padrão dos dod-*.sh).
   if [[ "$LOCK_HELD" -eq 1 ]]; then
     rmdir "$LOCK_DIR" 2>/dev/null || true
@@ -63,7 +58,6 @@ efeito:
     próximo heading).
   - DoD-base Categoria 1 b4 ganha sufixo '(prefix `[US-XX]` aceito quando
     gerado pelo Ralph)' — aprendizado meta do PR #27.
-  - .dod-revision-state.json: bullets_sha256 recalculado para as 28 entries.
 
 idempotente: 2º run detecta o prefixo [bN] e sai com exit 0.
 EOF
@@ -116,7 +110,10 @@ awk -v ac10_old="$AC10_OLD" -v ac10_new="$AC10_NEW" '
   }
   /^### DoD-base — Categoria [0-9]+/ {
     in_block = 1
-    in_cat1_base = ($0 ~ /^### DoD-base — Categoria 1 /)
+    # AC3 (US-04): casa "Categoria 1" seguido de espaço (sufixo pré-strip) OU
+    # fim-de-linha (heading source-puro pós-US-03). Antes exigia o espaço do
+    # sufixo `(usos…)` → quebrava no DOD.md strippado. `1$|1[ ]` não casa "10"+.
+    in_cat1_base = ($0 ~ /^### DoD-base — Categoria 1([ ]|$)/)
     bn = 0
     print
     next
@@ -158,6 +155,7 @@ if [[ "$new_markers" -lt 100 ]]; then
 fi
 
 # AC10 sanity check: o sufixo deve estar presente em exatamente 1 linha.
+# shellcheck disable=SC2016  # literal com backticks/brackets — aspas simples são intencionais
 ac10_hits=$(grep -cF '(prefix `[US-XX]` aceito quando gerado pelo Ralph)' "$TMP_DOD" || true)
 if [[ "$ac10_hits" -ne 1 ]]; then
   echo "erro: AC10 sufixo presente em $ac10_hits linhas (esperado 1)" >&2
@@ -174,95 +172,9 @@ fi
 mv "$TMP_DOD" "$DOD_FILE"
 TMP_DOD=""
 
-# Snapshot resync — extrai bullets por heading no DOD.md já migrado,
-# recalcula sha256, e atualiza .dod-revision-state.json para todas as 28 entries.
-TMP_BULLETS="$(mktemp -d -t dod-bullets.XXXXXX)"
-
-awk -v dir="$TMP_BULLETS" '
-  function trim(s) { sub(/[ \t]+$/, "", s); return s }
-  function flush(   bpath) {
-    if (cur_id != "") {
-      bpath = dir "/" cur_id ".bullets"
-      close(bpath)
-    }
-    cur_id = ""
-    in_bullets = 0
-  }
-  BEGIN {
-    current_cat = ""
-    cur_id = ""
-    in_bullets = 0
-  }
-  /^## Categoria [0-9]+ — / {
-    flush()
-    split($0, parts, " ")
-    current_cat = parts[3]
-    next
-  }
-  /^## / {
-    flush()
-    next
-  }
-  /^### DoD-base — Categoria [0-9]+ \(usos: [0-9]+ · desde rev: [0-9]+\)$/ {
-    flush()
-    cur_id = "cat-" current_cat "-base"
-    in_bullets = 1
-    next
-  }
-  /^### Tarefa [0-9]+ — .+ \(usos: [0-9]+ · desde rev: [0-9]+\)$/ {
-    flush()
-    title = $0
-    sub(/^### /, "", title)
-    sub(/ \(usos: [0-9]+ · desde rev: [0-9]+\)$/, "", title)
-    match(title, /^Tarefa [0-9]+/)
-    tp = substr(title, RSTART, RLENGTH)
-    split(tp, t, " ")
-    cur_id = "tarefa-" t[2]
-    in_bullets = 1
-    next
-  }
-  /^### / {
-    flush()
-    next
-  }
-  {
-    if (in_bullets) {
-      print trim($0) > (dir "/" cur_id ".bullets")
-    }
-  }
-  END { flush() }
-' "$DOD_FILE"
-
-bullet_files=$(find "$TMP_BULLETS" -maxdepth 1 -name '*.bullets' | wc -l | tr -d ' ')
-if [[ "$bullet_files" -ne 28 ]]; then
-  echo "erro: snapshot resync produziu $bullet_files bullet files (esperado 28)" >&2
-  exit 1
-fi
-
-# Atualiza snapshot in-place — preserva slug + title_current existentes,
-# refresca bullets_sha256 + last_seen_iso para todas as 28 entries.
-ISO_NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-TMP_STATE="$(mktemp "$REFERENCES_DIR/.dod-add-bullet-ids.tmp.XXXXXX")"
-cp "$STATE_FILE" "$TMP_STATE"
-
-for bullets_file in "$TMP_BULLETS"/*.bullets; do
-  id="$(basename "$bullets_file" .bullets)"
-  sha="$(sha256sum "$bullets_file" | cut -d' ' -f1)"
-  TMP_NEXT="$(mktemp "$REFERENCES_DIR/.dod-add-bullet-ids.tmp.XXXXXX")"
-  jq --arg id "$id" --arg s "$sha" --arg ts "$ISO_NOW" \
-    '.[$id].bullets_sha256 = $s | .[$id].last_seen_iso = $ts' \
-    "$TMP_STATE" > "$TMP_NEXT"
-  mv "$TMP_NEXT" "$TMP_STATE"
-  TMP_NEXT=""
-done
-
-TMP_STATE_SORTED="$TMP_STATE.sorted"
-jq -S . "$TMP_STATE" > "$TMP_STATE_SORTED"
-mv "$TMP_STATE_SORTED" "$STATE_FILE"
-TMP_STATE_SORTED=""
-rm -f "$TMP_STATE"
-TMP_STATE=""
-
+# US-04: sem resync de snapshot (.dod-revision-state.json removido em US-03; M7).
+# A única regex que exigia o sufixo `(usos…)` vivia aqui — eliminá-la satisfaz o
+# AC3 sem quebrar a derivação de dod_id (o match de heading do [bN] acima é por
+# prefixo). Os shas dos bullets passam a viver nos eventos `revision` do log.
 final_bn=$(grep -cE '^- \[ \] \[b[0-9]+\] ' "$DOD_FILE" || true)
-final_entries=$(jq 'keys | length' "$STATE_FILE")
-echo "migrado: $final_bn bullets numerados + $final_entries snapshot entries resincronizadas"
+echo "migrado: $final_bn bullets numerados (snapshot .json aposentado — US-03/US-04)"

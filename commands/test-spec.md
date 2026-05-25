@@ -8,9 +8,10 @@ allowed-tools: Read, Edit, Write, Bash(pwd), Bash(ls *), Bash(test *), Bash(cat 
 
 Espelha o lifecycle das DoDs (`skills/auto-grill-me/references/DOD.md`) num
 artefato versionado `skills/testing/references/TEST-PATTERNS.md`: 1 unidade
-contável por spec, contador `(usos: X · desde rev: Y)` por heading, hash-driven
-reset via clones de `dod-*.sh`. Formato canônico de cada spec (D2 do plano,
-Gherkin-lite):
+contável por spec. Os contadores `usos`/`desde rev` são **derivados** via o fold
+(`bin/lib/usage-fold.sh --prefix test-spec`, US-02) — **não** ficam mais inline no
+heading (sufixo `(usos: X · desde rev: Y)` removido na migração US-03). Formato
+canônico de cada spec (D2 do plano, Gherkin-lite):
 
 ```
 - [ ] spec-N (tarefa-X-spec-N): dado <precondição>, quando <ação>, então <observable> — edge: <caso opcional>
@@ -24,10 +25,11 @@ Gherkin-lite):
 > rígida da skill `prd` (filtrada pelo Ralph antes do prompt).
 
 > **Heading idêntico ao DOD.md (Ressalva Alta #1 — não-negociável).** Use
-> `### Tarefa N — <título> (usos: X · desde rev: Y)` e
-> `### DoD-base — Categoria N (usos: X · desde rev: Y)` no TEST-PATTERNS.md.
-> **Nunca** prefixe `Test specs para` — o regex de `bin/test-spec-reset-rev.sh`
-> (clone de `bin/dod-reset-rev.sh`) é literal `^### Tarefa` / `^### DoD-base`.
+> `### Tarefa N — <título>` e `### DoD-base — Categoria N` no TEST-PATTERNS.md —
+> SOURCE-PURO, **sem** o sufixo `(usos…)` (AC3: a regex de heading casa o heading
+> sem sufixo). **Nunca** prefixe `Test specs para` — o regex de
+> `bin/test-spec-reset-rev.sh` (clone de `bin/dod-reset-rev.sh`) é literal
+> `^### Tarefa` / `^### DoD-base`.
 
 ## Preflight (inline bash — pré-computa contexto antes do modelo)
 
@@ -72,21 +74,28 @@ Gherkin-lite):
      `-A/-B/-C` quando o mesmo bullet origina múltiplas asserções.
    - Numeração `spec-1`, `spec-2`, ... reinicia por bloco de tarefa.
 4. Abra `skills/testing/references/TEST-PATTERNS.md` e localize o heading
-   correspondente (`### Tarefa N — <título> (usos: X · desde rev: Y)` ou
-   `### DoD-base — Categoria N (usos: X · desde rev: Y)`).
+   correspondente (`### Tarefa N — <título>` ou `### DoD-base — Categoria N` —
+   SOURCE-PURO, sem o sufixo `(usos…)`).
 5. **Comportamento `--regenerate`:**
    - Sem `--regenerate`: se o bloco já tem bullets populados, **não duplicar**
-     — emita `bloco já populado; use --regenerate para forçar` e incremente
-     apenas o contador (`usos: X+1`).
+     — emita `bloco já populado; use --regenerate para forçar`.
    - Com `--regenerate`: substitui o corpo do bloco pelas specs novas. O hash
-     muda → `bin/test-spec-reset-rev.sh` natural detecta e zera `desde rev` na
-     próxima invocação (não tente fazer isso aqui inline; deixe pro script).
-6. Atualize o contador do heading: incrementa `usos` em 1, e em primeira
-   bootstrap (de `usos: 0` para `usos: 1`) seta `desde rev: 1`.
+     dos bullets muda → o fold (content-based, US-02) deriva `desde rev` só dos
+     usos no sha atual; `bin/test-spec-reset-rev.sh` registra a revisão. **Não**
+     edite contador inline (não existe mais).
+6. **NÃO edite contador inline no heading** (removido em US-03). `usos`/`desde rev`
+   são derivados via fold. Após materializar o bloco (Ramo 2, criação OU
+   `--regenerate` que de fato substitui), **emita 1 evento `use`** para o id alvo
+   via o writer compartilhado — `log_event use <id> --sha <sha-atual> --prefix
+   test-spec` (de `bin/lib/usage-log.sh`), onde `<sha-atual>` vem de
+   `dod_bullets_sha references/TEST-PATTERNS.md` (função de `bin/lib/usage-fold.sh`).
+   É assim que `usos` cresce; a derivação de contador roda no `--show`/fold
+   (`bin/test-spec-reset-rev.sh --show`). Não emita evento quando o bloco já está
+   populado e você abortou sem mexer (no-op).
 7. Append/replace o bloco verbatim no TEST-PATTERNS.md preservando demais
    blocos. Use Edit/Write conforme a operação.
-8. Resumo final no chat: `spec_id_base=tarefa-N | cat-N-base`, contador novo,
-   nº de specs gerados, nº de bullets `[CAT3-MANUAL]`.
+8. Resumo final no chat: `spec_id_base=tarefa-N | cat-N-base`, contador derivado
+   (via fold), nº de specs gerados, nº de bullets `[CAT3-MANUAL]`.
 
 ## Ramo 3 — `$1` contém `/` → plan-path mode
 
@@ -111,12 +120,13 @@ Gherkin-lite):
 ## Flag `--regenerate`
 
 - Ramo 2: força regeneração do bloco do id alvo no TEST-PATTERNS.md (substitui
-  bullets existentes). Hash-mismatch resultante é capturado pelo
-  `bin/test-spec-reset-rev.sh` quando rodado em seguida (zero `desde rev`).
+  bullets existentes). O sha dos bullets muda → o fold (content-based, US-02)
+  deriva `desde rev` apenas dos usos no sha atual; `bin/test-spec-reset-rev.sh`
+  registra a revisão (evento `revision`), sem editar contador inline.
 - Ramo 3: força regeneração da seção `## Test Specs` do plano (substitui).
 - Ramo 1: aplicado ao plano auto-detectado (mesmo comportamento Ramo 3).
 - Sem o flag, o comando é **idempotente** — re-invocações sobre o mesmo alvo
-  não duplicam specs nem incrementam contador além do legítimo.
+  não duplicam specs (os contadores são derivados via fold, não editados inline).
 
 ## Saída esperada (resumo da sessão)
 
@@ -125,7 +135,7 @@ Após executar, imprima 3–5 linhas:
 - ramo escolhido (1/2/3)
 - alvo resolvido (id ou plan-path)
 - arquivo modificado (TEST-PATTERNS.md ou plano)
-- counts: `specs_gerados=N`, `cat3_manual=M`, `usos_novo=K`
+- counts: `specs_gerados=N`, `cat3_manual=M`, `usos_derivado=K` (via fold)
 - aviso opcional se `bin/test-spec-reset-rev.sh` não existir ainda
   (US-02 pendente)
 
@@ -137,5 +147,6 @@ Após executar, imprima 3–5 linhas:
   política de granularidade (Ressalva Alta #2).
 - Não edite `skills/auto-grill-me/references/DOD.md` — TEST-PATTERNS é mirror,
   não fonte; alterações na DoD partem da skill `auto-grill-me`.
-- Não rode `bin/test-spec-reset-rev.sh --gc` automaticamente — deixe pro
-  humano após inspecionar mudanças.
+- Não edite contador inline no heading do TEST-PATTERNS.md — o sufixo `(usos…)`
+  foi removido em US-03; `usos`/`desde rev` são derivados via fold. O subcomando
+  `--gc` foi aposentado (sem snapshot `.json`, não há entradas órfãs a coletar).

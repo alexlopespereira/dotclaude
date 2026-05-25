@@ -1,77 +1,68 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# bin/test-spec-reset-rev.sh — utility for TEST-PATTERNS.md "desde rev" counters.
-# Clone literal de bin/dod-reset-rev.sh (auto-grill-me) com TARGET_FILE/
-# SNAPSHOT_FILE baked-in para skills/testing/references/. Não generalizar via
-# --file: decisão deliberada (footnote #6 do plano).
+# bin/test-spec-reset-rev.sh — utilitário do contador "desde rev" do
+# TEST-PATTERNS.md (US-06; twin de bin/dod-reset-rev.sh do auto-grill-me).
 #
-# Comandos:
+# Pós-migração (US-03) os contadores NÃO ficam mais inline no TEST-PATTERNS.md —
+# são DERIVADOS do log append-only via o fold (bin/lib/usage-fold.sh, US-02),
+# content-based (por sha). Reusa as MESMAS libs M1/M2 com --prefix test-spec
+# (telemetry/test-spec-usage.<machine-id>.jsonl) — NÃO reimplementa writer/fold.
+# Este script é só um consumidor do fold:
+#
 #   test-spec-reset-rev.sh                          # --help curto, exit 0
-#   test-spec-reset-rev.sh <spec_id>                # zera "desde rev" do <spec_id>
-#                                                   # + atualiza last_seen_iso no snapshot
-#   test-spec-reset-rev.sh --show [--sort=X]        # tabela legível
+#   test-spec-reset-rev.sh <spec_id>                # "reset": emite 1 evento revision
+#                                                   # @ sha atual dos bullets do spec
+#   test-spec-reset-rev.sh --show [--sort=X]        # tabela derivada via fold
 #                                                   # sort: desde-rev (default) | usos | id
-#   test-spec-reset-rev.sh --gc                     # remove entries órfãs do snapshot
 #   test-spec-reset-rev.sh --help | -h              # esta ajuda
 #
-# macOS-compatible: usa `mkdir <lockdir>` para serialização (fd-lock clássico
-# do Linux não existe no Darwin).
+# Seams de teste (mesma convenção de usage-log.sh/usage-fold.sh):
+#   --dod-file F   sobrescreve o TEST-PATTERNS.md alvo
+#   --prefix P     namespace do log (default test-spec)
+#   USAGE_LOG_HOME sobrescreve a base ~/.claude onde o log vive
+#
+# O subcomando --gc foi APOSENTADO (espelha US-04 AC5): sem snapshot .json
+# (removido US-03), não há entradas órfãs a coletar. O "reset" não edita mais
+# contador inline nem escreve .json de estado — apenas faz append (lockless,
+# O_APPEND atômico) de um evento `revision`; daí não há mais lock `mkdir`.
 #
 # Exit codes:
 #   0 — sucesso
 #   1 — uso inválido (flag desconhecida)
 #   2 — spec-id desconhecido
-#   3 — lock ocupado após retry
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 REFERENCES_DIR="$SKILL_DIR/references"
-TARGET_FILE="$REFERENCES_DIR/TEST-PATTERNS.md"
-SNAPSHOT_FILE="$REFERENCES_DIR/.test-spec-revision-state.json"
-LOCK_DIR="$REFERENCES_DIR/.test-spec-reset.lock"
+DOD_FILE="$REFERENCES_DIR/TEST-PATTERNS.md"
+PREFIX="test-spec"
 
-LOCK_HELD=0
-TMP_FILE=""
-
-cleanup() {
-  [[ -n "$TMP_FILE" && -e "$TMP_FILE" ]] && rm -f "$TMP_FILE"
-  # rmdir apenas se este processo realmente adquiriu o lock (evita race
-  # com timeout: o `exit 3` apagaria o lockdir do dono real).
-  if [[ "$LOCK_HELD" -eq 1 ]]; then
-    rmdir "$LOCK_DIR" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT
+# Lib compartilhada (US-01/US-02): log_event + usage_fold + dod_bullets_sha.
+# Mesmo layout relativo no repo e em ~/.claude (sync.sh instala bin/ e skills/
+# lado a lado). ATENÇÃO: usage-fold.sh redefine SCRIPT_DIR ao ser sourceado —
+# por isso DOD_FILE/SKILL_DIR já foram derivados ACIMA, antes do source.
+# shellcheck source=bin/lib/usage-fold.sh
+source "$SCRIPT_DIR/../../../bin/lib/usage-fold.sh"
 
 show_help() {
   cat <<'EOF'
-test-spec-reset-rev — utilitário do contador "desde rev" do TEST-PATTERNS.md
+test-spec-reset-rev — utilitário do contador "desde rev" do TEST-PATTERNS.md (derivado via fold)
 
 uso:
-  test-spec-reset-rev.sh <spec_id>                    zera "desde rev" + atualiza last_seen_iso
-  test-spec-reset-rev.sh --show [--sort=X]            tabela (sort: desde-rev|usos|id; default: desde-rev)
-  test-spec-reset-rev.sh --gc                         remove entries órfãs do snapshot
-  test-spec-reset-rev.sh --help                       esta ajuda
+  test-spec-reset-rev.sh <spec_id>                 "reset": emite evento revision @ sha atual
+  test-spec-reset-rev.sh --show [--sort=X]         tabela derivada (sort: desde-rev|usos|id; default: desde-rev)
+  test-spec-reset-rev.sh --help                    esta ajuda
 
+seams: [--dod-file F] [--prefix P] (USAGE_LOG_HOME p/ a base do log)
 spec_id: tarefa-N (ex: tarefa-5) ou cat-N-base (ex: cat-1-base)
 EOF
 }
 
-acquire_lock() {
-  local attempts=0
-  while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-    attempts=$((attempts + 1))
-    if [[ $attempts -ge 50 ]]; then
-      echo "erro: lock $LOCK_DIR ocupado após 5s; rodar de novo após o outro processo liberar" >&2
-      exit 3
-    fi
-    sleep 0.1
-  done
-  LOCK_HELD=1
-}
-
-# Emite linhas TSV: spec_id<TAB>usos<TAB>desde_rev<TAB>title_current
+# Emite linhas TSV: spec_id<TAB>title_current. A regex casa o heading SEM o sufixo
+# `(usos: N · desde rev: N)` (removido na migração US-03); o sufixo é opcional
+# (`( \(usos:…\))?`) só p/ backward-compat com arquivos pré-strip. Os contadores
+# NÃO saem daqui — vêm do fold (AC1/AC4).
 parse_headings() {
   awk '
     BEGIN { current_cat = "" }
@@ -82,13 +73,11 @@ parse_headings() {
       current_cat = s
       next
     }
-    /^### DoD-base — Categoria [0-9]+ \(usos: [0-9]+ · desde rev: [0-9]+\)$/ {
-      match($0, /usos: [0-9]+/); usos = substr($0, RSTART + 6, RLENGTH - 6)
-      match($0, /desde rev: [0-9]+/); rev = substr($0, RSTART + 11, RLENGTH - 11)
-      printf "cat-%s-base\t%s\t%s\tDoD-base — Categoria %s\n", current_cat, usos, rev, current_cat
+    /^### DoD-base — Categoria [0-9]+( \(usos: [0-9]+ · desde rev: [0-9]+\))?$/ {
+      printf "cat-%s-base\tDoD-base — Categoria %s\n", current_cat, current_cat
       next
     }
-    /^### Tarefa [0-9]+ — .+ \(usos: [0-9]+ · desde rev: [0-9]+\)$/ {
+    /^### Tarefa [0-9]+ — .+$/ {
       s = $0
       sub(/^### Tarefa /, "", s)
       sub(/ .*$/, "", s)
@@ -96,72 +85,37 @@ parse_headings() {
       title = $0
       sub(/^### /, "", title)
       sub(/ \(usos: [0-9]+ · desde rev: [0-9]+\)$/, "", title)
-      match($0, /usos: [0-9]+/); usos = substr($0, RSTART + 6, RLENGTH - 6)
-      match($0, /desde rev: [0-9]+/); rev = substr($0, RSTART + 11, RLENGTH - 11)
-      printf "tarefa-%s\t%s\t%s\t%s\n", tnum, usos, rev, title
+      printf "tarefa-%s\t%s\n", tnum, title
       next
     }
-  ' "$TARGET_FILE"
+  ' "$DOD_FILE"
 }
 
+# "reset" no mundo derivado (espelha US-04 AC2): emite 1 evento `revision`
+# carregando o sha ATUAL dos bullets do spec (content-based, US-02). NÃO edita
+# contador inline (não existe mais) nem snapshot (removido US-03). Append lockless.
 reset_spec() {
   local spec_id="$1"
 
-  # Verifica existência ANTES de adquirir o lock (evita ocupar exclusão mútua
-  # à toa quando o id é inválido).
+  # Existência via heading (regex sem sufixo).
   if ! parse_headings | awk -F'\t' -v t="$spec_id" '$1 == t { found = 1 } END { exit !found }'; then
     echo "spec-id desconhecido: $spec_id" >&2
     exit 2
   fi
 
-  acquire_lock
-
-  TMP_FILE="$(mktemp "$REFERENCES_DIR/.test-spec-reset.tmp.XXXXXX")"
-  awk -v target="$spec_id" '
-    BEGIN { current_cat = "" }
-    /^## Categoria [0-9]+ — / {
-      s = $0
-      sub(/^## Categoria /, "", s)
-      sub(/ .*$/, "", s)
-      current_cat = s
-      print
-      next
-    }
-    /^### DoD-base — Categoria [0-9]+ \(usos: [0-9]+ · desde rev: [0-9]+\)$/ {
-      line_id = "cat-" current_cat "-base"
-      if (line_id == target) sub(/desde rev: [0-9]+/, "desde rev: 0")
-      print
-      next
-    }
-    /^### Tarefa [0-9]+ — .+ \(usos: [0-9]+ · desde rev: [0-9]+\)$/ {
-      s = $0
-      sub(/^### Tarefa /, "", s)
-      sub(/ .*$/, "", s)
-      line_id = "tarefa-" s
-      if (line_id == target) sub(/desde rev: [0-9]+/, "desde rev: 0")
-      print
-      next
-    }
-    { print }
-  ' "$TARGET_FILE" > "$TMP_FILE"
-
-  mv "$TMP_FILE" "$TARGET_FILE"
-  TMP_FILE=""
-
-  # Atualiza last_seen_iso no snapshot (se a entry existir — pode estar ausente
-  # se o snapshot foi gc'd ou nunca migrado; nesse caso só atualiza TARGET_FILE).
-  if [[ -f "$SNAPSHOT_FILE" ]] && jq -e --arg id "$spec_id" 'has($id)' "$SNAPSHOT_FILE" >/dev/null 2>&1; then
-    local iso_now
-    iso_now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    TMP_FILE="$(mktemp "$REFERENCES_DIR/.test-spec-reset.tmp.XXXXXX")"
-    jq -S --arg id "$spec_id" --arg ts "$iso_now" \
-      '.[$id].last_seen_iso = $ts' "$SNAPSHOT_FILE" > "$TMP_FILE"
-    mv "$TMP_FILE" "$SNAPSHOT_FILE"
-    TMP_FILE=""
-    echo "reset: $spec_id — desde rev = 0; last_seen_iso = $iso_now"
-  else
-    echo "reset: $spec_id — desde rev = 0 (snapshot sem entry para este id)"
+  # Captura todo o output ANTES de filtrar: um `exit` no awk fecharia o pipe e
+  # daria SIGPIPE em dod_bullets_sha (fatal sob pipefail). Command-substitution
+  # lê o stream inteiro → sem pipe a quebrar.
+  local sha all_sha
+  all_sha="$(dod_bullets_sha "$DOD_FILE")"
+  sha="$(awk -F'\t' -v t="$spec_id" '$1 == t { print $2 }' <<< "$all_sha")"
+  if [[ -z "$sha" ]]; then
+    echo "erro: não foi possível derivar o sha dos bullets de $spec_id" >&2
+    exit 1
   fi
+
+  log_event revision "$spec_id" --prefix "$PREFIX" --sha "$sha"
+  echo "reset: $spec_id — evento revision emitido @ sha=${sha:0:12}"
 }
 
 cmd_show() {
@@ -175,8 +129,23 @@ cmd_show() {
     esac
   fi
 
-  local rows sorted
-  rows="$(parse_headings)"
+  # Contadores derivados via fold (US-02): TSV spec_id\tusos\tdesde_rev\tlast_seen.
+  # Títulos vêm do heading (parse_headings). Left-join por spec_id: TODO heading
+  # aparece; usos/desde_rev default 0 quando o spec_id não tem eventos no log
+  # (tabela idêntica à pré-migração — AC4).
+  local fold_tsv headings_tsv rows sorted
+  fold_tsv="$(usage_fold --prefix "$PREFIX" --dod-file "$DOD_FILE")"
+  headings_tsv="$(parse_headings)"
+
+  rows="$(awk -F'\t' '
+    NR == FNR { U[$1] = $2; R[$1] = $3; next }
+    {
+      id = $1; title = $2
+      u = (id in U) ? U[id] : 0
+      r = (id in R) ? R[id] : 0
+      printf "%s\t%s\t%s\t%s\n", id, u, r, title
+    }
+  ' <(printf '%s\n' "$fold_tsv") <(printf '%s\n' "$headings_tsv"))"
 
   case "$sort_key" in
     desde-rev) sorted="$(printf '%s\n' "$rows" | sort -t$'\t' -k3,3 -n -r)" ;;
@@ -185,10 +154,8 @@ cmd_show() {
   esac
 
   # Header + linhas — formato: usos desde-rev spec_id title_current
-  # Padding garante que linhas de dados casem regex ^[0-9]+ +[0-9]+ +(tarefa-…|cat-…) +
   # `|| { ec=...; [[ ec==141 ]] || return ec; }`: tolera SIGPIPE (`... | head`)
-  # sem suprimir falhas reais. set -e + pipefail transformariam exit 141 em
-  # erro do script; SIGPIPE é caso esperado pra output tabular.
+  # sem suprimir falhas reais (set -e + pipefail transformariam exit 141 em erro).
   {
     printf '%s\n' "$sorted" | awk -F'\t' '
       BEGIN { printf "%-5s %-10s %-12s %s\n", "usos", "desde-rev", "spec_id", "title_current" }
@@ -197,49 +164,18 @@ cmd_show() {
   } || { local ec=$?; [[ "$ec" -eq 141 ]] || return "$ec"; }
 }
 
-cmd_gc() {
-  if [[ ! -f "$SNAPSHOT_FILE" ]]; then
-    echo "gc: 0 entries órfãs removidas"
-    return 0
-  fi
-
-  acquire_lock
-
-  local heading_ids snapshot_ids orphans
-  heading_ids="$(parse_headings | cut -f1)"
-  snapshot_ids="$(jq -r 'keys[]' "$SNAPSHOT_FILE")"
-
-  # Linhas em snapshot_ids que NÃO estão em heading_ids
-  orphans="$(printf '%s\n' "$snapshot_ids" \
-    | grep -vxF -f <(printf '%s\n' "$heading_ids") || true)"
-
-  # Acumula órfãs num array bash. NÃO concatenar a chave numa expressão jq:
-  # chave do snapshot pode (em tese) conter `"` ou outros chars e injetar
-  # código jq. Passamos cada chave como positional arg e iteramos via
-  # $ARGS.positional dentro do filtro — seguro contra qualquer chave.
-  local -a orphan_args=()
-  if [[ -n "$orphans" ]]; then
-    while IFS= read -r k; do
-      [[ -z "$k" ]] && continue
-      orphan_args+=( "$k" )
-    done <<< "$orphans"
-  fi
-
-  local count=${#orphan_args[@]}
-
-  if [[ $count -gt 0 ]]; then
-    TMP_FILE="$(mktemp "$REFERENCES_DIR/.test-spec-reset.tmp.XXXXXX")"
-    # Atenção: `--args` consome TUDO o que vem depois como positional arg, então
-    # o input file DEVE vir antes do separador. Inverter quebra silenciosamente
-    # (jq lê de stdin vazio e produz output vazio com exit 0).
-    jq -S 'reduce ($ARGS.positional[]) as $k (.; del(.[$k]))' \
-      "$SNAPSHOT_FILE" --args "${orphan_args[@]}" > "$TMP_FILE"
-    mv "$TMP_FILE" "$SNAPSHOT_FILE"
-    TMP_FILE=""
-  fi
-
-  echo "gc: $count entries órfãs removidas"
-}
+# ── Pré-parse de seams (--dod-file/--prefix podem vir em qualquer posição) ────
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dod-file)   DOD_FILE="${2:-}"; shift 2 ;;
+    --dod-file=*) DOD_FILE="${1#*=}"; shift ;;
+    --prefix)     PREFIX="${2:-}"; shift 2 ;;
+    --prefix=*)   PREFIX="${1#*=}"; shift ;;
+    *)            ARGS+=("$1"); shift ;;
+  esac
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
 
 # Dispatch
 if [[ $# -eq 0 ]]; then
@@ -250,7 +186,6 @@ fi
 case "$1" in
   --help|-h) show_help; exit 0 ;;
   --show)    shift; cmd_show "$@" ;;
-  --gc)      cmd_gc ;;
   --*)       echo "uso desconhecido: $1" >&2; show_help >&2; exit 1 ;;
   *)         reset_spec "$1" ;;
 esac

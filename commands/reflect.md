@@ -1,7 +1,7 @@
 ---
 description: Reflexão / supervisão DoD pós-merge — classifica adequação do Definition of Done aplicado a uma PR. Trigger phrases — "reflexão", "supervisão DoD", "retrabalho", "pós-merge", "definition of done review", "retrospectiva". Quatro modos — --baseline (DoD compliance imediato), --retro (algoritmo D1 v2 completo após D+7), --on-failure (auditoria em gate de parada), --learn (LLM consome bundle TDD-chain por US e propõe melhorias DoD/TEST-PATTERNS).
 argument-hint: "[pr-number] [--baseline|--retro|--on-failure <N>|--learn] [--quick] [--context-file <path>] [--from-stdin]"
-allowed-tools: Bash(git:*), Bash(gh:*), Bash(jq *), Bash(mkdir *), Bash(test *), Bash(date *), Bash(find *), Bash(basename *), Bash(dirname *), Bash(cat *), Bash(grep *), Bash(awk *), Bash(sed *), Bash(sort *), Bash(uniq *), Bash(wc *), Bash(ls *), Bash(touch *), Bash(pwd *), Read, Write, Glob, Grep
+allowed-tools: Bash(git:*), Bash(gh:*), Bash(jq *), Bash(bash *), Bash(mkdir *), Bash(test *), Bash(date *), Bash(find *), Bash(basename *), Bash(dirname *), Bash(cat *), Bash(grep *), Bash(awk *), Bash(sed *), Bash(sort *), Bash(uniq *), Bash(wc *), Bash(ls *), Bash(touch *), Bash(pwd *), Read, Write, Glob, Grep
 ---
 
 # /reflect — supervisão DoD pós-merge
@@ -120,6 +120,22 @@ jq -nc --arg pr "$PR_NUM" --arg created "$TS" --arg due "$RETRO_DUE" --arg repo 
 6. **Relatório** — `<ts>-<slug>-baseline.md` com seções: Resumo, DoD aplicada vs CI, Lacunas, **Aviso retrospectiva**: `retrospectiva agendada para D+7 — rode /reflect $PR_NUM --retro a partir de $RETRO_DUE`.
 
 ### Modo `--retro` (AC4) — algoritmo D1 v2 em 6 camadas
+
+**Contexto de uso da DoD — derivado via fold (US-04 AC4).** Antes das camadas,
+derive os contadores `usos`/`desde rev`/`last_seen` por DoD a partir do log
+append-only (fonte única pós-US-03). **Nunca** leia o sufixo `(usos…)` do DOD.md
+(removido na migração) — derive sempre do fold:
+
+```bash
+bash bin/lib/usage-fold.sh --prefix dod 2>/dev/null \
+  | awk -F'\t' '{printf "  %-14s usos=%s desde_rev=%s last_seen=%s\n",$1,$2,$3,$4}'
+```
+
+Inclua a saída na seção **"DoD usage (derivado via fold)"** do relatório. Os
+números são **content-based** (US-02) e idênticos aos que ficavam inline antes da
+migração (equivalência provada em US-03 AC5) → o relatório D1 v2 produz os mesmos
+números que produziria com o inline equivalente. Sem log no host → seção vazia
+(não é erro). Esses contadores são **contexto**, não disparam findings de retrabalho.
 
 Cada camada produz findings independentes. **Aplicar exclusion list (AC12) em todas**:
 
@@ -378,6 +394,9 @@ Estrutura mínima do relatório `.md`:
 ## DoD aplicada vs CI checks (modo baseline)
 <comparação>
 
+## DoD usage (derivado via fold — modo retro)
+<saída de `bin/lib/usage-fold.sh --prefix dod`: usos/desde_rev/last_seen por dod_id; vazio se sem log>
+
 ## Critérios DoD faltantes (modo on-failure)
 <lista>
 
@@ -468,4 +487,20 @@ jq --arg merged "$MERGED" '.[] | select(.created_at > $merged and (.body | test(
 rm "$F"
 ```
 
-Adicionar saída desses 3 blocos no commit message ou em PR description ao alterar este comando — evidência empírica de cobertura AC15.
+### S4 — Contadores DoD via fold, não inline (cobre AC4 do US-04)
+
+```bash
+# DOD.md SOURCE-PURO (sem sufixo inline) + log semeado → o fold deriva os contadores.
+TMP=$(mktemp -d); export USAGE_LOG_HOME="$TMP/home"
+DOD="$TMP/DOD.md"
+printf '## Categoria 1 — X\n\n### Tarefa 7 — Foo\n\n- [ ] [b1] bar\n' > "$DOD"
+SHA=$(bash -c "source bin/lib/usage-fold.sh; dod_bullets_sha '$DOD'" | awk -F'\t' '$1=="tarefa-7"{print $2}')
+bash bin/lib/usage-log.sh baseline tarefa-7 --sha "$SHA" --count 2 >/dev/null
+bash bin/lib/usage-log.sh use      tarefa-7 --sha "$SHA"           >/dev/null
+# esperado: tarefa-7 usos=3 desde_rev=1 (2 do baseline + 1 use; o use está no sha atual)
+bash bin/lib/usage-fold.sh --prefix dod --dod-file "$DOD" | awk -F'\t' '{print $1,$2,$3}'
+# saída esperada: tarefa-7 3 1
+rm -rf "$TMP"; unset USAGE_LOG_HOME
+```
+
+Adicionar saída desses 4 blocos no commit message ou em PR description ao alterar este comando — evidência empírica de cobertura AC15.
