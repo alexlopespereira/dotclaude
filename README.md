@@ -233,6 +233,66 @@ Restart Claude Code after editing `settings.json` — hooks are read at session 
 
 > **Why it matters:** Autocompact mid-task forces Claude to compress mid-thought. A nudge at 128K — well before the limit — lets you choose how to free context (compact, clear, split into a subagent) instead of having the harness make that choice for you.
 
+### Bonus: Plan Alignment — Grilling & Hierarchical Systems Thinking
+
+Before a plan is worth reviewing, it has to target the right problem. Three modes front-load that alignment, all reachable from `/plan`:
+
+- **`grill-me`** (`/plan --grill`) — an adversarial interview that asks **one question at a time**, resolving each branch of the decision tree until planner and human share the same mental model. **`grill-with-docs`** is a superset that maintains a domain glossary (`CONTEXT.md`) and ADRs (`docs/adr/`) as it goes.
+- **`auto-grill-me`** (`/plan --auto-grill`) — same idea, but a rubric **scores each candidate question** before interrupting: low score → assume silently, medium → assume + footnote, high → actually ask. It emits a plan with a **Definition of Done per artifact**.
+- **`/plan --hst`** — Hierarchical Systems Thinking: six top-down phases with a persisted **System Intent** stored once per project/feature tier and reused on later plans, so scope isn't re-litigated every time.
+
+> **Why it matters:** the most expensive bug is solving the wrong problem precisely. Alignment-first planning makes the human resolve ambiguity before any code — and the rubric in `auto-grill-me` keeps that from devolving into twenty questions.
+
+### Bonus: Definition of Done & the TDD Chain
+
+A plan's acceptance criteria are only as good as the tests that prove them. dotclaude closes the loop from DoD → test → review → retrospective:
+
+- **`/test-spec`** turns each Definition of Done into Gherkin-lite specs (Given/When/Then), appended to the plan or to `skills/testing/references/TEST-PATTERNS.md`. `/full-cycle` auto-invokes it (Phase 4.5) so specs exist *before* implementation.
+- **TDD-chain traceability** — every spec bullet carries an ID (`[bN]`) that threads through the test, the commit, and the review, so you can audit which DoD a given test defends.
+- **`/reflect`** is post-merge supervision that classifies how well the DoD applied to a merged PR. Modes: `--baseline` (immediate compliance), `--retro` (full retrospective after D+7), `--on-failure` (audit at a stop gate), `--learn` (an LLM consumes the per-story TDD-chain bundle and proposes DoD / TEST-PATTERNS improvements). `/full-cycle` runs it as Phase 9.
+
+> **Why it matters:** "negative-branch" criteria — the cases a feature must *reject* — are the ones agents quietly skip. Materialising DoDs into specs, threading IDs through the chain, and reflecting after merge keeps the suite from going vacuous.
+
+### Bonus: The `/ship` Delivery Pipeline
+
+`/ship` is the last mile — runnable standalone or as the final phase of `/full-cycle*`:
+
+```
+  PRE-MERGE TESTS ──► PR ──► AUTO-MERGE ──► DEPLOY ──► POST-MERGE E2E
+  loop 3× auto-fix          (or soft        (if          against the real
+                             force-merge     ship.json    URL, loop 3×
+                             on unprotected) configures)  hotfix per pass
+```
+
+Per-repo config lives in `.claude/ship.json` (cascade: config > auto-detect > CLI flag). On an unprotected repo it merges directly; on a protected one it waits for CI/reviews. **`/force-merge`** covers the cases where `gh pr merge --auto` never fires — a repo without `allow_auto_merge`, a solo repo, or reviews that never arrive.
+
+> **Why it matters:** "tests pass locally" and "the deployed thing works" are different claims. Running E2E against the real URL *after* merge closes that gap, and the hotfix loop turns a post-deploy failure into another iteration instead of a fire drill.
+
+### Bonus: Supply-Chain Hygiene (Shai-Hulud defense)
+
+Attacks like Shai-Hulud (TanStack, 2026 — 169 packages / 373 malicious versions) run their payload in install-time lifecycle hooks (`preinstall`/`prepare`), stealing GitHub/npm/AWS tokens the moment `npm install` fires — and they arrive through *transitive* deps, so the victim never installs the malicious package directly. A global `PreToolUse` hook (`hooks/supply-chain-guard.sh`, Principle 13) enforces fail-closed defense in depth:
+
+| Layer | Rule |
+|-------|------|
+| **Cooldown** | Any package (root **or transitive**, resolved via `--dry-run`) published < **14 days** ago is blocked |
+| **`--ignore-scripts`** | Mandatory on npm/pnpm/yarn/bun — kills the lifecycle-hook execution vector |
+| **Git-url deps** | `github:user/repo`, `git+https://…`, `user/repo` shorthand are blocked (second-wave vector that dodges the cooldown) |
+| **Lockfile** | `npm install` with a lockfile present is steered to `npm ci` / `--frozen-lockfile` |
+
+Bypass is **granular by design** — four separate env flags (`CLAUDE_SC_BYPASS_*`) each require `CLAUDE_SC_REASON`. Every decision (allow/block/bypass) is logged to `~/.claude/cache/supply-chain/audit.jsonl`; **`/supply-chain-audit`** renders it human-readable. Full rationale in `docs/adr/0002-supply-chain-cooldown-gate.md`.
+
+> **Why it matters:** the window between a malicious publish and public detection has been < 7 days in every historical case; a 14-day cooldown sidesteps the whole class without blocking month-old bugfixes. A monolithic bypass doesn't exist on purpose — defense in depth needs surgical exceptions.
+
+### Bonus: Safety Rails & Session Continuity
+
+A few smaller guardrails round out the harness:
+
+- **Git secret-scan** (`hooks/block-dangerous-git.sh`, skill `git-guardrails-claude-code`) — a `PreToolUse` hook that blocks `commit`/`push` when the staged diff contains secrets (Stripe/GH/Netlify/AWS/Google/Slack keys, `.pem`/`.key`, `.env`/`credentials` files). Scoped to secrets only — destructive ops are *not* pre-blocked (Principle 7).
+- **Browser-as-agent** (skills `browser-actions` / `browser-inspect`, Principle 12) — when an external action falls through the precedence ladder (domain CLI → domain MCP → direct API → Playwright MCP), the browser is the last resort: it announces every open, runs a cookie pre-check, asks you to log in via chat, and applies a "Zone 3" blocklist of irreversible actions. `browser-inspect` is the anti-laziness rule — if a page is reachable by Playwright, the agent reads the console/network itself instead of asking you to paste it.
+- **`/handoff-continue`** — distills the current session into a handoff doc + a pending pointer, and lazy-installs a `SessionStart` hook so the next session resumes with clean context. It prints the handoff and asks you to `/clear` — it never clears for you.
+
+> **Why it matters:** the failure modes here aren't reasoning errors — they're a leaked token, an irreversible click, or a lost thread after compaction. Each rail makes the dangerous path the explicit one.
+
 ## Installation
 
 ```bash
@@ -250,10 +310,20 @@ After installation, these slash commands are available in any Claude Code projec
 
 | Command | Category | What it does |
 |---------|----------|-------------|
-| `/plan` | Planning | Technical plan with ReAct + Feynman |
+| `/plan` | Planning | Technical plan with ReAct + Feynman. Flags: `--grill` (alignment interview), `--auto-grill` (rubric-scored interview), `--hst` (Hierarchical Systems Thinking) |
 | `/adversarial-review` | Review | Red Team attack on an existing plan |
 | `/full-planning-cycle` | Planning + Review | Both agents in sequence (no execution) |
-| `/full-cycle` | End-to-end delivery | Plan + review + PRD + Ralph + ephemeral branch + PR |
+| `/full-cycle` | End-to-end delivery | Plan + review + test-spec + PRD + Ralph + code-review + tests + PR + reflect |
+| `/full-cycle-simple` | End-to-end delivery | Same pipeline for **simple** features (≤5 files, no migration/dep/auth/cost) — skips adversarial review + Codex reviewer |
+| `/ship` | Delivery | Pre-merge tests → PR → auto-merge → deploy → post-merge E2E against the real URL |
+| `/reflect` | Review / Quality | Post-merge Definition-of-Done supervision (`--baseline` / `--retro` / `--on-failure` / `--learn`) |
+| `/test-spec` | Testing | Generates Gherkin-lite test specs from DoDs (TDD bake-in) |
+| `/e2e` | Testing | Generates or runs Playwright E2E tests for a flow |
+| `/diagnose` | Debugging | Disciplined 6-phase diagnosis loop (feedback loop → reproduce → fix → regression) |
+| `/techdebt` | Code quality | Analyses diff for tech debt, produces P0/P1/P2 cleanup plan |
+| `/adversarial-research` | Research | Deep research with 3 AI providers |
+| `/research-status` | Research | Lists all research sessions |
+| `/research-synthesize` | Research | Synthesizes a completed research |
 | `/checkout-init` | Parallel workflow (Boris) | Provisions 5 parallel checkouts at `~/Projects/checkouts/<repo>-{1..5}` |
 | `/checkout-launch` | Parallel workflow (Boris) | Opens 1 terminal window with 5 tabs (one per slot) |
 | `/checkout-use` | Parallel workflow (Boris) | Prepares a slot — updates `main`, **does not create branch** |
@@ -261,17 +331,18 @@ After installation, these slash commands are available in any Claude Code projec
 | `/checkout-sync-all` | Parallel workflow (Boris) | Pulls `origin/main` in all slots, prunes merged branches |
 | `/sync` | Parallel workflow (Boris) | Shortcut to `/checkout-sync-all` (auto-detects pool from cwd) |
 | `/morning` | Parallel workflow (Boris) | Daily routine — sync-all + launch tabs |
-| `/commit-push-pr` | Git workflow | Creates ephemeral branch, commits, pushes, opens PR (with auto-merge default) |
-| `/techdebt` | Code quality | Analyses diff for tech debt, produces P0/P1/P2 cleanup plan |
+| `/commit-push-pr` | Git workflow | Creates ephemeral branch, commits, pushes, opens PR (auto-merge default; soft-merge on unprotected repos) |
+| `/force-merge` | Git workflow | Merges an open PR now (soft / `--wait` / `--admin`), then syncs the pool |
 | `/create-worktree` *(legacy)* | Git workflow | Creates isolated git worktree at `~/Projects/worktrees/` |
 | `/delete-worktree` *(legacy)* | Git workflow | Removes worktree after merge (with safety checks) |
-| `/adversarial-research` | Research | Deep research with 3 AI providers |
-| `/research-status` | Research | Lists all research sessions |
-| `/research-synthesize` | Research | Synthesizes a completed research |
-| `/export-report` | Utility | Exports last response as Markdown |
 | `/prd-convert` | Implementation | Converts an approved plan into prd.json (Ralph format) |
 | `/ralph-adversarial` | Implementation | Runs the Ralph loop with Codex code review |
-| `/e2e` | Testing | Generates or runs Playwright E2E tests for a flow |
+| `/graphify-init` | Knowledge graph | Bootstraps Graphify in a repo (build + hooks + .gitignore + local commit) |
+| `/supply-chain-audit` | Security | Inspects the supply-chain-guard audit log (decisions, bypasses, cache stats) |
+| `/browser-status` | Browser | Lists cookies in the dedicated Chrome profile (read-only) |
+| `/browser-logout-all` | Browser | Clears all cookies in the dedicated Chrome profile (destructive) |
+| `/handoff-continue` | Utility | Distills session context into a handoff doc + pending pointer for clean resume |
+| `/export-report` | Utility | Exports last response as Markdown |
 
 ---
 
@@ -350,7 +421,7 @@ After installation, these slash commands are available in any Claude Code projec
 
 ### `/full-cycle [problem description]`
 
-**Purpose:** Runs the complete end-to-end delivery pipeline in the current working directory — plans, reviews, converts to PRD, executes Ralph Adversarial, runs tests, opens and merges a PR.
+**Purpose:** Runs the complete end-to-end delivery pipeline in the current working directory — plans, reviews, generates test specs, converts to PRD, executes Ralph Adversarial, runs a local code review, runs tests, opens and merges a PR, optionally ships, and reflects on DoD compliance.
 
 **Isolation management is explicit and user-owned.** This command does **not** create or release slots/worktrees. Choose your isolation model before invoking:
 
@@ -367,16 +438,20 @@ After installation, these slash commands are available in any Claude Code projec
    - **APPROVED WITH CAVEATS** → asks the human whether to proceed
    - **REJECTED** → stops
 4. **Phase 4 — PRD conversion:** slices the plan into `prd.json` following the `prd` skill rules
-5. **Phase 5 — Ralph Adversarial:** runs the implementation loop (Claude implements, Codex reviews) until all stories pass or the budget is exhausted
-6. **Phase 6 — Final tests:** runs the project test suite; failures stop the flow (no PR opened)
-7. **Phase 7 — PR + Merge:** pushes the branch, opens a PR, waits for CI, merges with `--delete-branch`
+5. **Phase 4.5 — Test specs:** auto-invokes `/test-spec` to materialise Gherkin-lite specs from the plan's DoDs *before* implementation
+6. **Phase 5 — Ralph Adversarial:** runs the implementation loop (Claude implements, Codex reviews) until all stories pass or the budget is exhausted
+7. **Phase 5.5 — Local code review:** auto-invokes the native `/code-review` on the accumulated diff
+8. **Phase 6 — Final tests:** runs the project test suite; failures stop the flow (no PR opened)
+9. **Phase 7 — PR + Merge:** pushes the branch, opens a PR, waits for CI, merges with `--delete-branch`
+10. **Phase 8 — Ship (optional):** when `.claude/ship.json` exists, hands off to `/ship` for deploy + post-merge E2E against the real URL
+11. **Phase 9 — Reflect:** `/reflect --baseline` classifies DoD compliance on the merged PR for the retrospective record
 
-**Guardrails:** No production code is written before adversarial approval. The command stops and escalates on any interruption (rejection, escalated stories, P0 findings, failing tests, blocked merge). For planning-only without execution or PR, use `/full-planning-cycle`.
+**Guardrails:** No production code is written before adversarial approval. Internal phase transitions don't ask for confirmation — the slash command *is* the high-level gate, and you interrupt with Ctrl-C (Principle 11); the exceptions that always re-confirm are destructive commands, paid external domains, and any `prd.json` flagged `hasFinancialCost: true`. The command stops and escalates on any interruption (rejection, escalated stories, P0 findings, failing tests, blocked merge). For planning-only without execution or PR, use `/full-planning-cycle`. For **simple** features (≤5 files, no migration/dep/auth/cost), use `/full-cycle-simple`, which skips Phase 2 and the Codex reviewer.
 
 **Example:**
 ```
-> /create-worktree realtime-notifications-websocket
-> cd ~/Projects/worktrees/myapp-realtime-notifications-websocket
+> /checkout-use myapp 3              # prepare slot 3 (updates main, no branch)
+> cd ~/Projects/checkouts/myapp-3
 > /full-cycle implement real-time notifications with WebSocket
 
 Phase 1 — Planning (ReAct + Feynman)
@@ -386,12 +461,14 @@ Phase 1 — Planning (ReAct + Feynman)
 Phase 2 — Adversarial Review
   Verdict: APPROVED WITH CAVEATS — proceed? y
 
-Phase 4 — PRD with 4 stories
-Phase 5 — Ralph: 4/4 passed (Codex verdicts: MERGE MERGE MERGE MERGE)
-Phase 6 — Tests green
-Phase 7 — PR #128 merged
+Phase 4   — PRD with 4 stories
+Phase 4.5 — Test specs generated for 4 stories
+Phase 5   — Ralph: 4/4 passed (Codex verdicts: MERGE MERGE MERGE MERGE)
+Phase 6   — Tests green
+Phase 7   — PR #128 merged
+Phase 9   — Reflect: DoD baseline recorded
 
-> /delete-worktree   # manual cleanup after confirming the merge
+> /sync                              # propagate merged main to all slots
 ```
 
 ---
@@ -742,48 +819,49 @@ Story: US-01 - Add idempotency key to charge endpoint
 
 ```
 dotclaude/
-├── CLAUDE.md                          # Global instructions (ReAct + Feynman protocol)
-├── WORKFLOW.md                        # Command reference and workflow guide
-├── commands/                          # Slash commands (installed to ~/.claude/commands/)
-│   ├── plan.md                        #   /plan
-│   ├── adversarial-review.md          #   /adversarial-review
-│   ├── full-cycle.md                  #   /full-cycle
-│   ├── adversarial-research.md        #   /adversarial-research
-│   ├── research-status.md             #   /research-status
-│   ├── research-synthesize.md         #   /research-synthesize
-│   ├── pr.md                          #   /pr
-│   ├── create-worktree.md             #   /create-worktree
-│   ├── delete-worktree.md             #   /delete-worktree
-│   ├── export-report.md               #   /export-report
-│   ├── prd-convert.md                 #   /prd-convert
-│   ├── ralph-adversarial.md           #   /ralph-adversarial
-│   └── e2e.md                         #   /e2e
-├── agents/                            # Subagents (installed to ~/.claude/agents/)
+├── CLAUDE.md                          # Global protocol (13 principles: ReAct + Feynman + guardrails)
+├── WORKFLOW.md                        # Integrated workflow guide
+├── CONTEXT.md                         # Domain glossary + consolidated decisions
+├── README.md
+├── sync.sh                            # Sync repo ↔ ~/.claude/ (install / backup / status)
+├── commands/                          # Slash commands → ~/.claude/commands/
+│   ├── plan.md  adversarial-review.md  full-planning-cycle.md
+│   ├── full-cycle.md  full-cycle-simple.md  ship.md  force-merge.md
+│   ├── reflect.md  test-spec.md  e2e.md  diagnose.md  techdebt.md
+│   ├── adversarial-research.md  research-status.md  research-synthesize.md
+│   ├── checkout-init.md  checkout-launch.md  checkout-use.md
+│   ├── checkout-status.md  checkout-sync-all.md  sync.md  morning.md
+│   ├── commit-push-pr.md  create-worktree.md  delete-worktree.md
+│   ├── prd-convert.md  ralph-adversarial.md  graphify-init.md
+│   ├── supply-chain-audit.md  browser-status.md  browser-logout-all.md
+│   └── handoff-continue.md  export-report.md
+├── skills/                            # Skills → ~/.claude/skills/
+│   ├── react-feynman/                 #   ReAct + Feynman templates
+│   ├── grill-me/  grill-with-docs/  auto-grill-me/  zoom-out/   # alignment + exploration
+│   ├── adversarial-research/          #   multi-provider research (SKILL.md + runner.py)
+│   ├── prd/  ralph-adversarial/       #   plan→prd + impl loop (+ CODE_REVIEW.md rubric)
+│   ├── testing/                       #   TDD + Playwright (SKILL.md, templates/, references/)
+│   ├── diagnose/                      #   6-phase diagnosis protocol
+│   ├── browser-actions/  browser-inspect/   # browser-as-agent (Principle 12)
+│   ├── supply-chain-guard/            #   Shai-Hulud defense (Principle 13)
+│   └── git-guardrails-claude-code/    #   secret-scan git hook
+├── bin/                               # Implementation scripts behind the commands
+│   ├── checkout-*.sh  sync.sh  morning.sh  commit-push-pr.sh
+│   ├── ship.sh  force-merge.sh  graphify-init.sh  reflect-learn-bundle.sh
+│   ├── dod-usage-migrate.sh  browser-*.sh  auto-morning*.sh
+│   └── lib/  tests/
+├── hooks/                             # Hooks → ~/.claude/hooks/
+│   ├── context-threshold-notify.py    #   Stop: macOS notification at 128K tokens
+│   ├── stop-notify.sh  session-start-sync.sh  handoff-resume.sh
+│   ├── block-dangerous-git.sh         #   PreToolUse: git secret-scan
+│   ├── block-browser-mutations.sh     #   PreToolUse: browser Zone-3 blocklist
+│   ├── supply-chain-guard.sh          #   PreToolUse: install-command gate
+│   └── sync-telemetry-log.sh          #   DoD/test-spec telemetry append-log
+├── agents/
 │   └── test-runner.md                 #   Proactive test runner (read-mostly)
-├── skills/                            # Skills (installed to ~/.claude/skills/)
-│   ├── react-feynman/SKILL.md         #   ReAct + Feynman templates
-│   ├── adversarial-research/          #   Multi-provider research
-│   │   ├── SKILL.md
-│   │   └── runner.py
-│   ├── prd/SKILL.md                   #   Plan → prd.json conversion rules
-│   ├── ralph-adversarial/              #   Implementation loop
-│   │   ├── SKILL.md
-│   │   ├── CODE_REVIEW.md             #   V2 review rubric (used by Codex)
-│   │   └── ralph-adversarial.sh       #   Orchestration script
-│   └── testing/                       #   TDD + Playwright discipline
-│       ├── SKILL.md
-│       └── templates/                 #   Bootstrap files for new projects
-│           ├── playwright.config.ts
-│           ├── mcp.json
-│           ├── settings.hooks.json    #   PreToolUse hook (guarded)
-│           └── gitignore.testing
-├── hooks/                             # Hooks (installed to ~/.claude/hooks/)
-│   └── context-threshold-notify.py    #   Stop hook: macOS notification at 128K tokens
-├── docs/
-│   └── adr/                           # Architecture Decision Records
-│       └── 0001-adopt-graphify-sunset-llm-wiki.md
-├── CONTEXT.md                         # Glossary + consolidated decisions (Graphify, etc.)
-└── sync.sh                            # Sync script (repo ↔ ~/.claude/)
+└── docs/adr/                          # Architecture Decision Records
+    ├── 0001-adopt-graphify-sunset-llm-wiki.md
+    └── 0002-supply-chain-cooldown-gate.md
 ```
 
 ## Syncing Changes
@@ -815,7 +893,7 @@ Any `<name>.md` placed under a project's `.claude/commands/` replaces the global
 
 **Worked example — post-merge Shopify theme push.** The [`storefront`](https://github.com/acme-org/storefront) Shopify-theme repo has a two-way sync with the Shopify CDN: merging a PR in GitHub does *not* automatically update the theme DB, and the next `shopify[bot]` sync can silently revert the PR (this actually happened — PR #58 was reverted by commit `c5ca2f4`). The fix is a post-merge `shopify theme push --nodelete`, but only when the diff touches files the platform serializes (`config/settings_data.json`, `snippets/*.liquid`, `sections/*.liquid`, `templates/page.*.json`).
 
-That logic is specific to one repo, one theme ID, one store — so it lives in `<storefront>/.claude/commands/pr.md` as an override of `/pr`. The override reuses the global steps verbatim and inserts the theme push after "return to main". The global `/pr` in this repo stays free of Shopify references.
+That logic is specific to one repo, one theme ID, one store — so it lives in `<storefront>/.claude/commands/commit-push-pr.md` as an override of `/commit-push-pr`. The override reuses the global steps verbatim and inserts the theme push after the merge step. The global `/commit-push-pr` in this repo stays free of Shopify references.
 
 **Rule of thumb:** if extra steps reference hardcoded IDs, specific domains, or platform integrations that only exist in one repo, override locally. If they're about how Claude should reason (planning discipline, review rigor, testing), they belong in the global command or in `CLAUDE.md`.
 
@@ -853,9 +931,14 @@ The protocols here aren't arbitrary ceremony — each one addresses a specific, 
 | Self-review of own code misses introduced bugs | Ralph loop: Claude implements, Codex (different provider) reviews each commit |
 | Long implementations drift from the plan | Fresh context per story + `ac_trace` in every commit forces traceability |
 | Agents pass their own tests (which they wrote) | TDD RED-before-GREEN + pre-commit hook + test-runner subagent |
-| Autonomous loops contaminate the working checkout | `/create-worktree` + `/delete-worktree` isolate every delivery in a dedicated git worktree; `/full-cycle` runs inside it without touching worktree lifecycle |
+| Autonomous loops contaminate the working checkout | Boris parallel checkouts — 5 slots on `main` local, ephemeral branch only at push (`/create-worktree` remains as a legacy isolation fallback) |
 | Playwright MCP floods context with a11y trees | CLI-first policy in the `testing` skill; MCP only for explicit cases |
-| Docs drift from code as the repo evolves | LLM Wiki Bootstrap: YAML frontmatter ties every page to `source_files` + `last_verified_commit`; CI fails on stale `high`-confidence claims |
+| Docs drift from code as the repo evolves | Graphify AST-derived knowledge graph (`graphify-out/`), refreshed by zero-LLM git hooks |
+| Agents write green-but-vacuous tests | DoD → `/test-spec` Gherkin specs → `[bN]` TDD-chain IDs → `/reflect` retrospective |
+| A poisoned dependency runs code at install time | Supply-chain guard: 14-day publish cooldown + `--ignore-scripts` + git-url block, fail-closed (Principle 13) |
+| Secrets slip into a commit | `block-dangerous-git.sh` secret-scan blocks `commit`/`push` on detected keys / `.env` |
+| Irreversible action via browser automation | Browser-as-agent precedence ladder + Zone-3 blocklist (Principle 12) |
+| Context lost after compaction or `/clear` | `/handoff-continue` distills a handoff doc + `SessionStart` resume hook |
 | Long sessions hit autocompact mid-task | `Stop` hook fires a macOS notification at 128K tokens (configurable) before the harness compresses |
 
 ## License
