@@ -74,6 +74,9 @@ Sempre presente; "Nenhum." se o plano não envolve SaaS pago.
 |---------|-----------------|-----------------------|-------------------------------|--------------------------------------|
 |         |                 |                       |                               |                                      |
 
+### Artefatos a produzir
+Quando o plano gera artefatos concretos (hook, skill, comando, página…), liste cada um mapeado a uma Categoria/Tarefa do [`DOD.md`](../auto-grill-me/references/DOD.md), com o DoD copiado **verbatim** em checklist `- [ ]`, seguido do marcador `<!-- dod-use: <id> -->`. Persista o plano em `.claude/plans/<ISO-timestamp>-<slug>.md`. A telemetria de DoD é emitida pelo **Stop hook** a partir do marcador — **não** chame `log_event`. Ver [DOD-MAPPING.md](../auto-grill-me/references/DOD-MAPPING.md). Omitir a seção se o plano é puramente exploratório (sem artefato mapeável).
+
 ## Modo HST — Hierarchical Systems Thinking (`/plan --hst`)
 
 Quando `/plan` recebe `--hst`, produza o plano nas **6 fases HST abaixo** em vez do **Template: Plano** padrão. Regras que continuam valendo *dentro* das fases:

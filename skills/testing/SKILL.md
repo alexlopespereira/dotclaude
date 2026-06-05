@@ -115,9 +115,11 @@ TEST-PATTERNS.md é **source-puro**, o heading é só `### <Tarefa N|DoD-base> �
 (`~/.claude/telemetry/test-spec-usage.<machine-id>.jsonl`) pelo fold
 content-based [`bin/lib/usage-fold.sh --prefix test-spec`](../../bin/lib/usage-fold.sh)
 — as MESMAS libs M1/M2 do sistema DoD, só mudando o `--prefix` (sem código
-duplicado). Geração via `/test-spec [tarefa-N | cat-N-base | <plan-path>]`, que
-emite 1 evento `use` por spec materializada via
-[`bin/lib/usage-log.sh --prefix test-spec`](../../bin/lib/usage-log.sh).
+duplicado). Geração via `/test-spec [tarefa-N | cat-N-base | <plan-path>]`, que **insere o
+marcador `<!-- test-spec-use: <id> -->`** após cada bloco materializado; o Stop
+hook [`hooks/dod-usage-log.sh`](../../hooks/dod-usage-log.sh) o conta e emite o
+evento `use --prefix test-spec` (a skill **não chama `log_event`** — ver
+[DOD-MAPPING.md](../auto-grill-me/references/DOD-MAPPING.md)).
 
 ### Política de granularidade (não-negociável)
 

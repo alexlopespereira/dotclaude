@@ -75,14 +75,11 @@ assert_absent "$SECTION" 'mkdir <lockdir>'  "A regressão: lock 'mkdir <lockdir>
 assert_absent "$SECTION" '--gc` — remove'   "A regressão: --gc descrito como ativo removido"
 assert_absent "$SECTION" 'last_seen_iso no snapshot' "A regressão: 'last_seen_iso no snapshot' removido"
 
-# ─── Parte A — commands/test-spec.md: emite use via usage-log.sh --prefix test-spec ─
-assert_present "$CMD" 'bin/lib/usage-log.sh' "A command referencia o writer bin/lib/usage-log.sh"
-assert_present "$CMD" 'log_event use'        "A command instrui emitir evento use (log_event use)"
-# `--prefix\n   test-spec` pode quebrar linha no markdown; grep -F não casa
-# quebra → testa os tokens essenciais separadamente.
-grep -qF 'log_event use' "$CMD" && grep -qF 'test-spec' "$CMD" && _pass \
-  || _fail "A command emite use com --prefix test-spec"
-assert_present "$CMD" 'dod_bullets_sha'      "A command: sha vem de dod_bullets_sha (content-based)"
+# ─── Parte A — commands/test-spec.md: marcador test-spec-use (emissão via hook) ─
+assert_present "$CMD" 'hooks/dod-usage-log.sh' "A command referencia o Stop hook emissor"
+assert_present "$CMD" '<!-- test-spec-use:'    "A command instrui inserir o marcador test-spec-use"
+assert_present "$CMD" 'NÃO chame'              "A command afirma que NÃO chama log_event"
+assert_present "$CMD" 'dod_bullets_sha'        "A command: sha vem de dod_bullets_sha (content-based)"
 assert_absent "$CMD" 'bin/test-spec-reset-rev.sh --gc' "A regressão: ref a --gc removida do command"
 
 # ─── Parte A — TEST-PATTERNS.md é source-puro de fato (0 sufixos inline) ─────────

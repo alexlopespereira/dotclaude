@@ -83,15 +83,15 @@ canônico de cada spec (D2 do plano, Gherkin-lite):
      dos bullets muda → o fold (content-based, US-02) deriva `desde rev` só dos
      usos no sha atual; `bin/test-spec-reset-rev.sh` registra a revisão. **Não**
      edite contador inline (não existe mais).
-6. **NÃO edite contador inline no heading** (removido em US-03). `usos`/`desde rev`
-   são derivados via fold. Após materializar o bloco (Ramo 2, criação OU
-   `--regenerate` que de fato substitui), **emita 1 evento `use`** para o id alvo
-   via o writer compartilhado — `log_event use <id> --sha <sha-atual> --prefix
-   test-spec` (de `bin/lib/usage-log.sh`), onde `<sha-atual>` vem de
-   `dod_bullets_sha references/TEST-PATTERNS.md` (função de `bin/lib/usage-fold.sh`).
-   É assim que `usos` cresce; a derivação de contador roda no `--show`/fold
-   (`bin/test-spec-reset-rev.sh --show`). Não emita evento quando o bloco já está
-   populado e você abortou sem mexer (no-op).
+6. **NÃO edite contador inline no heading** (removido em US-03) e **NÃO chame
+   `log_event`** — a emissão é determinística via Stop hook (ver
+   [DOD-MAPPING.md](../skills/auto-grill-me/references/DOD-MAPPING.md)). Após
+   materializar o bloco (Ramo 2, criação OU `--regenerate` que de fato substitui),
+   **emita o marcador `<!-- test-spec-use: <id> -->`** logo após o bloco no
+   `TEST-PATTERNS.md`. O Stop hook [`hooks/dod-usage-log.sh`](../hooks/dod-usage-log.sh)
+   varre o `TEST-PATTERNS.md`, computa o sha via `dod_bullets_sha`, e emite o
+   evento `use --prefix test-spec` (idempotente). Não emita marcador quando o
+   bloco já está populado e você abortou sem mexer (no-op).
 7. Append/replace o bloco verbatim no TEST-PATTERNS.md preservando demais
    blocos. Use Edit/Write conforme a operação.
 8. Resumo final no chat: `spec_id_base=tarefa-N | cat-N-base`, contador derivado
@@ -115,6 +115,9 @@ canônico de cada spec (D2 do plano, Gherkin-lite):
      e o próximo `## ` (ou EOF).
 5. Conteúdo da seção: sub-heading `### Specs para <id>` por id encontrado,
    contendo o bloco Gherkin-lite. Cada spec usa o mesmo formato canônico.
+   **Após cada bloco `### Specs para <id>`, emita o marcador
+   `<!-- test-spec-use: <id> -->`** — o Stop hook o conta ao varrer
+   `.claude/plans/` (ver [DOD-MAPPING.md](../skills/auto-grill-me/references/DOD-MAPPING.md)).
 6. Resumo final no chat: `plan=<path>`, ids cobertos, total de specs gerados.
 
 ## Flag `--regenerate`

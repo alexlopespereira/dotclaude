@@ -79,3 +79,7 @@ Only offer to create an ADR when all three are true:
 3. **The result of a real trade-off** — there were genuine alternatives and you picked one for specific reasons
 
 If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](./ADR-FORMAT.md).
+
+## Ao produzir o plano (telemetria de DoD)
+
+Ortogonal ao fluxo CONTEXT.md/ADR acima: se durante a sessão **emergir um artefato concreto** (hook, skill, comando, página…), ao encerrar persista um plano em `.claude/plans/<ISO-timestamp>-<slug>.md` com seção `## Artefatos a produzir` — mapeie cada artefato a uma Categoria/Tarefa do `DOD.md`, copie o DoD **verbatim** em checklist, e emita o marcador `<!-- dod-use: <id> -->` após cada bloco. Siga [DOD-MAPPING.md](../auto-grill-me/references/DOD-MAPPING.md). **Não chame `log_event`** — o Stop hook conta a partir do marcador. Isso é separado de `CONTEXT.md`/`docs/adr/` (que continuam como descrito). Sessão exploratória sem artefato mapeável não gera plano.

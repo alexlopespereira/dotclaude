@@ -163,6 +163,18 @@ register_stop_hook() {
     fi
 }
 
+# Registra o Stop hook de telemetria DoD/test-spec DETERMINÍSTICA (emissão de
+# eventos `use` parseando marcadores nos planos persistidos). Substitui a emissão
+# prompt-driven que nunca disparava. Registrado ANTES do sync-telemetry hook para
+# que os eventos da sessão sejam emitidos antes do backup copiá-los ao git.
+register_dod_usage_hook() {
+    if _register_hook "Stop" "hooks/dod-usage-log.sh" "$CLAUDE_DIR/hooks/dod-usage-log.sh"; then
+        echo "  ✓ Stop hook (dod-usage) registrado em settings.json"
+    else
+        echo "  ⚠ settings.json: registro do dod-usage hook pulado (JSON inválido / python3 ausente)" >&2
+    fi
+}
+
 # Registra o SessionStart hook híbrido (auto-install gated; Adv #6 / M8 parte 2).
 register_session_start_hook() {
     if _register_hook "SessionStart" "hooks/session-start-sync.sh" "$CLAUDE_DIR/hooks/session-start-sync.sh"; then
@@ -220,6 +232,7 @@ sync_to_claude() {
             echo "  ✓ $d/"
         fi
     done
+    register_dod_usage_hook
     register_stop_hook
     register_session_start_hook
     echo "=== Instalação concluída ==="

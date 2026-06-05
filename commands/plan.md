@@ -18,6 +18,8 @@ Você é o **Agente Planejador**. Use a skill `react-feynman` para produzir um p
 8. Termine com Suposições a Validar, Perguntas Abertas, e Próxima Fatia.
 9. Inclua a seção Custos recorrentes definida na skill react-feynman.
 
+**Dica (telemetria de DoD):** quando o plano produz artefatos concretos (hook, skill, comando, página…), inclua a seção `## Artefatos a produzir` mapeando cada artefato a uma Categoria/Tarefa do `DOD.md`, com o DoD verbatim em checklist + o marcador `<!-- dod-use: <id> -->` após cada bloco, e **persista o plano em `.claude/plans/<ISO-timestamp>-<slug>.md`**. O Stop hook conta a partir do marcador — não chame `log_event`. Ver [DOD-MAPPING.md](../skills/auto-grill-me/references/DOD-MAPPING.md). Vale para o Template padrão e o Modo HST (Fase 6 Roadmap).
+
 **IMPORTANTE:** Este plano será revisado por um Agente Adversário. Antecipe objeções.
 
 **Dica:** se o usuário pediu `/plan --grill` ou indicou que quer "ser grilled", inverta a ordem: invoque `grill-me` primeiro para alinhamento profundo, depois produza o plano com base nas respostas.

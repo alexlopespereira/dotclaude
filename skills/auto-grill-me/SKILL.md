@@ -24,7 +24,7 @@ Para cada decisão da árvore de design:
    - `35 ≤ score ≤ 60` → **Tipo 3**: assume, imprime **uma linha** `▸ assumi: <decisão em 1 frase> (footnote #N)`, armazena footnote completa em buffer (formato [§7](references/RUBRICA.md)).
    - `score > 60` → **Tipo 1**: pergunta ao usuário **uma pergunta por vez** com recomendação explícita (verbatim grill-me style). Aguarda resposta antes de continuar.
 7. **Logar a decisão** em `decisions.jsonl` (ver §Audit log).
-8. **Se um artefato emergir** ("vamos precisar de um hook", "isso vai virar uma skill"): usar o índice de mapping em [DOD.md](references/DOD.md) para escolher candidato de categoria/tarefa. Rodar meta-classificação via rubrica sobre o mapping (mesmo algoritmo §3–§6 — usar G3/G6 para avaliar confiança no mapping). **Copiar verbatim (bullet-por-bullet)** o `DoD-base` da categoria + a `Tarefa N` específica do DOD.md e adicioná-los à seção "Artefatos a produzir" do plano em formação. `DoD-base` aparece **1× por categoria por plano** (dedupe — por economia de ruído, não por verbatim estrito); cada `Tarefa N` é sempre verbatim integral. Cada inserção de DoD é acumulada em memória e **emitida como evento `use` no `Stop criterion`** (ver §Contadores de uso).
+8. **Se um artefato emergir** ("vamos precisar de um hook", "isso vai virar uma skill"): usar o índice de mapping em [DOD.md](references/DOD.md) para escolher candidato de categoria/tarefa. Rodar meta-classificação via rubrica sobre o mapping (mesmo algoritmo §3–§6 — usar G3/G6 para avaliar confiança no mapping). **Copiar verbatim (bullet-por-bullet)** o `DoD-base` da categoria + a `Tarefa N` específica do DOD.md e adicioná-los à seção "Artefatos a produzir" do plano em formação. `DoD-base` aparece **1× por categoria por plano** (dedupe — por economia de ruído, não por verbatim estrito); cada `Tarefa N` é sempre verbatim integral. **Após cada bloco inserido, emite o marcador `<!-- dod-use: <id> -->`** logo abaixo dele (ver §Contadores de uso e [DOD-MAPPING.md](references/DOD-MAPPING.md)). **A skill NÃO chama `log_event`** — o Stop hook conta a partir do marcador.
 
 ## Stop criterion
 
@@ -43,7 +43,7 @@ Ao encerrar:
    - `# Plano: <slug>`
    - `## Contexto`
    - `## Árvore de Design (decisões tomadas)` — Thought/Action/Observation por decisão, marcando resolução (Tipo 1/2/3).
-   - `## Artefatos a produzir` — cada artefato com Categoria/Tarefa mapeada + DoD em checklist `- [ ]`.
+   - `## Artefatos a produzir` — cada artefato com Categoria/Tarefa mapeada + DoD em checklist `- [ ]`, **seguido do marcador `<!-- dod-use: <id> -->`** por bloco (ver [DOD-MAPPING.md](references/DOD-MAPPING.md)).
    - `## Perguntas Abertas` — dúvidas residuais + grau de confiança (alta/média/baixa).
    - `## Apêndices` — A) footnotes Tipo 3, B) resumo do audit log da sessão (distribuição Tipo 1/2/3 por domínio), C) confiança geral.
 3. **Anunciar o path** + listar próximos comandos sugeridos: `/adversarial-review <plan>`, `/prd-convert`, `/full-cycle`.
@@ -65,16 +65,16 @@ Cada DoD em [`references/DOD.md`](references/DOD.md) tem dois contadores **deriv
 - `usos` — histórico total de inserções deste DoD em planos produzidos pela skill.
 - `desde rev` — inserções desde a última revisão substantiva dos bullets daquele DoD.
 
-Os números são derivados sob demanda de um **log append-only per-machine** (`~/.claude/telemetry/dod-usage.<machine-id>.jsonl`) pelo fold content-based [`bin/lib/usage-fold.sh`](../../bin/lib/usage-fold.sh). A skill **não edita contador inline no `DOD.md`** — apenas **emite eventos**.
+Os números são derivados sob demanda de um **log append-only per-machine** (`~/.claude/telemetry/dod-usage.<machine-id>.jsonl`) pelo fold content-based [`bin/lib/usage-fold.sh`](../../bin/lib/usage-fold.sh). A skill **não edita contador inline no `DOD.md`** e **não chama `log_event`** — apenas **insere o marcador** `<!-- dod-use: <id> -->` no plano.
 
-### Emissão de eventos `use` (batch no Stop criterion)
+### Emissão determinística via Stop hook (não prompt-driven)
 
-Durante a sessão a skill acumula em memória os `dod_id` inseridos no plano em formação (com multiplicidade — cada inserção conta 1 uso). **Apenas no encerramento (Stop criterion)** — antes de imprimir o plano final — emite **um evento `use` por inserção** via o writer [`bin/lib/usage-log.sh`](../../bin/lib/usage-log.sh):
+A emissão dos eventos `use` é responsabilidade do Stop hook [`hooks/dod-usage-log.sh`](../../hooks/dod-usage-log.sh), **não** da skill. Por quê: a emissão antiga (a skill mandava o LLM rodar `log_event` no encerramento) **nunca disparou na prática** — 0 eventos reais em 11–15 dias nas 3 máquinas. Agora:
 
-1. Computa o sha atual dos bullets de cada DoD via `dod_bullets_sha references/DOD.md` (função de `bin/lib/usage-fold.sh`) → TSV `dod_id<TAB>sha`. O sha é content-based (hash dos bullets do DoD, não do heading).
-2. Para cada `dod_id` inserido, emite `log_event use <dod_id> --sha <sha-atual> --prefix dod` (1 chamada por uso).
+1. A skill insere **1 marcador `<!-- dod-use: <id> -->` por inserção de DoD** no plano persistido (ver [DOD-MAPPING.md](references/DOD-MAPPING.md)).
+2. Ao fim do turno (Stop), o hook parseia o plano, computa o sha atual via `dod_bullets_sha references/DOD.md`, e emite `log_event use <id> --sha <sha> --prefix dod` — idempotente (ledger per-marcador) e anti-backfill (pré-seed dos planos pré-existentes).
 
-O append é atômico (`O_APPEND`) e **lockless** — **não há lock `mkdir`**; o lock era artefato do edit-in-place inline e foi eliminado junto com a migração para log append-only. O writer **nunca reescreve** o `DOD.md`.
+O append do writer é atômico (`O_APPEND`) e **lockless**; o writer **nunca reescreve** o `DOD.md`. O marcador `<!-- dod-use: <id> -->` carrega o `dod_id` literal; o hook deriva o sha na hora, então `desde rev` continua content-based.
 
 **O evento `use` carrega o sha atual dos bullets do DoD aplicado.** É assim que o fold deriva `desde rev` de forma content-based: `desde rev` = #eventos `use` cujo `sha` == sha atual dos bullets do DoD no `DOD.md` (computado na hora). Imune a clock-skew cross-host — não depende de ordenação por `ts`.
 

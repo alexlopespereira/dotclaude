@@ -9,9 +9,10 @@ set -u
 # verificada em duas camadas:
 #
 #   Parte A (regressão de documentação) — a §Contadores de uso do SKILL.md:
-#     AC1 — instrui emitir N eventos `use` via bin/lib/usage-log.sh no Stop
-#           criterion e afirma que NÃO edita contador inline no DOD.md; a antiga
-#           instrução de edição-in-place (deltas numa passagem por DOD.md) sumiu.
+#     AC1 — a emissão é DETERMINÍSTICA via Stop hook (hooks/dod-usage-log.sh): a
+#           skill insere o marcador `<!-- dod-use: <id> -->` e NÃO chama log_event;
+#           NÃO edita contador inline no DOD.md; a antiga instrução de edição-
+#           in-place (deltas numa passagem por DOD.md) sumiu.
 #     AC2 — a instrução de lock `mkdir <lockdir>` está AUSENTE do arquivo inteiro
 #           (aparecia na §Incremento e no Gotcha #3 da versão inline).
 #     AC3 — a §Contadores afirma que o evento `use` carrega o sha atual dos
@@ -64,10 +65,11 @@ SECTION="$TMP/contadores.md"
 awk '/^## Contadores de uso/{f=1;print;next} /^## /{if(f)exit} f{print}' "$SKILL" > "$SECTION"
 [ -s "$SECTION" ] && _pass || _fail "pré-condição: §Contadores de uso não encontrada em SKILL.md"
 
-# ─── AC1 — emite N eventos `use` via usage-log.sh no Stop criterion; sem inline ─
-assert_present "$SECTION" 'bin/lib/usage-log.sh' "AC1 §Contadores referencia o writer bin/lib/usage-log.sh"
-assert_present "$SECTION" 'log_event use'        "AC1 §Contadores instrui emitir evento use (log_event use)"
-assert_present "$SECTION" 'Stop criterion'       "AC1 emissão acontece no Stop criterion"
+# ─── AC1 — emissão DETERMINÍSTICA via Stop hook (marcador), sem log_event inline ─
+assert_present "$SECTION" 'hooks/dod-usage-log.sh' "AC1 §Contadores referencia o Stop hook emissor"
+assert_present "$SECTION" '<!-- dod-use:'          "AC1 §Contadores instrui inserir o marcador dod-use"
+assert_present "$SECTION" 'Stop hook'              "AC1 emissão acontece via Stop hook"
+assert_present "$SECTION" 'não chama'              "AC1 afirma que a skill NÃO chama log_event"
 assert_present "$SECTION" 'não edita contador inline' "AC1 afirma explicitamente que NÃO edita contador inline"
 # Negativo: a instrução inline antiga (editar DOD.md em batch) sumiu do arquivo.
 assert_absent "$SKILL" 'aplica todos os deltas' "AC1 regressão: edição-in-place em batch removida"

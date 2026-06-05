@@ -69,3 +69,7 @@
 {"v":1,"ts":"2026-05-20T21:16:39Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-8","kind":"revision","sha":"e3ceb9e984cb800f18d52398bf0c1c08345327c920bea565768b8e5086c0dd88","migrated_from":"inline"}
 {"v":1,"ts":"2026-05-20T21:16:39Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-9","kind":"baseline","count":0,"sha":"7e56bdcb87a81b315923509b0a1ec5cb7999fe43199026edeb119960c0aeb45b","migrated_from":"inline"}
 {"v":1,"ts":"2026-05-20T21:16:39Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-9","kind":"revision","sha":"7e56bdcb87a81b315923509b0a1ec5cb7999fe43199026edeb119960c0aeb45b","migrated_from":"inline"}
+{"v":1,"ts":"2026-06-05T11:52:32Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"cat-1-base","kind":"use","sha":"b22280013ce150bf26da5fc7588013612824cff843cd6f224238e73dbce44e84"}
+{"v":1,"ts":"2026-06-05T11:52:32Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-8","kind":"use","sha":"e3ceb9e984cb800f18d52398bf0c1c08345327c920bea565768b8e5086c0dd88"}
+{"v":1,"ts":"2026-06-05T11:52:32Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-2","kind":"use","sha":"09820043adafe666ecfe3605611e92909ba5768b4111493d2a898e610c62a701"}
+{"v":1,"ts":"2026-06-05T11:52:32Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-1","kind":"use","sha":"34366ca85ade54e4c0aaeb71e6dc2591450231316d70de18c0d88d506237e3b9"}
