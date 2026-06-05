@@ -73,9 +73,22 @@ echo $$ > "$PID_FILE"
 cleanup() { rm -rf "$LOCK_DIR" 2>/dev/null || true; }
 trap cleanup EXIT INT TERM HUP
 
+# Browser: prefere Google Chrome (channel) quando instalado; senão cai no
+# chromium bundled do Playwright (~/.cache/ms-playwright). No Linux sem Chrome
+# (ex: só snap chromium, que quebra com --user-data-dir por confinamento
+# AppArmor) o bundled é o único confiável.
+BROWSER_FLAG="--browser chrome"
+if command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1 \
+   || [ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ] \
+   || [ -x "/opt/google/chrome/chrome" ]; then
+  BROWSER_FLAG="--browser chrome"
+elif ls -d "$HOME/.cache/ms-playwright/chromium-"* >/dev/null 2>&1; then
+  BROWSER_FLAG="--browser chromium"
+fi
+
 # Não usa exec — wrapper precisa continuar vivo pra trap rodar e limpar lock.
 # Sinais propagam ao filho automaticamente (mesmo grupo de processo).
 npx -y @playwright/mcp@latest \
   --user-data-dir "$PROFILE_DIR" \
-  --browser chrome \
+  $BROWSER_FLAG \
   "$@"
