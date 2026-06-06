@@ -1,0 +1,11 @@
+{
+  "_doc": "Snippet CANÔNICO de registro do hook verify-before-handoff-guard.sh sob hooks.PostToolUse em ~/.claude/settings.json. MACHINE-LOCAL (Finding #4): NÃO viaja no sync.sh — cada máquina mescla este grupo à mão pós `sync.sh install`. Em VMs Linux, troque o prefixo /Users/<user> por /home/<user> no campo command. O matcher é específico (Bash + tools MCP), NUNCA vazio; o script faz a classificação fina. timeout=5000ms (DoD Cat1/T8-b4,b6).",
+  "matcher": "Bash|mcp__.*",
+  "hooks": [
+    {
+      "type": "command",
+      "command": "/Users/dev/.claude/hooks/verify-before-handoff-guard.sh",
+      "timeout": 5000
+    }
+  ]
+}
