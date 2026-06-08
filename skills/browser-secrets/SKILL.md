@@ -1,6 +1,6 @@
 ---
 name: browser-secrets
-description: Provisiona credenciais (token/secret/key) e faz setup de ferramenta web de forma proativa via browser, escrevendo no .env do projeto e verificando antes de reportar. Use ao criar token, gerar API key, provisionar secret, fazer setup ferramenta web, ou quando uma chamada falha 401/403 mid-task / uma env var é referenciada-mas-ausente. O que faz: detecta o gatilho, checa se a credencial já existe, captura a key sem vazar no transcript, escreve no .env (com guarda de .gitignore), verifica com live probe e reporta mascarado. Quando usar: provisionamento free/low-risk roda proativo; Zona 3 / custo / destrutivo mantém confirm gate. Delega a mecânica de browser a browser-actions.
+description: Provisiona credenciais via browser proativamente — escreve no .env e verifica antes de reportar. Quando usar: criar token, gerar API key, provisionar secret, fazer setup ferramenta web, ou falha 401/403 / env var ausente mid-task. O que faz: checa se já existe, captura sem vazar no transcript, escreve no .env (guarda .gitignore), verifica com live probe, reporta mascarado; free/low-risk proativo, Zona 3/custo/destrutivo mantém confirm gate. Delega browser a browser-actions.
 ---
 
 # browser-secrets — operacional

@@ -36,3 +36,6 @@ AGENTS.md
 # created when browser-actions skill exercises the browser via MCP.
 # Per-session, regenerated on demand — never commit.
 .playwright-mcp/
+
+# Scratch / dados locais não-versionados (ex.: exports temporários)
+temp/
