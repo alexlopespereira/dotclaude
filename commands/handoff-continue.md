@@ -1,5 +1,5 @@
 ---
-description: Destila contexto da sessão atual em handoff doc + cria ponteiro pending + lazy-installa hook SessionStart. Trigger phrases — "handoff-continue", "continuar com contexto limpo", "retomar pós-clear". Imprime handoff completo no chat e pede ao usuário rodar /clear manualmente. NÃO invoca /clear.
+description: Destila contexto da sessão atual em handoff doc + cria ponteiro pending + lazy-installa hook SessionStart. Trigger phrases — "handoff-continue", "continuar com contexto limpo", "retomar pós-clear". Imprime handoff completo no chat e pede ao usuário rodar /clear manualmente. NÃO invoca /clear. Após o /clear o handoff entra como contexto SILENCIOSO (invisível) e NÃO inicia o trabalho sozinho — digite "continuar" pra retomar.
 argument-hint: [foco opcional do handoff]
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(pwd), Bash(date:*), Bash(git status:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-parse:*), Bash(gh pr view:*), Bash(jq:*), Bash(test:*), Bash(cat:*), Bash(mkdir:*), Bash(mv:*), Bash(rm:*), Bash(rmdir:*), Bash(wc:*), Bash(ls:*), Bash(echo:*), Bash(printf:*), Bash(chmod:*), Bash(realpath:*), Bash(readlink:*)
 ---
@@ -146,9 +146,22 @@ Ponteiro criado: .claude/handoff-pending → <ABS_HANDOFF>
 Hook SessionStart: <registrado | já existia>
 
 Para retomar com contexto limpo, rode /clear agora.
+Depois do /clear, digite "continuar" — a sessão NÃO inicia sozinha.
 ```
 
 A frase **literal** "Para retomar com contexto limpo, rode /clear agora." deve aparecer no output (caractere por caractere) — é gatilho visual pro usuário.
+
+**Logo abaixo, imprima também (literal):**
+
+```
+ℹ️ Após o /clear, a sessão abre EM BRANCO — o handoff foi carregado como contexto
+   SILENCIOSO (system reminder; você não vê nada na tela). Para retomar, digite
+   "continuar" (ou qualquer mensagem) — só então o Claude lê o handoff e segue do
+   "Próximo passo". O /clear NÃO inicia o trabalho automaticamente; nenhum hook do
+   Claude Code dispara um turno do assistente sozinho.
+```
+
+Este bloco é obrigatório — corrige a expectativa de "resume automático" (o `additionalContext` do `SessionStart` é injetado silenciosamente e nunca dispara uma resposta; um prompt do usuário é sempre necessário).
 
 ### 5. Anunciar caveat `--resume`
 
@@ -156,6 +169,7 @@ Imprima também:
 
 ```
 ⚠️ O hook dispara em /clear ou nova sessão. claude --resume NÃO dispara — use /clear.
+   O hook apenas INJETA o handoff como contexto silencioso; ele não inicia o trabalho.
 ```
 
 Esta linha é obrigatória (achado adversário #4 do plano de origem).

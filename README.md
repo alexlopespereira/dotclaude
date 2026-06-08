@@ -289,7 +289,7 @@ A few smaller guardrails round out the harness:
 
 - **Git secret-scan** (`hooks/block-dangerous-git.sh`, skill `git-guardrails-claude-code`) — a `PreToolUse` hook that blocks `commit`/`push` when the staged diff contains secrets (Stripe/GH/Netlify/AWS/Google/Slack keys, `.pem`/`.key`, `.env`/`credentials` files). Scoped to secrets only — destructive ops are *not* pre-blocked (Principle 7).
 - **Browser-as-agent** (skills `browser-actions` / `browser-inspect`, Principle 12) — when an external action falls through the precedence ladder (domain CLI → domain MCP → direct API → Playwright MCP), the browser is the last resort: it announces every open, runs a cookie pre-check, asks you to log in via chat, and applies a "Zone 3" blocklist of irreversible actions. `browser-inspect` is the anti-laziness rule — if a page is reachable by Playwright, the agent reads the console/network itself instead of asking you to paste it.
-- **`/handoff-continue`** — distills the current session into a handoff doc + a pending pointer, and lazy-installs a `SessionStart` hook so the next session resumes with clean context. It prints the handoff and asks you to `/clear` — it never clears for you.
+- **`/handoff-continue`** — distills the current session into a handoff doc + a pending pointer, and lazy-installs a `SessionStart` hook so the next session **has the handoff as silent context**. It prints the handoff and asks you to `/clear` — it never clears for you. After `/clear` the session opens blank: the handoff is injected as an invisible system reminder and **does not auto-start the work** (no Claude Code hook can trigger an assistant turn) — type `continuar` (or any message) to resume from the "Próximo passo".
 
 > **Why it matters:** the failure modes here aren't reasoning errors — they're a leaked token, an irreversible click, or a lost thread after compaction. Each rail makes the dangerous path the explicit one.
 
@@ -938,7 +938,7 @@ The protocols here aren't arbitrary ceremony — each one addresses a specific, 
 | A poisoned dependency runs code at install time | Supply-chain guard: 14-day publish cooldown + `--ignore-scripts` + git-url block, fail-closed (Principle 13) |
 | Secrets slip into a commit | `block-dangerous-git.sh` secret-scan blocks `commit`/`push` on detected keys / `.env` |
 | Irreversible action via browser automation | Browser-as-agent precedence ladder + Zone-3 blocklist (Principle 12) |
-| Context lost after compaction or `/clear` | `/handoff-continue` distills a handoff doc + `SessionStart` resume hook |
+| Context lost after compaction or `/clear` | `/handoff-continue` distills a handoff doc + `SessionStart` hook that injects it as silent context (type `continuar` after `/clear` to resume — it never auto-starts) |
 | Long sessions hit autocompact mid-task | `Stop` hook fires a macOS notification at 128K tokens (configurable) before the harness compresses |
 
 ## License
