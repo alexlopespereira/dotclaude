@@ -24,20 +24,18 @@ mkdir -p "$(dirname "$LOG")"
   done
 
   # ============== CUSTOMIZE AQUI ==============
-  # Pool e flags do morning. Adicione mais blocos se quiser múltiplos pools.
-  POOL="storefront"
-  FLAGS=(--yolo --names=feature-a,tests,bugfix,spike --no-sync)
+  # O trabalho (storefront/etl-crm/wikiapp) migrou pras VMs UTM. Em vez de
+  # abrir abas em checkouts locais (morning.sh), abrimos sessões SSH+Claude nas
+  # VMs via vm-morning.sh. Edite a lista de abas no topo desse script.
+  VM_MORNING="$HOME/Projects/dotclaude/vm-morning.sh"
   # =============================================
 
-  MORNING="$HOME/Projects/dotclaude/bin/morning.sh"
-  [ -x "$MORNING" ] || MORNING="$HOME/.claude/bin/morning.sh"
-
-  if [ ! -x "$MORNING" ]; then
-    echo "ERRO: morning.sh não encontrado." >&2
+  if [ ! -x "$VM_MORNING" ]; then
+    echo "ERRO: vm-morning.sh não encontrado/executável em $VM_MORNING." >&2
     exit 1
   fi
 
-  echo "→ executando: morning.sh $POOL ${FLAGS[*]}"
-  bash "$MORNING" "$POOL" "${FLAGS[@]}"
+  echo "→ executando: $VM_MORNING"
+  bash "$VM_MORNING"
   echo "═══ concluído ═══"
 } >> "$LOG" 2>&1
