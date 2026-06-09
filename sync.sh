@@ -212,11 +212,26 @@ sync_to_claude() {
 
     if [ "$force" -ne 1 ]; then
         local blocked=0
+        # _is_local_edit <rel> <claude_file> → 0 se a cópia de ~/.claude difere
+        # do repo E não bate com NENHUMA versão histórica do arquivo no git.
+        # Cópia que bate com versão histórica = STALE (instalada por um install
+        # antigo e nunca editada) → upgrade pós-pull é SEGURO e não bloqueia.
+        # Sem isso o auto-install pós-pull abortava em TODO update de arquivo
+        # existente — o elo VM pull→install ficava morto (achado pós-#49).
+        _is_local_edit() {
+            local rel="$1" cfile="$2" h
+            h=$(git -C "$REPO_DIR" hash-object "$cfile" 2>/dev/null || true)
+            [ -z "$h" ] && return 0
+            hash_in_history "$rel" "$h" && return 1
+            return 0
+        }
         for f in "${FILES[@]}"; do
             if [ -f "$REPO_DIR/$f" ] && [ -f "$CLAUDE_DIR/$f" ]; then
                 if ! diff -q "$REPO_DIR/$f" "$CLAUDE_DIR/$f" >/dev/null 2>&1; then
-                    echo "ERRO: $f difere em ~/.claude/." >&2
-                    blocked=1
+                    if _is_local_edit "$f" "$CLAUDE_DIR/$f"; then
+                        echo "ERRO: $f difere em ~/.claude/ (edit local não-commitado)." >&2
+                        blocked=1
+                    fi
                 fi
             fi
         done
@@ -225,12 +240,17 @@ sync_to_claude() {
                 # Filtra só linhas "Files X and Y differ"; ignora "Only in" (skills históricas em ~/.claude/).
                 # Capturamos a saída primeiro porque `pipefail` + diff (exit 1 quando há diff) faz
                 # `diff -rq | grep -q` retornar não-zero mesmo com match — bug clássico do pipefail.
-                local diff_out
+                local diff_out line cfile rel
                 diff_out=$(diff -rq -x '.DS_Store' "$REPO_DIR/$d" "$CLAUDE_DIR/$d" 2>/dev/null || true)
-                if echo "$diff_out" | grep -q '^Files .* differ$'; then
-                    echo "ERRO: $d/ tem arquivos divergentes em ~/.claude/." >&2
-                    blocked=1
-                fi
+                while IFS= read -r line; do
+                    case "$line" in "Files "*" differ") ;; *) continue ;; esac
+                    cfile=$(printf '%s\n' "$line" | sed -E 's/^Files .* and (.*) differ$/\1/')
+                    rel="${cfile#"$CLAUDE_DIR"/}"
+                    if _is_local_edit "$rel" "$cfile"; then
+                        echo "ERRO: $rel difere em ~/.claude/ (edit local não-commitado)." >&2
+                        blocked=1
+                    fi
+                done <<< "$diff_out"
             fi
         done
         if [ "$blocked" -eq 1 ]; then

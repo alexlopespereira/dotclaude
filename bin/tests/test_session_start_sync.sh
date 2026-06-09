@@ -325,6 +325,30 @@ SYNC_CLAUDE_HOME="$VH2" bash "$VR2/sync.sh" install >/dev/null 2>&1
 assert_eq "$(pt_verify_count "$VH2/settings.json")" "1" \
   "AC6 pré-existente mesmo sufixo (path diferente) é no-op sem duplicata"
 
+# ═══ UPGRADE — ~/.claude com versão HISTÓRICA → install pós-pull NÃO bloqueia ═
+# Regressão real (pós-#49): o gate do install bloqueava QUALQUER update de
+# arquivo existente — após git pull, ~/.claude (stale) difere do HEAD novo e o
+# elo pull→install das VMs ficava morto. Stale = hash bate com versão histórica
+# do repo → upgrade seguro; só edit local real (hash fora do histórico) bloqueia.
+REPOU="$TMP/u/repo"; HOMEU="$TMP/u/home"
+mkrepo "$REPOU"; mkclaude "$HOMEU"
+SYNC_CLAUDE_HOME="$HOMEU" bash "$REPOU/sync.sh" install >/dev/null 2>&1
+printf 'newcmd-v2\n' > "$REPOU/commands/newcmd.md"
+printf 'CLAUDE-v2\n' > "$REPOU/CLAUDE.md"
+git -C "$REPOU" add -A
+git -C "$REPOU" commit -q -m v2
+out=$(SYNC_CLAUDE_HOME="$HOMEU" bash "$REPOU/sync.sh" install 2>&1); rcu=$?
+assert_rc "$rcu" 0 "UPG-a install pós-pull com cópia stale NÃO bloqueia"
+assert_eq "$(cat "$HOMEU/commands/newcmd.md")" "newcmd-v2" "UPG-b DIRS atualizado p/ v2"
+assert_eq "$(cat "$HOMEU/CLAUDE.md")" "CLAUDE-v2" "UPG-c FILES atualizado p/ v2"
+
+# ═══ EDIT LOCAL — conteúdo fora do histórico do repo → install BLOQUEIA ═══════
+printf 'edit local meu\n' > "$HOMEU/commands/newcmd.md"
+out=$(SYNC_CLAUDE_HOME="$HOMEU" bash "$REPOU/sync.sh" install 2>&1); rce=$?
+assert_rc "$rce" 2 "EDT-a edit local real continua bloqueando install"
+assert_grep "$out" "edit local" "EDT-b mensagem distingue edit local de stale"
+assert_eq "$(cat "$HOMEU/commands/newcmd.md")" "edit local meu" "EDT-c edit local preservado (não clobberado)"
+
 # ═══ Summary ═════════════════════════════════════════════════════════════════
 TOTAL=$((PASS + FAIL))
 echo ""
