@@ -42,12 +42,15 @@ LIB_DIR=$(_locate_lib_dir) || {
 # shellcheck source=../bin/lib/supply-chain/audit.sh
 . "${LIB_DIR}/audit.sh"
 
-CMD_JSON=$(sc_parse_command "$COMMAND")
-MANAGER=$(printf '%s' "$CMD_JSON" | jq -r '.manager')
-OP=$(printf '%s' "$CMD_JSON" | jq -r '.op')
+# Split compound commands (`;`, `&&`, `||`, `|`, `&`) into independent segments
+# and parse each. Redirect tokens (2>&1, >file, …) are dropped without creating
+# a boundary. Each segment is validated independently; PROBLEMS aggregate.
+SEGMENTS_JSON=$(sc_parse_command_segments "$COMMAND")
 
-# op=other → not an install command, permit.
-if [ "$OP" = "other" ]; then
+# If no segment is an install/update/run-ephemeral, this isn't an install
+# command — permit (no audit, matching legacy op=other behavior).
+ACTIONABLE=$(printf '%s' "$SEGMENTS_JSON" | jq -r '[.[] | select(.op != "other")] | length' 2>/dev/null)
+if [ -z "$ACTIONABLE" ] || [ "$ACTIONABLE" = "0" ]; then
   exit 0
 fi
 
@@ -56,6 +59,17 @@ NOW=$(date -u +%s)
 COOLDOWN_SECS=$(( COOLDOWN_DAYS * 86400 ))
 
 PROBLEMS=()
+NSEG=$(printf '%s' "$SEGMENTS_JSON" | jq -r 'length')
+
+for ((seg=0; seg<NSEG; seg++)); do
+CMD_JSON=$(printf '%s' "$SEGMENTS_JSON" | jq -c ".[$seg]")
+MANAGER=$(printf '%s' "$CMD_JSON" | jq -r '.manager')
+OP=$(printf '%s' "$CMD_JSON" | jq -r '.op')
+
+# Non-install segment (e.g. the `| tail -80` tail of a pipe) → skip its checks.
+if [ "$OP" = "other" ]; then
+  continue
+fi
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 _registry_for_manager() {
@@ -86,6 +100,22 @@ if [ -n "$REGISTRY" ]; then
       VER="${pkgver##*@}"
       # Skip empty pkg names (defensive)
       [ -z "$PKG" ] && continue
+
+      # npx/bunx com o pacote já presente em ./node_modules executam o binário
+      # LOCAL — nenhum download acontece, logo não há evento de supply-chain a
+      # validar. Sem este skip, todo release fresco (<14d) do pacote bloquearia
+      # o comando canônico `npx playwright test` em repos que já o têm instalado.
+      # Restrições (review adversário, P0): (a) só spec IMPLÍCITA ('*') — com
+      # `npx pkg@versão`/`@latest` o npx pode baixar do registry mesmo havendo
+      # cópia local de outra versão → cooldown mantém; (b) exige package.json
+      # real — diretório vazio plantado não conta como install local.
+      case "$MANAGER:$OP" in
+        npx:run-ephemeral|bunx:run-ephemeral)
+          if [ "$VER" = "*" ] && [ -f "./node_modules/$PKG/package.json" ]; then
+            continue
+          fi
+          ;;
+      esac
       # Skip non-concrete dist-tags only for the cooldown path — registry
       # lookup with `latest` works in npm view but is fragile. We attempt
       # and treat lookup failure as PARTIAL_RESOLUTION.
@@ -144,6 +174,8 @@ if [ "$MANAGER" = "npm" ] && [ "$OP" = "install" ]; then
     fi
   fi
 fi
+
+done  # end per-segment loop
 
 # ─── Decision ────────────────────────────────────────────────────────────────
 if [ "${#PROBLEMS[@]}" -eq 0 ]; then

@@ -40,7 +40,9 @@ _sc_parse_spec() {
     *.tgz|*.tar.gz|*.tar)
       type="local"; spec="$raw"; name=""
       ;;
-    ./*|../*|/*)
+    .|..|./*|../*|/*)
+      # Current/parent dir or absolute path — e.g. `pip install -e .` (editable
+      # local install). Never a registry lookup.
       type="local"; spec="$raw"; name=""
       ;;
     *)
@@ -211,7 +213,9 @@ sc_parse_command() {
         flags_json=$(echo "$flags_json" | jq -c --arg f "$tok" '. + [$f]')
         continue
         ;;
-      --ignore-scripts|--frozen-lockfile|--no-save|--save-dev|-D|--dev|-g|--global|--save|-S|--save-exact|-E)
+      -e|--editable|--ignore-scripts|--frozen-lockfile|--no-save|--save-dev|-D|--dev|-g|--global|--save|-S|--save-exact|-E)
+        # -e/--editable (pip): a plain boolean flag; its target path is parsed
+        # separately as a local-type pkg (e.g. `.` → type=local).
         flags_json=$(echo "$flags_json" | jq -c --arg f "$tok" '. + [$f]')
         continue
         ;;
@@ -224,6 +228,12 @@ sc_parse_command() {
         local spec_json
         spec_json=$(_sc_parse_spec "$tok")
         pkgs_json=$(echo "$pkgs_json" | jq -c --argjson p "$spec_json" '. + [$p]')
+        # run-ephemeral (npx/uvx/bunx/pnpm dlx/yarn dlx/pipx run/uv tool run):
+        # only the FIRST non-flag token is the package to execute; the rest is
+        # the tool's own argv, not packages to fetch. Stop after capturing it.
+        if [ "$op" = "run-ephemeral" ]; then
+          break
+        fi
         continue
         ;;
     esac
@@ -233,6 +243,95 @@ sc_parse_command() {
     --arg m "$manager" --arg op "$op" \
     --argjson pkgs "$pkgs_json" --argjson flags "$flags_json" \
     '{manager:$m, op:$op, pkgs:$pkgs, flags:$flags}'
+}
+
+# Is a token a pure redirect (e.g. 2>&1, >out.log, <in, 2>/dev/null)?
+# Strips a leading file-descriptor number, then checks for a leading <, >, &>.
+_sc_is_redirect() {
+  local t="$1"
+  local rest="${t#"${t%%[!0-9]*}"}"   # drop leading fd digits
+  case "$rest" in
+    '>'*|'<'*|'&>'*) return 0 ;;
+    *)               return 1 ;;
+  esac
+}
+
+# Is a redirect token operator-only (no glued target/fd-dup)? Those consume the
+# NEXT token as their target file (e.g. `> out.log`). Glued forms like `2>&1`
+# or `2>/dev/null` carry their target, so they don't.
+_sc_redirect_op_only() {
+  local t="$1"
+  local rest="${t#"${t%%[!0-9]*}"}"
+  case "$rest" in
+    '>'|'>>'|'<'|'<<'|'&>'|'&>>'|'>&'|'<&') return 0 ;;
+    *)                                      return 1 ;;
+  esac
+}
+
+# sc_parse_command_segments "<command-string>" → JSON array to stdout
+#   Splits a compound shell command on the operators ; && || | & (whitespace-
+#   separated tokens), discarding pure-redirect tokens WITHOUT creating a
+#   segment boundary, then parses each segment via sc_parse_command. Returns a
+#   JSON array of segment objects (each {manager, op, pkgs, flags}).
+#
+# Limit (same as sc_parse_command): subshells/wrappers (bash -c, eval, …) and
+# operators glued to words without spaces (a&&b) are not split — the wrapper
+# reduces to a single op=other segment.
+sc_parse_command_segments() {
+  local cmd="$1"
+
+  # Trim
+  cmd="${cmd#"${cmd%%[![:space:]]*}"}"
+  cmd="${cmd%"${cmd##*[![:space:]]}"}"
+
+  # Wrapper/subshell: don't split (quotes aren't honored by whitespace tokens).
+  case "$cmd" in
+    'bash -c '*|'sh -c '*|'zsh -c '*|'eval '*|'nohup '*|'time '*|'env '*'='*' '*|'env '*)
+      jq -n -c --argjson s "$(sc_parse_command "$cmd")" '[$s]'
+      return 0
+      ;;
+  esac
+
+  local -a tokens
+  read -r -a tokens <<< "$cmd"
+
+  local -a segments=()
+  local -a current=()
+  local skip_next=0
+  local i tok
+  for ((i=0; i<${#tokens[@]}; i++)); do
+    tok="${tokens[$i]}"
+    if [ "$skip_next" = "1" ]; then skip_next=0; continue; fi
+
+    case "$tok" in
+      ';'|'&'|'&&'|'||'|'|'|'|&')
+        if [ "${#current[@]}" -gt 0 ]; then
+          segments+=("${current[*]}"); current=()
+        fi
+        continue
+        ;;
+    esac
+
+    if _sc_is_redirect "$tok"; then
+      if _sc_redirect_op_only "$tok"; then skip_next=1; fi
+      continue
+    fi
+
+    current+=("$tok")
+  done
+  if [ "${#current[@]}" -gt 0 ]; then segments+=("${current[*]}"); fi
+
+  local out="[]"
+  local seg seg_json
+  if [ "${#segments[@]}" -eq 0 ]; then
+    out=$(jq -n -c --argjson s "$(sc_parse_command "")" '[$s]')
+  else
+    for seg in "${segments[@]}"; do
+      seg_json=$(sc_parse_command "$seg")
+      out=$(echo "$out" | jq -c --argjson s "$seg_json" '. + [$s]')
+    done
+  fi
+  printf '%s\n' "$out"
 }
 
 # Allow direct invocation for ad-hoc testing: `parser.sh "npm install foo"`

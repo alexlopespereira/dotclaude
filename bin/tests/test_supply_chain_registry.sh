@@ -24,35 +24,45 @@ export SC_CACHE_DIR="$WORKSPACE/sc-cache"
 MOCK_DIR="$WORKSPACE/mocks"
 mkdir -p "$MOCK_DIR"
 
-# Mock npm: behavior driven by arg pattern.
+# Mock npm: FIEL ao npm real (descoberta 2026-06-09, code review Fase 5.5):
+#   - `npm view pkg@1.2.3 time.1.2.3` desce o field-path pelos PONTOS da versão
+#     (time→1→2→3, chaves inexistentes) → stdout VAZIO com rc=0. O mock antigo
+#     respondia a qualquer FIELD e mascarou o bug: o cooldown NUNCA funcionou
+#     live (todo lookup concreto virava VERSION_NOT_FOUND fail-closed).
+#   - O acesso correto é bracket: `time[1.2.3]`.
+#   - Specs não-concretas resolvem via `dist-tags.latest` / `pkg@range version --json`.
 cat > "$MOCK_DIR/npm" <<'MOCKEOF'
 #!/usr/bin/env bash
-# args: view <pkg>@<ver> time.<ver>
 if [ "$1" != "view" ]; then exit 1; fi
-PKGV="$2"; FIELD="$3"
+PKGV="$2"; FIELD="${3:-}"
 
-case "$PKGV" in
-  "lodash@4.17.21")
-    echo "2021-02-20T19:48:09.270Z"; exit 0 ;;
-  "ghost-pkg@1.0.0")
+# Comportamento REAL do npm: field-path com pontos retorna vazio + rc=0.
+case "$FIELD" in
+  time.*) exit 0 ;;
+esac
+
+case "$PKGV:$FIELD" in
+  "lodash@4.17.21:time[4.17.21]") echo "2021-02-20T19:48:09.270Z"; exit 0 ;;
+  "lodash:dist-tags.latest")      echo "4.18.1"; exit 0 ;;
+  "lodash@4.18.1:time[4.18.1]")   echo "2020-06-01T00:00:00.000Z"; exit 0 ;;
+  "lodash@^4:version")            printf '[\n  "4.17.21",\n  "4.18.0",\n  "4.18.1"\n]\n'; exit 0 ;;
+  "ghost-pkg@1.0.0:"*|"ghost-pkg:dist-tags.latest")
     echo "npm ERR! code E404" >&2
     echo "npm ERR! 404 Not Found - GET https://registry.npmjs.org/ghost-pkg - Not found" >&2
     exit 1 ;;
-  "lodash@99.99.99")
+  "lodash@99.99.99:"*)
     echo "npm ERR! code E404" >&2
     echo "npm ERR! 404 Not Found - GET https://registry.npmjs.org/lodash - No matching version found for lodash@99.99.99" >&2
     exit 1 ;;
-  "neterr@1.0.0")
+  "neterr@1.0.0:"*)
     echo "npm ERR! network getaddrinfo ENOTFOUND registry.npmjs.org" >&2
     exit 1 ;;
-  "srv5xx@1.0.0")
+  "srv5xx@1.0.0:"*)
     echo "npm ERR! code E503" >&2
     echo "npm ERR! 503 Service Unavailable" >&2
     exit 1 ;;
-  "fresh@1.0.0")
-    echo "2026-05-12T10:00:00.000Z"; exit 0 ;;
-  "old@1.0.0")
-    echo "2020-01-01T00:00:00.000Z"; exit 0 ;;
+  "fresh@1.0.0:time[1.0.0]") echo "2026-05-12T10:00:00.000Z"; exit 0 ;;
+  "old@1.0.0:time[1.0.0]")   echo "2020-01-01T00:00:00.000Z"; exit 0 ;;
   *)
     echo "npm ERR! code E404" >&2
     exit 1 ;;
@@ -77,6 +87,12 @@ while [ $# -gt 0 ]; do
 done
 
 case "$URL" in
+  *pypi.org/pypi/requests/json)
+    # Packument (sem versão na URL): usado pela resolução de spec '*'.
+    cat > "$OUT" <<'JSON'
+{"info":{"version":"2.31.0"},"urls":[{"upload_time":"2023-05-22T11:00:00"}]}
+JSON
+    echo "200"; exit 0 ;;
   *pypi.org/pypi/requests/2.31.0/json)
     cat > "$OUT" <<'JSON'
 {"urls":[{"upload_time":"2023-05-22T11:00:00"}]}
@@ -168,6 +184,23 @@ assert_contains "$err" "NETWORK_ERROR" "T10 npm network err"
 err=$(sc_get_publish_time npm srv5xx 1.0.0 2>&1 >/dev/null)
 assert_contains "$err" "REGISTRY_5XX" "T11 npm 503"
 
+# T11b: spec '*' (caso `npx playwright` / `npm i -g pkg`) resolve para
+# dist-tags.latest e retorna o publish-time da versão resolvida.
+got=$(sc_get_publish_time npm lodash '*' 2>/dev/null)
+assert_eq "2020-06-01T00:00:00.000Z" "$got" "T11b npm spec '*' resolve via dist-tags.latest"
+
+# T11c: range '^4' resolve para a maior versão satisfazível (última do --json).
+got=$(sc_get_publish_time npm lodash '^4' 2>/dev/null)
+assert_eq "2020-06-01T00:00:00.000Z" "$got" "T11c npm range '^4' resolve p/ 4.18.1"
+
+# T11d: '*' de pacote inexistente → PACKAGE_NOT_FOUND (erro na resolução).
+err=$(sc_get_publish_time npm ghost-pkg '*' 2>&1 >/dev/null)
+assert_contains "$err" "PACKAGE_NOT_FOUND" "T11d '*' de ghost → PACKAGE_NOT_FOUND"
+
+# T11e: a versão RESOLVIDA é cacheada sob a versão concreta (não sob '*').
+got=$(sc_cache_get npm lodash 4.18.1 2>/dev/null)
+assert_eq "2020-06-01T00:00:00.000Z" "$got" "T11e resolved cacheada como 4.18.1"
+
 # ─── Registry: PyPI via mocked curl ──────────────────────────────────────────
 # T12: success
 got=$(sc_get_publish_time pypi requests 2.31.0 2>/dev/null)
@@ -193,6 +226,10 @@ assert_contains "$err" "REGISTRY_5XX" "T15 pypi 503 → REGISTRY_5XX"
 # T16: pypi network error (curl exits non-zero)
 err=$(sc_get_publish_time pypi timeout-pkg 1.0.0 2>&1 >/dev/null)
 assert_contains "$err" "NETWORK_ERROR" "T16 pypi connection refused → NETWORK_ERROR"
+
+# T16b: pypi spec '*' resolve via packument (URL sem versão → .info.version).
+got=$(sc_get_publish_time pypi requests '*' 2>/dev/null)
+assert_eq "2023-05-22T11:00:00" "$got" "T16b pypi spec '*' resolve via packument"
 
 # T17: unsupported registry
 err=$(sc_get_publish_time crates serde 1.0.0 2>&1 >/dev/null)

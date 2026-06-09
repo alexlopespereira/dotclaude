@@ -47,12 +47,14 @@
 #   VERIFY_HANDOFF_PROMOTE_N → N de promoção soft→hard (default 2)
 #   VERIFY_HANDOFF_DEBUG     → 1 → traços em stderr
 #
-# REGISTRO (machine-local — Finding #4): este script PROPAGA pra ~/.claude/hooks/
-# via `sync.sh install` (hooks/ está em DIRS), mas o REGISTRO em
-# ~/.claude/settings.json sob PostToolUse NÃO viaja no sync (settings.json não é
-# arquivo sincronizado). Cada máquina registra à mão pós-install. Snippet canônico
-# (matcher + timeout 5000ms): skills/verify-before-handoff/references/settings-registration.json.
-# VMs Linux: substituir o prefixo /Users/<user> por /home/<user> no command.
+# REGISTRO (via sync.sh install — US-02, reverte Finding #4): este script PROPAGA
+# pra ~/.claude/hooks/ via `sync.sh install` (hooks/ está em DIRS) E o REGISTRO em
+# ~/.claude/settings.json sob PostToolUse também é feito pelo install
+# (register_verify_handoff_hook → matcher 'Bash|mcp__.*', timeout 5000ms, command
+# com $CLAUDE_DIR). A decisão MACHINE-LOCAL anterior (registro manual por máquina)
+# foi revertida: falhou empiricamente em 2 de 3 máquinas. O $CLAUDE_DIR torna o
+# command portável entre /Users (macOS) e /home (VMs Linux) sem edição manual.
+# Snippet de referência: skills/verify-before-handoff/references/settings-registration.json.
 
 PYCODE=$(cat <<'PYEOF'
 import json

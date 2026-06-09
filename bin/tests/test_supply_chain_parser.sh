@@ -245,6 +245,95 @@ out=$(sc_parse_command "")
 assert_schema "$out" "T55 empty schema"
 assert_json_field "$out" '.op' "other" "T55b empty → other"
 
+# ─── run-ephemeral: capture only the first non-flag token as package (AC5) ───
+# pnpm dlx create-foo --template bar extra-arg → exactly 1 pkg (create-foo)
+out=$(sc_parse_command "pnpm dlx create-foo --template bar extra-arg")
+assert_json_field "$out" '.op' "run-ephemeral" "T56a pnpm dlx op"
+assert_json_field "$out" '.pkgs | length' "1" "T56b pnpm dlx → 1 pkg only"
+assert_json_field "$out" '.pkgs[0].name' "create-foo" "T56c pnpm dlx first token"
+
+# npx -y create-react-app my-app → exactly 1 pkg (create-react-app); flags skipped
+out=$(sc_parse_command "npx -y create-react-app my-app")
+assert_json_field "$out" '.op' "run-ephemeral" "T57a npx op"
+assert_json_field "$out" '.pkgs | length' "1" "T57b npx -y → 1 pkg only"
+assert_json_field "$out" '.pkgs[0].name' "create-react-app" "T57c npx first non-flag token"
+
+# ─── pip -e / local path tokens (AC3/AC4) ────────────────────────────────────
+# pip install -e . → '.' is type=local (not a registry pkg)
+out=$(sc_parse_command "pip install -e .")
+assert_json_field "$out" '.op' "install" "T58a pip -e . op"
+assert_json_field "$out" '.pkgs[0].type' "local" "T58b '.' → type=local"
+assert_json_field "$out" '[.pkgs[] | select(.type=="registry")] | length' "0" "T58c no registry pkg"
+
+# pip install -e . requests → '.' local, requests registry
+out=$(sc_parse_command "pip install -e . requests")
+assert_json_field "$out" '[.pkgs[] | select(.type=="local")] | length' "1" "T59a one local"
+assert_json_field "$out" '[.pkgs[] | select(.type=="registry") | .name]' '[
+  "requests"
+]' "T59b requests stays registry"
+
+# '..' also local
+out=$(sc_parse_command "pip install ..")
+assert_json_field "$out" '.pkgs[0].type' "local" "T60 '..' → type=local"
+
+# ─── sc_parse_command_segments — split on shell operators, drop redirects ────
+# Helper: all registry/git-url package names across every segment, sorted.
+seg_pkg_names() {
+  echo "$1" | jq -c '[.[].pkgs[] | select(.type=="registry" or .type=="git-url") | .name] | sort'
+}
+
+# AC1: npx playwright test with pipe+redirect → exactly 1 pkg (playwright);
+#      no shell token (2>&1, |, tail, -80, test, tests/...) becomes a package.
+segs=$(sc_parse_command_segments "npx playwright test tests/e2e/foo.spec.ts --reporter=line 2>&1 | tail -80")
+assert_eq '["playwright"]' "$(seg_pkg_names "$segs")" "T61a AC1 only playwright"
+assert_json_field "$segs" '[.[].pkgs[]] | length' "1" "T61b AC1 exactly 1 pkg total"
+
+# AC7: redirect tokens dropped WITHOUT creating a segment boundary —
+#      'npm install a 2>&1 --ignore-scripts' stays one segment with the flag.
+segs=$(sc_parse_command_segments "npm install a 2>&1 --ignore-scripts")
+assert_json_field "$segs" 'length' "1" "T62a AC7 single segment (2>&1 not a boundary)"
+assert_json_field "$segs" '.[0].pkgs | length' "1" "T62b AC7 one pkg (a)"
+assert_json_field "$segs" '.[0].pkgs[0].name' "a" "T62c AC7 pkg a"
+assert_json_field "$segs" '.[0].flags | index("--ignore-scripts") != null' "true" "T62d AC7 flag kept in same segment"
+
+# AC2: 'npm install lodash && npm install evilpkg' → two install segments.
+segs=$(sc_parse_command_segments "npm install lodash && npm install evilpkg")
+assert_json_field "$segs" 'length' "2" "T63a AC2 two segments"
+assert_json_field "$segs" '.[0].pkgs[0].name' "lodash" "T63b seg1 lodash"
+assert_json_field "$segs" '.[1].pkgs[0].name' "evilpkg" "T63c seg2 evilpkg"
+
+# AC8 regression: multiple pkgs in one install segment stay 3 pkgs.
+segs=$(sc_parse_command_segments "npm install a b c --ignore-scripts")
+assert_json_field "$segs" 'length' "1" "T64a one segment"
+assert_json_field "$segs" '.[0].pkgs | length' "3" "T64b 3 pkgs preserved"
+
+# AC6: the 4 real audit.jsonl commands — no junk packages.
+segs=$(sc_parse_command_segments "npx playwright test tests/e2e/pages-plano-de-saude.spec.ts --reporter=line 2>&1 | tail -80")
+assert_eq '["playwright"]' "$(seg_pkg_names "$segs")" "T65 AC6#1 playwright only"
+
+segs=$(sc_parse_command_segments "pip install -e .")
+assert_eq '[]' "$(seg_pkg_names "$segs")" "T66 AC6#2 pip -e . no registry pkg"
+
+segs=$(sc_parse_command_segments "npm install -g @salesforce/cli@2.134.6 --ignore-scripts")
+assert_eq '["@salesforce/cli"]' "$(seg_pkg_names "$segs")" "T67 AC6#3 salesforce cli only"
+
+segs=$(sc_parse_command_segments "npm install -g @salesforce/cli --ignore-scripts 2>&1 | tail -15")
+assert_eq '["@salesforce/cli"]' "$(seg_pkg_names "$segs")" "T68 AC6#4 salesforce cli only (pipe dropped)"
+
+# echo-prefixed: no install segment surfaces a real install package.
+segs=$(sc_parse_command_segments "echo --- && which gradecli")
+assert_eq '[]' "$(seg_pkg_names "$segs")" "T69 AC6 echo/which → no pkg"
+
+# AC7 variants: standalone redirect operator + target file are both dropped.
+segs=$(sc_parse_command_segments "npm install a > out.log --ignore-scripts")
+assert_json_field "$segs" 'length' "1" "T70a redirect op single segment"
+assert_eq '["a"]' "$(seg_pkg_names "$segs")" "T70b out.log not a package"
+
+# 2>/dev/null glued redirect dropped, flag kept
+segs=$(sc_parse_command_segments "npm install a 2>/dev/null --ignore-scripts")
+assert_eq '["a"]' "$(seg_pkg_names "$segs")" "T71a 2>/dev/null dropped"
+assert_json_field "$segs" '.[0].flags | index("--ignore-scripts") != null' "true" "T71b flag kept"
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 echo ""
 echo "PASS=$PASS  FAIL=$FAIL"

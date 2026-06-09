@@ -48,38 +48,76 @@ sc_get_publish_time() {
   esac
 }
 
+# _sc_classify_npm_err <output> — classifica stderr de um `npm view` que falhou
+# nos códigos padrão (PACKAGE_NOT_FOUND/VERSION_NOT_FOUND/NETWORK_ERROR/REGISTRY_5XX).
+_sc_classify_npm_err() {
+  local output="$1"
+  if echo "$output" | grep -qE 'E404|not found|Not found|Not Found'; then
+    # Distinguish package vs version 404 by presence of version in error.
+    if echo "$output" | grep -qE "version.*not (found|in)|No matching version"; then
+      echo "VERSION_NOT_FOUND"
+    else
+      echo "PACKAGE_NOT_FOUND"
+    fi
+  elif echo "$output" | grep -qE 'ETIMEDOUT|ECONNREFUSED|ENOTFOUND|getaddrinfo|network'; then
+    echo "NETWORK_ERROR"
+  elif echo "$output" | grep -qE 'E5[0-9]{2}|server error|Service Unavailable'; then
+    echo "REGISTRY_5XX"
+  else
+    # Unknown failure mode: fail-closed.
+    echo "NETWORK_ERROR"
+  fi
+}
+
 # _sc_fetch_npm_time <pkg> <version> — queries `npm view`.
 _sc_fetch_npm_time() {
   local pkg="$1" version="$2"
   local output rc
 
-  # `npm view <pkg>@<v> time.<v>` returns the ISO timestamp on a single
-  # line. If the version does not exist, npm exits non-zero with stderr
-  # like "code E404" or empty stdout. If the package does not exist, npm
-  # exits non-zero with "code E404" mentioning the pkg name.
-  output=$(npm view "$pkg@$version" "time.$version" 2>&1)
+  # Spec NÃO-concreta (*, latest, ^/~ range, dist-tag) precisa resolver para
+  # versão concreta ANTES do lookup — `time` é indexado por versão exata.
+  # FP real (audit 2026-06): `npx playwright test` → playwright@* →
+  # VERSION_NOT_FOUND → block do comando canônico de teste do harness.
+  if ! printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+    local resolved
+    if [ "$version" = "*" ] || [ "$version" = "latest" ]; then
+      resolved=$(npm view "$pkg" dist-tags.latest 2>&1)
+      rc=$?
+    else
+      resolved=$(npm view "$pkg@$version" version --json 2>&1)
+      rc=$?
+      if [ "$rc" -eq 0 ]; then
+        # --json: array de versões satisfazíveis (última = maior) ou escalar.
+        resolved=$(printf '%s' "$resolved" | jq -r 'if type=="array" then .[-1] else . end' 2>/dev/null)
+      fi
+    fi
+    if [ "$rc" -ne 0 ]; then
+      _sc_classify_npm_err "$resolved" >&2
+      return 1
+    fi
+    resolved=$(printf '%s' "$resolved" | head -1 | tr -d ' \t"')
+    if [ -z "$resolved" ] || [ "$resolved" = "null" ]; then
+      echo "VERSION_NOT_FOUND" >&2
+      return 1
+    fi
+    version="$resolved"
+    # A versão resolvida pode já estar no cache — evita o 2º npm view.
+    local cached
+    if cached=$(sc_cache_get "npm" "$pkg" "$version" 2>/dev/null) && [ -n "$cached" ]; then
+      printf '%s\n' "$cached"
+      return 0
+    fi
+  fi
+
+  # IMPORTANTE: `time.<x.y.z>` é interpretado pelo npm como field-path ANINHADO
+  # (time→x→y→z, os pontos da versão viram descida de chave) e retorna VAZIO
+  # com rc=0 — por isso o cooldown nunca funcionou live: todo lookup concreto
+  # virava VERSION_NOT_FOUND fail-closed. O acesso correto é `time[x.y.z]`.
+  output=$(npm view "$pkg@$version" "time[$version]" 2>&1)
   rc=$?
 
   if [ "$rc" -ne 0 ]; then
-    if echo "$output" | grep -qE 'E404|not found|Not found|Not Found'; then
-      # Distinguish package vs version 404 by presence of version in error.
-      if echo "$output" | grep -qE "version.*not (found|in)|No matching version"; then
-        echo "VERSION_NOT_FOUND" >&2
-      else
-        echo "PACKAGE_NOT_FOUND" >&2
-      fi
-      return 1
-    fi
-    if echo "$output" | grep -qE 'ETIMEDOUT|ECONNREFUSED|ENOTFOUND|getaddrinfo|network'; then
-      echo "NETWORK_ERROR" >&2
-      return 1
-    fi
-    if echo "$output" | grep -qE 'E5[0-9]{2}|server error|Service Unavailable'; then
-      echo "REGISTRY_5XX" >&2
-      return 1
-    fi
-    # Unknown failure mode: fail-closed.
-    echo "NETWORK_ERROR" >&2
+    _sc_classify_npm_err "$output" >&2
     return 1
   fi
 
@@ -98,6 +136,46 @@ _sc_fetch_npm_time() {
 # _sc_fetch_pypi_time <pkg> <version> — queries pypi.org/pypi/<pkg>/<v>/json.
 _sc_fetch_pypi_time() {
   local pkg="$1" version="$2"
+
+  # Spec não-concreta: resolve via packument (URL SEM versão) — .info.version
+  # é a release atual e .urls[0].upload_time já é o publish-time dela (evita
+  # um segundo fetch). Mesma classe de FP do npm spec '*'.
+  if [ -z "$version" ] || [ "$version" = "*" ] || [ "$version" = "latest" ]; then
+    local ptmp pcode pbody
+    ptmp=$(mktemp)
+    pcode=$(curl -sS -o "$ptmp" -w "%{http_code}" --max-time 10 "https://pypi.org/pypi/${pkg}/json" 2>/dev/null) || {
+      rm -f "$ptmp"
+      echo "NETWORK_ERROR" >&2
+      return 1
+    }
+    pbody=$(cat "$ptmp")
+    rm -f "$ptmp"
+    case "$pcode" in
+      200) : ;;
+      404) echo "PACKAGE_NOT_FOUND" >&2; return 1 ;;
+      5*)  echo "REGISTRY_5XX" >&2; return 1 ;;
+      *)   echo "NETWORK_ERROR" >&2; return 1 ;;
+    esac
+    version=$(printf '%s' "$pbody" | jq -r '.info.version // empty' 2>/dev/null)
+    if [ -z "$version" ]; then
+      echo "VERSION_NOT_FOUND" >&2
+      return 1
+    fi
+    local cached
+    if cached=$(sc_cache_get "pypi" "$pkg" "$version" 2>/dev/null) && [ -n "$cached" ]; then
+      printf '%s\n' "$cached"
+      return 0
+    fi
+    local iso
+    iso=$(printf '%s' "$pbody" | jq -r '(.urls // [])[0].upload_time // empty' 2>/dev/null)
+    if [ -n "$iso" ] && echo "$iso" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'; then
+      sc_cache_put "pypi" "$pkg" "$version" "$iso" 2>/dev/null
+      printf '%s\n' "$iso"
+      return 0
+    fi
+    # Packument sem .urls (raro): cai no fetch versionado normal abaixo.
+  fi
+
   local url="https://pypi.org/pypi/${pkg}/${version}/json"
   local body http_code
 

@@ -19,11 +19,19 @@ assert_contains() { case "$1" in *"$2"*) _pass;; *) _fail "$3 :: needle '$2' not
 assert_not_contains() { case "$1" in *"$2"*) _fail "$3 :: needle '$2' should NOT appear";; *) _pass;; esac; }
 assert_lt() { [ "$1" -lt "$2" ] && _pass || _fail "$3 :: $1 not < $2"; }
 
+# Portable "N days ago" ISO timestamp (BSD or GNU date) — keeps the "fresh"
+# fixtures inside the 14-day cooldown regardless of wall-clock date.
+_days_ago_iso() {
+  date -u -v-"$1"d +"$2" 2>/dev/null || date -u -d "$1 days ago" +"$2"
+}
+
 WORKSPACE=$(mktemp -d)
 trap 'rm -rf "$WORKSPACE"' EXIT
 export SC_CACHE_DIR="$WORKSPACE/cache"
 export SC_AUDIT_LOG="$WORKSPACE/audit.jsonl"
 export SC_LIB_DIR="$LIB_DIR"
+export SC_FRESH_TIME="$(_days_ago_iso 2 %Y-%m-%dT%H:%M:%S.000Z)"   # npm fresh
+export SC_FRESH_TIME_PYPI="$(_days_ago_iso 2 %Y-%m-%dT%H:%M:%S)"   # PyPI fresh
 
 MOCK_DIR="$WORKSPACE/mocks"
 mkdir -p "$MOCK_DIR"
@@ -32,15 +40,21 @@ mkdir -p "$MOCK_DIR"
 cat > "$MOCK_DIR/npm" <<'MOCKEOF'
 #!/usr/bin/env bash
 if [ "$1" = "view" ]; then
-  PKGV="$2"
-  case "$PKGV" in
-    "lodash@4.17.21")       echo "2021-02-20T19:48:09.270Z"; exit 0 ;;
-    "express@4.18.0")       echo "2022-04-25T15:00:00.000Z"; exit 0 ;;
-    "react@18.0.0")         echo "2022-03-29T18:00:00.000Z"; exit 0 ;;
-    "fresh-evil@1.0.0")     echo "2026-05-13T00:00:00.000Z"; exit 0 ;;
-    "fresh-evil@latest")    echo "2026-05-13T00:00:00.000Z"; exit 0 ;;
-    "stable@1.0.0")         echo "2024-01-15T10:00:00.000Z"; exit 0 ;;
-    "stable@latest")        echo "2024-01-15T10:00:00.000Z"; exit 0 ;;
+  PKGV="$2"; FIELD="${3:-}"
+  # npm REAL: field-path com pontos (time.X.Y.Z) desce chaves inexistentes →
+  # stdout vazio + rc=0; o acesso correto é bracket time[X.Y.Z]; dist-tags
+  # resolvem via `view <pkg> dist-tags.latest` (fix do code review Fase 5.5).
+  case "$FIELD" in
+    time.*) exit 0 ;;
+  esac
+  case "$PKGV:$FIELD" in
+    "lodash@4.17.21:time[4.17.21]") echo "2021-02-20T19:48:09.270Z"; exit 0 ;;
+    "express@4.18.0:time[4.18.0]")  echo "2022-04-25T15:00:00.000Z"; exit 0 ;;
+    "react@18.0.0:time[18.0.0]")    echo "2022-03-29T18:00:00.000Z"; exit 0 ;;
+    "fresh-evil@1.0.0:time[1.0.0]") echo "$SC_FRESH_TIME"; exit 0 ;;
+    "stable@1.0.0:time[1.0.0]")     echo "2024-01-15T10:00:00.000Z"; exit 0 ;;
+    "stable:dist-tags.latest")      echo "1.0.0"; exit 0 ;;
+    "fresh-evil:dist-tags.latest")  echo "1.0.0"; exit 0 ;;
     *)
       echo "npm ERR! code E404" >&2; exit 1 ;;
   esac
@@ -99,7 +113,7 @@ case "$URL" in
     echo "200"; exit 0 ;;
   *pypi.org/pypi/graphifyy/0.99.99/json)
     # Fresh PyPI pkg
-    echo '{"urls":[{"upload_time":"2026-05-13T00:00:00"}]}' > "$OUT"
+    echo "{\"urls\":[{\"upload_time\":\"$SC_FRESH_TIME_PYPI\"}]}" > "$OUT"
     echo "200"; exit 0 ;;
   *) echo "" > "$OUT"; echo "404"; exit 0 ;;
 esac

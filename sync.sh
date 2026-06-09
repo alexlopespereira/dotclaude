@@ -102,23 +102,29 @@ detect_stale_backup() {
     return 0
 }
 
-# _register_hook <EVENT> <SUFFIX> <CMD> — garante (idempotente) que um hook está
-# registrado em $CLAUDE_DIR/settings.json sob hooks.<EVENT>. SUFFIX é o sufixo do
-# command usado pra detectar registro prévio (no-op se já existe). Registrar no
-# install (e não por edit manual de host) faz o gatilho ser reproduzível em
-# qualquer máquina — sem isso o script existe em ~/.claude/hooks/ mas nunca
-# dispara. Best-effort: nunca derruba o install — settings.json inválido / sem
-# python3 retorna não-zero (o chamador só emite aviso). Retorna 0 em sucesso.
+# _register_hook <EVENT> <SUFFIX> <CMD> [MATCHER] [TIMEOUT] — garante (idempotente)
+# que um hook está registrado em $CLAUDE_DIR/settings.json sob hooks.<EVENT>.
+# SUFFIX é o sufixo do command usado pra detectar registro prévio (no-op se já
+# existe, mesmo em path absoluto diferente). MATCHER (opcional, default "") seleciona
+# o grupo: a entry é anexada ao grupo cujo matcher é EXATAMENTE igual; se nenhum
+# existe, um grupo novo com esse matcher é criado. TIMEOUT (opcional) vira o campo
+# `timeout` (ms) da entry. Registrar no install (e não por edit manual de host) faz
+# o gatilho ser reproduzível em qualquer máquina — sem isso o script existe em
+# ~/.claude/hooks/ mas nunca dispara. Best-effort: nunca derruba o install —
+# settings.json inválido / sem python3 retorna não-zero (o chamador só emite aviso).
 _register_hook() {
-    local event="$1" suffix="$2" cmd="$3"
+    local event="$1" suffix="$2" cmd="$3" matcher="${4:-}" timeout="${5:-}"
     local settings="$CLAUDE_DIR/settings.json"
-    SETTINGS_PATH="$settings" HOOK_EVENT="$event" HOOK_SUFFIX="$suffix" HOOK_CMD="$cmd" python3 - <<'PY'
+    SETTINGS_PATH="$settings" HOOK_EVENT="$event" HOOK_SUFFIX="$suffix" HOOK_CMD="$cmd" \
+    HOOK_MATCHER="$matcher" HOOK_TIMEOUT="$timeout" python3 - <<'PY'
 import json, os, sys
 
 path = os.environ["SETTINGS_PATH"]
 event = os.environ["HOOK_EVENT"]
 suffix = os.environ["HOOK_SUFFIX"]
 cmd = os.environ["HOOK_CMD"]
+matcher = os.environ.get("HOOK_MATCHER", "")
+timeout = os.environ.get("HOOK_TIMEOUT", "")
 
 try:
     with open(path) as fh:
@@ -139,12 +145,14 @@ for group in groups:
             sys.exit(0)  # já registrado → no-op idempotente (não reescreve)
 
 entry = {"type": "command", "command": cmd}
+if timeout:
+    entry["timeout"] = int(timeout)
 for group in groups:
-    if group.get("matcher", "") == "":
+    if group.get("matcher", "") == matcher:
         group.setdefault("hooks", []).append(entry)
         break
 else:
-    groups.append({"matcher": "", "hooks": [entry]})
+    groups.append({"matcher": matcher, "hooks": [entry]})
 
 tmp = path + ".tmp"
 with open(tmp, "w") as fh:
@@ -181,6 +189,20 @@ register_session_start_hook() {
         echo "  ✓ SessionStart hook (auto-install) registrado em settings.json"
     else
         echo "  ⚠ settings.json: registro do SessionStart hook pulado (JSON inválido / python3 ausente)" >&2
+    fi
+}
+
+# Registra o PostToolUse hook verify-before-handoff-guard (Princípio 14 / US-02).
+# Reverte a decisão MACHINE-LOCAL (Finding #4): o registro manual por máquina
+# falhou empiricamente em 2 de 3 máquinas, então agora viaja no install — matcher
+# 'Bash|mcp__.*' (Bash + tools MCP; o script faz a classificação fina) e timeout
+# 5000ms. O command usa $CLAUDE_DIR → portável entre /Users (macOS) e /home (VMs).
+register_verify_handoff_hook() {
+    if _register_hook "PostToolUse" "hooks/verify-before-handoff-guard.sh" \
+            "$CLAUDE_DIR/hooks/verify-before-handoff-guard.sh" "Bash|mcp__.*" "5000"; then
+        echo "  ✓ PostToolUse hook (verify-before-handoff) registrado em settings.json"
+    else
+        echo "  ⚠ settings.json: registro do verify-before-handoff hook pulado (JSON inválido / python3 ausente)" >&2
     fi
 }
 
@@ -235,6 +257,7 @@ sync_to_claude() {
     register_dod_usage_hook
     register_stop_hook
     register_session_start_hook
+    register_verify_handoff_hook
     echo "=== Instalação concluída ==="
 }
 

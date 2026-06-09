@@ -99,5 +99,7 @@ artefato-realizado como piso, em vez de exigir a cadeia completa em todo caso.
 ## Deploy / propagação
 
 Esta skill vive no repo `dotclaude` (fonte versionada) e propaga para `~/.claude/skills/` via
-`sync.sh install`. O **registro** do hook companheiro em `~/.claude/settings.json` é
-**machine-local** (não viaja no sync) — VMs registram à mão pós-`sync.sh install` (Finding #4).
+`sync.sh install`. O **registro** do hook companheiro em `~/.claude/settings.json` também é feito
+pelo `sync.sh install` (`register_verify_handoff_hook`, matcher `Bash|mcp__.*`, timeout 5000ms,
+command com `$CLAUDE_DIR` portável /Users↔/home) — US-02 reverteu a decisão machine-local de
+registro manual (Finding #4), que falhou empiricamente em 2 de 3 máquinas.

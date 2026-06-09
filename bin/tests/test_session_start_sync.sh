@@ -167,6 +167,164 @@ sys.exit(0 if ok else 1)
 PY
 then _pass; else _fail "REG install preservou hook pré-existente E adicionou o novo"; fi
 
+# ═══ AC1 (US-02) B2 — dirt SÓ em telemetry/ (staged + untracked) → instala ════
+# Gate telemetry-exempt: o Stop hook deixa telemetry/ suja, mas isso NÃO é drift
+# de source → o hook deve rodar install mesmo assim.
+REPOB2="$TMP/b2/repo"; HOMEB2="$TMP/b2/home"
+mkrepo "$REPOB2"; mkclaude "$HOMEB2"
+mkdir -p "$REPOB2/telemetry"
+printf 'untracked\n' > "$REPOB2/telemetry/untrk.log"      # untracked telemetry dirt
+printf 'staged\n'    > "$REPOB2/telemetry/staged.log"
+git -C "$REPOB2" add "telemetry/staged.log"               # staged telemetry dirt
+ERRB2="$(run_hook "$REPOB2" "$HOMEB2")"; RCB2=$?
+assert_rc "$RCB2" 0 "B2 hook exit 0"
+assert_file "$HOMEB2/CLAUDE.md"          "B2 install RODOU (dirt só em telemetry/ é isento)"
+assert_file "$HOMEB2/commands/newcmd.md" "B2 install propagou commands/ (telemetry isento)"
+
+# ═══ AC2 (US-02) B3 — dirt em telemetry/ E fora → NÃO instala; drift só fora ══
+REPOB3="$TMP/b3/repo"; HOMEB3="$TMP/b3/home"
+mkrepo "$REPOB3"; mkclaude "$HOMEB3"
+mkdir -p "$REPOB3/telemetry"
+printf 'tel\n' > "$REPOB3/telemetry/untrk.log"            # dirt em telemetry/ (isento)
+printf 'src\n' > "$REPOB3/outside.txt"                    # dirt FORA (único contado)
+ERRB3="$(run_hook "$REPOB3" "$HOMEB3")"; RCB3=$?
+assert_rc "$RCB3" 0 "B3 hook exit 0"
+assert_nofile "$HOMEB3/CLAUDE.md" "B3 install NÃO rodou (dirt fora de telemetry/)"
+assert_grep "$ERRB3" "drift"      "B3 avisa drift no stderr"
+assert_grep "$ERRB3" "1 item"     "B3 drift conta SÓ o dirt fora de telemetry/ (1 item)"
+
+# ── Helper: monta um checkout com remote bare local (p/ testar auto-pull). ────
+# Cria $base/bare.git (remote), $base/seed (origem dos commits) e $base/repo
+# (o checkout dotclaude que o hook vê). repo fica 1 commit ATRÁS do bare.
+mkrepo_remote() {
+  local base="$1"
+  local bare="$base/bare.git" seed="$base/seed" repo="$base/repo"
+  git init -q --bare "$bare"
+  mkdir -p "$seed/commands" "$seed/hooks"
+  cp "$SYNC_SRC" "$seed/sync.sh"; chmod +x "$seed/sync.sh"
+  cp "$HOOK" "$seed/hooks/session-start-sync.sh"
+  printf 'PRE-PULL\n'    > "$seed/CLAUDE.md"
+  printf 'NEW-WORKFLOW\n' > "$seed/WORKFLOW.md"
+  printf 'newcmd\n'      > "$seed/commands/newcmd.md"
+  git -C "$seed" init -q
+  git -C "$seed" symbolic-ref HEAD refs/heads/main
+  git -C "$seed" config user.email t@example.com
+  git -C "$seed" config user.name test
+  git -C "$seed" config commit.gpgsign false
+  git -C "$seed" add -A
+  git -C "$seed" commit -q -m init
+  git -C "$seed" remote add origin "$bare"
+  git -C "$seed" push -q origin main
+  git clone -q "$bare" "$repo"
+  git -C "$repo" config user.email t@example.com
+  git -C "$repo" config user.name test
+  git -C "$repo" config commit.gpgsign false
+}
+# Avança o bare 1 commit (CLAUDE.md → POST-PULL), deixando repo atrás.
+advance_remote() {
+  local seed="$1/seed"
+  printf 'POST-PULL\n' > "$seed/CLAUDE.md"
+  git -C "$seed" add -A
+  git -C "$seed" commit -q -m c2
+  git -C "$seed" push -q origin main
+}
+
+# ═══ AC3 (US-02) — SEM opt-in → nenhum pull (HEAD do clone não avança) ════════
+P3="$TMP/p3"; mkrepo_remote "$P3"; advance_remote "$P3"; mkclaude "$P3/home"
+HEAD_B3=$(git -C "$P3/repo" rev-parse HEAD)
+echo '{}' | DOTCLAUDE_REPO="$P3/repo" SYNC_CLAUDE_HOME="$P3/home" bash "$HOOK" >/dev/null 2>&1
+RC=$?; HEAD_A3=$(git -C "$P3/repo" rev-parse HEAD)
+assert_rc "$RC" 0 "AC3 hook exit 0 sem opt-in"
+assert_eq "$HEAD_A3" "$HEAD_B3" "AC3 sem opt-in NÃO faz pull (HEAD inalterado)"
+assert_file "$P3/home/CLAUDE.md" "AC3 install rodou (gate seguro), só sem pull"
+
+# ═══ AC4 (US-02) — opt-in via ENV → pull --ff-only avança HEAD; install pós-pull
+P4E="$TMP/p4e"; mkrepo_remote "$P4E"; advance_remote "$P4E"; mkclaude "$P4E/home"
+HEAD_B4E=$(git -C "$P4E/repo" rev-parse HEAD)
+echo '{}' | DOTCLAUDE_AUTO_PULL=1 DOTCLAUDE_REPO="$P4E/repo" SYNC_CLAUDE_HOME="$P4E/home" bash "$HOOK" >/dev/null 2>&1
+RC=$?; HEAD_A4E=$(git -C "$P4E/repo" rev-parse HEAD)
+assert_rc "$RC" 0 "AC4-env hook exit 0"
+[ "$HEAD_A4E" != "$HEAD_B4E" ] && _pass || _fail "AC4-env pull avançou HEAD do clone"
+assert_eq "$(cat "$P4E/home/CLAUDE.md")" "POST-PULL" "AC4-env install rodou com conteúdo PÓS-pull"
+
+# ═══ AC4 (US-02) — opt-in via MARCADOR .vm-profile → idem ═════════════════════
+P4M="$TMP/p4m"; mkrepo_remote "$P4M"; advance_remote "$P4M"; mkclaude "$P4M/home"
+touch "$P4M/home/.vm-profile"                              # marcador na base ~/.claude
+HEAD_B4M=$(git -C "$P4M/repo" rev-parse HEAD)
+echo '{}' | DOTCLAUDE_REPO="$P4M/repo" SYNC_CLAUDE_HOME="$P4M/home" bash "$HOOK" >/dev/null 2>&1
+RC=$?; HEAD_A4M=$(git -C "$P4M/repo" rev-parse HEAD)
+assert_rc "$RC" 0 "AC4-marker hook exit 0"
+[ "$HEAD_A4M" != "$HEAD_B4M" ] && _pass || _fail "AC4-marker pull avançou HEAD do clone"
+assert_eq "$(cat "$P4M/home/CLAUDE.md")" "POST-PULL" "AC4-marker install rodou com conteúdo PÓS-pull"
+
+# ═══ AC5 (US-02) — pull FALHA (non-ff) → aviso stderr, exit 0, install local ══
+P5="$TMP/p5"; mkrepo_remote "$P5"; advance_remote "$P5"; mkclaude "$P5/home"
+printf 'LOCAL\n' > "$P5/repo/localfile.txt"               # commit local divergente
+git -C "$P5/repo" add -A; git -C "$P5/repo" commit -q -m localdivergent
+HEAD_B5=$(git -C "$P5/repo" rev-parse HEAD)
+ERR5="$(echo '{}' | DOTCLAUDE_AUTO_PULL=1 DOTCLAUDE_REPO="$P5/repo" SYNC_CLAUDE_HOME="$P5/home" bash "$HOOK" 2>&1 >/dev/null)"
+RC=$?; HEAD_A5=$(git -C "$P5/repo" rev-parse HEAD)
+assert_rc "$RC" 0 "AC5 pull falho NÃO aborta o hook (exit 0)"
+assert_eq "$HEAD_A5" "$HEAD_B5" "AC5 pull non-ff falhou (HEAD inalterado)"
+assert_grep "$ERR5" "pull" "AC5 aviso de pull no stderr"
+assert_eq "$(cat "$P5/home/CLAUDE.md")" "PRE-PULL" "AC5 install prosseguiu do estado LOCAL"
+
+# ═══ AC6/AC7 (US-02) — _register_hook matcher+timeout → PostToolUse c/ CLAUDE_DIR
+# Conta hooks PostToolUse cujo command termina no sufixo do guard.
+pt_verify_count() {
+  python3 - "$1" <<'PY'
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    print(-1); sys.exit(0)
+n = sum(1 for g in d.get("hooks", {}).get("PostToolUse", [])
+        for h in g.get("hooks", [])
+        if str(h.get("command", "")).endswith("hooks/verify-before-handoff-guard.sh"))
+print(n)
+PY
+}
+
+# AC6/AC7 caso 1: settings fresco → cria entry {type,command,timeout} sob matcher
+# exato 'Bash|mcp__.*', command usando CLAUDE_DIR do sandbox (sem /Users/).
+VR="$TMP/vh/repo"; VH="$TMP/vh/home"
+mkrepo "$VR"; mkclaude "$VH"
+SYNC_CLAUDE_HOME="$VH" bash "$VR/sync.sh" install >/dev/null 2>&1
+assert_eq "$(pt_verify_count "$VH/settings.json")" "1" \
+  "AC6 install registra verify-before-handoff sob PostToolUse"
+if python3 - "$VH/settings.json" "$VH" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); home = sys.argv[2]
+found = False
+for g in d.get("hooks", {}).get("PostToolUse", []):
+    for h in g.get("hooks", []):
+        c = str(h.get("command", ""))
+        if c.endswith("hooks/verify-before-handoff-guard.sh"):
+            assert g.get("matcher") == "Bash|mcp__.*", "matcher exato"
+            assert h.get("type") == "command", "type command"
+            assert h.get("timeout") == 5000, "timeout 5000"
+            assert "/Users/" not in c, "sem /Users hardcoded"
+            assert c.startswith(home), "usa CLAUDE_DIR do sandbox"
+            found = True
+sys.exit(0 if found else 1)
+PY
+then _pass; else _fail "AC7 entry PostToolUse: matcher 'Bash|mcp__.*' + timeout 5000 + CLAUDE_DIR sandbox"; fi
+
+# Idempotência: 2º install não duplica
+SYNC_CLAUDE_HOME="$VH" bash "$VR/sync.sh" install >/dev/null 2>&1
+assert_eq "$(pt_verify_count "$VH/settings.json")" "1" \
+  "AC6 install idempotente (PostToolUse não duplicado no 2º run)"
+
+# AC6 caso 2: registro pré-existente de MESMO sufixo (path absoluto diferente) →
+# no-op sem duplicata.
+VR2="$TMP/vh2/repo"; VH2="$TMP/vh2/home"
+mkrepo "$VR2"; mkclaude "$VH2"
+printf '%s\n' '{"hooks":{"PostToolUse":[{"matcher":"Bash|mcp__.*","hooks":[{"type":"command","command":"/other/path/hooks/verify-before-handoff-guard.sh","timeout":5000}]}]}}' \
+  > "$VH2/settings.json"
+SYNC_CLAUDE_HOME="$VH2" bash "$VR2/sync.sh" install >/dev/null 2>&1
+assert_eq "$(pt_verify_count "$VH2/settings.json")" "1" \
+  "AC6 pré-existente mesmo sufixo (path diferente) é no-op sem duplicata"
+
 # ═══ Summary ═════════════════════════════════════════════════════════════════
 TOTAL=$((PASS + FAIL))
 echo ""
