@@ -212,6 +212,7 @@ run_doctor() {
   VM_DOCTOR_SUDO="$TMP/false-sudo.sh" \
   VM_DOCTOR_FIXTURES="$FX" \
   VM_DOCTOR_CALLLOG="$calllog" \
+  VM_DOCTOR_FIX_ROOTS="/nonexistent" \
     bash "$DOCTOR" "$@"
 }
 
@@ -278,6 +279,28 @@ assert_eq "$ORPHAN_REASON" "" "AC3f pipewire sem motivo de órfã"
 parse_show < "$FX/user.show.spaced.service"; classify_unit
 assert_eq "$P_ExecStartPath" "$SPACED_BIN" "AC3g path com espaço preservado inteiro"
 assert_eq "$IS_ORPHAN" "0" "AC3h unit com path-com-espaço existente NÃO é órfã"
+
+# Prefixos especiais do systemd no WD (regressão live: GNOME app-*@autostart
+# com WorkingDirectory=!/home/dev virava falso órfão nas 2 VMs):
+printf 'Names=gnomeish.service\nLoadState=loaded\nActiveState=active\nSubState=running\nWorkingDirectory=!%s\nNRestarts=0\nUnitFileState=generated\n' "$EXIST_DIR" > "$FX/user.show.gnomeish.service"
+parse_show < "$FX/user.show.gnomeish.service"; classify_unit
+assert_eq "$IS_ORPHAN" "0" "AC3i WD com prefixo '!' + dir existente NÃO é órfã"
+
+printf 'Names=dashwd.service\nLoadState=loaded\nActiveState=active\nSubState=running\nWorkingDirectory=-/nonexistent/tolerado\nNRestarts=0\nUnitFileState=enabled\n' > "$FX/user.show.dashwd.service"
+parse_show < "$FX/user.show.dashwd.service"; classify_unit
+assert_eq "$IS_ORPHAN" "0" "AC3j WD com prefixo '-' (missing tolerado) NÃO é critério"
+
+# Mas '!' com path realmente deletado CONTINUA órfã (strip não cega o check):
+printf 'Names=bangone.service\nLoadState=loaded\nActiveState=failed\nSubState=failed\nWorkingDirectory=!%s\nNRestarts=0\nUnitFileState=enabled\n' "$GONE_DIR" > "$FX/user.show.bangone.service"
+parse_show < "$FX/user.show.bangone.service"; classify_unit
+assert_eq "$IS_ORPHAN" "1" "AC3k WD '!'+path deletado continua órfã"
+
+# ExecStart RELATIVO (regressão live: systemd-tmpfiles, udevadm, find, sh —
+# systemd resolve via search-path interno; testar contra cwd marcava dezenas
+# de units core como órfãs nas 2 VMs):
+printf 'Names=relexec.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\nWorkingDirectory=\nNRestarts=0\nExecStart={ path=find ; argv[]=find /tmp -type f ; ignore_errors=no }\nUnitFileState=static\n' > "$FX/user.show.relexec.service"
+parse_show < "$FX/user.show.relexec.service"; classify_unit
+assert_eq "$IS_ORPHAN" "0" "AC3l ExecStart relativo (find) NÃO é critério de órfã"
 
 # ── AC4: static órfã detectada via list-unit-files (subprocess full-run) ─────
 LOG="$TMP/log.ac4"
@@ -361,6 +384,7 @@ LOG="$TMP/log.ac6sys"
 : > "$LOG"
 ERR=$(VM_DOCTOR_SYSTEMCTL="$STUB" VM_DOCTOR_JOURNALCTL="$JSTUB" \
       VM_DOCTOR_SUDO="$TMP/false-sudo.sh" VM_DOCTOR_FIXTURES="$FXSYS" \
+      VM_DOCTOR_FIX_ROOTS="/nonexistent" \
       VM_DOCTOR_CALLLOG="$LOG" bash "$DOCTOR" --fix 2>&1 >/dev/null)
 rc=$?
 assert_rc "$rc" "0" "AC6c --fix sem sudo em órfã system: exit 0 (sem erro fatal)"
@@ -383,6 +407,49 @@ assert_grep "$OUT" "Journal disk usage" "AC7a seção journal presente"
 assert_grep "$OUT" "1.4G" "AC7b disk-usage do user reportado"
 assert_grep "$OUT" "vacuum-size" "AC7c vacuum SUGERIDO"
 assert_nogrep "$(cat "$LOG")" "vacuum" "AC7d vacuum NÃO executado (ausente do call-log)"
+
+# ── --fix NÃO muta unit órfã com UnitFileState não-persistente (generated) ───
+# Units generated vivem em /run (recriadas a cada boot) — stop/disable/mask é
+# inócuo ou nocivo. Fixtures isoladas: 1 órfã generated, user scope.
+FXGEN="$TMP/fixtures-gen"; mkdir -p "$FXGEN"
+printf 'orphan-gen.service loaded failed failed Orphan Generated\n' > "$FXGEN/user.list-units"
+: > "$FXGEN/user.list-unit-files"
+printf 'Names=orphan-gen.service\nLoadState=loaded\nActiveState=failed\nSubState=failed\nWorkingDirectory=%s\nNRestarts=0\nUnitFileState=generated\n' "$GONE_DIR" > "$FXGEN/user.show.orphan-gen.service"
+LOG="$TMP/log.gen"
+: > "$LOG"
+ERR=$(VM_DOCTOR_SYSTEMCTL="$STUB" VM_DOCTOR_JOURNALCTL="$JSTUB" \
+      VM_DOCTOR_SUDO="$TMP/false-sudo.sh" VM_DOCTOR_FIXTURES="$FXGEN" \
+      VM_DOCTOR_FIX_ROOTS="/nonexistent" \
+      VM_DOCTOR_CALLLOG="$LOG" bash "$DOCTOR" --fix 2>&1 >/dev/null)
+assert_grep "$ERR" "orphan-gen.service.*não-persistente.*report-only" "GEN-a aviso de skip p/ generated"
+assert_nogrep "$(cat "$LOG")" "(stop|disable|mask) orphan-gen.service" "GEN-b generated órfã NÃO sofre mutação"
+
+# ── FIX_ROOTS: órfã com path fora dos roots (unit de OS) é report-only ───────
+# Sem o guard, --fix com sudo mascararia systemd-tmpfiles/quotaon (visto live).
+FXOS="$TMP/fixtures-os"; mkdir -p "$FXOS"
+printf 'quotaonish.service loaded inactive dead Quota-ish\n' > "$FXOS/user.list-units"
+: > "$FXOS/user.list-unit-files"
+printf 'Names=quotaonish.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\nWorkingDirectory=\nNRestarts=0\nExecStart={ path=/nonexistent/usr-sbin/quotaon ; argv[]=/nonexistent/usr-sbin/quotaon -a ; ignore_errors=no }\nUnitFileState=static\n' > "$FXOS/user.show.quotaonish.service"
+LOG="$TMP/log.os"
+: > "$LOG"
+OUT=$(VM_DOCTOR_SYSTEMCTL="$STUB" VM_DOCTOR_JOURNALCTL="$JSTUB" \
+      VM_DOCTOR_SUDO="$TMP/false-sudo.sh" VM_DOCTOR_FIXTURES="$FXOS" \
+      VM_DOCTOR_FIX_ROOTS="/home /root" \
+      VM_DOCTOR_CALLLOG="$LOG" bash "$DOCTOR" --fix 2>&1)
+assert_grep "$OUT" 'quotaonish.service.*fora do escopo' "ROOTS-a órfã fora dos roots marcada no report"
+assert_nogrep "$(cat "$LOG")" "(stop|disable|mask) quotaonish.service" "ROOTS-b órfã fora dos roots NÃO sofre mutação"
+
+# ── STDIN mode: `ssh vm 'bash -s' < vm-doctor.sh` (uso documentado) ──────────
+# Regressão real: BASH_SOURCE[0] é unset via stdin e o guard com set -u quebrava
+# com "unbound variable" nas duas VMs.
+LOG="$TMP/log.stdin"
+: > "$LOG"
+OUT=$(VM_DOCTOR_SYSTEMCTL="$STUB" VM_DOCTOR_JOURNALCTL="$JSTUB" \
+      VM_DOCTOR_SUDO="$TMP/false-sudo.sh" VM_DOCTOR_FIXTURES="$FX" \
+      VM_DOCTOR_CALLLOG="$LOG" bash -s < "$DOCTOR" 2>/dev/null)
+rc=$?
+assert_rc "$rc" "0" "STDIN-a execução via 'bash -s <' funciona (exit 0)"
+assert_grep "$OUT" "vm-doctor: scan" "STDIN-b main rodou via stdin (report presente)"
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
