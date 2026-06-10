@@ -56,5 +56,9 @@ done
 
 # -Y: X11 forwarding confiável · -t: força pseudo-tty (Claude é interativo)
 # bash -lc: login shell remoto garante claude (~/.local/bin) no PATH
+# LC_ALL=en_US.UTF-8: o Mac faz SendEnv LANG LC_* e manda LC_CTYPE=pt_BR.UTF-8
+# (locale do host), mas a VM NÃO tem pt_BR.UTF-8 gerado → glibc cai pra ASCII
+# (ANSI_X3.4-1968) e corrompe acentuação PT-BR (ç vira mojibake). LC_ALL tem
+# precedência sobre o LC_CTYPE herdado e força UTF-8. Mesmo fix do claude-sessions.sh.
 exec ssh -Y -t -o ServerAliveInterval=60 "${VM_USER}@${VM_IP}" \
-    "bash -lc 'cd \"${REMOTE_DIR}\" || { echo \"❌ slot inexistente: ${REMOTE_DIR}\"; exit 1; }; exec claude --dangerously-skip-permissions'"
+    "bash -lc 'export LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8; cd \"${REMOTE_DIR}\" || { echo \"❌ slot inexistente: ${REMOTE_DIR}\"; exit 1; }; exec claude --dangerously-skip-permissions'"

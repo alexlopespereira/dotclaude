@@ -53,5 +53,7 @@ done
 
 # -Y: X11 forwarding confiável · -t: força pseudo-tty (Claude é interativo)
 # bash -lc: login shell remoto garante claude (~/.local/bin) no PATH
+# Locale: a VM1 tem LANG=pt_BR.UTF-8 no /etc/default/locale (via update-locale) e
+# pt_BR.UTF-8 gerado, então o shell remoto já resolve UTF-8 + pt-BR nativo sem forçar.
 exec ssh -Y -t -o ServerAliveInterval=60 "${VM_USER}@${VM_IP}" \
     "bash -lc 'cd \"${REMOTE_DIR}\" || { echo \"❌ slot inexistente: ${REMOTE_DIR}\"; exit 1; }; exec claude --dangerously-skip-permissions'"
