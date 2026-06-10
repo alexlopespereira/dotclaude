@@ -200,6 +200,11 @@ mkrepo_remote() {
   local base="$1"
   local bare="$base/bare.git" seed="$base/seed" repo="$base/repo"
   git init -q --bare "$bare"
+  # HEAD do bare → main ANTES do push: sem isso, em máquina sem
+  # init.defaultBranch global (ex.: runner de CI) o HEAD default (master)
+  # aponta pra ref inexistente após o push de main e o clone vem vazio
+  # ("remote HEAD refers to nonexistent ref").
+  git -C "$bare" symbolic-ref HEAD refs/heads/main
   mkdir -p "$seed/commands" "$seed/hooks"
   cp "$SYNC_SRC" "$seed/sync.sh"; chmod +x "$seed/sync.sh"
   cp "$HOOK" "$seed/hooks/session-start-sync.sh"

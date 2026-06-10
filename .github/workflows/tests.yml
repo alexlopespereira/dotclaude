@@ -1,0 +1,22 @@
+# tests.yml — roda a suíte bin/tests/ em cada PR e push na main.
+#
+# Runner macOS de propósito: as suítes (30 arquivos) usam idioms BSD
+# (`stat -f %m`, `date -v-40d`, `touch -t`) e os hooks sob teste rodam
+# primariamente no laptop macOS. Repo público → minutos macOS sem custo.
+# Fecha o dod_gap recorrente apontado pelos baselines /reflect: a suíte
+# só rodava localmente (Fase 6 dos ciclos), nunca no CI.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  bin-tests:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run bin/tests suite
+        run: bash bin/tests/run-all.sh
