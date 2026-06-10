@@ -267,7 +267,7 @@ Quando Claude operar num novo domínio (eTLD+1), adicionar uma linha aqui com da
 ## Referência rápida
 
 - Princípio 12 — `CLAUDE.md` (escada CLI > MCP > API > Playwright MCP).
-- Hook de blocklist — `~/.claude/hooks/block-browser-mutations.sh`.
+- Hook de blocklist — `~/.claude/hooks/block-browser-mutations.sh`. Allowlist por sessão para e2e em ambiente de teste: `BBM_ALLOW_TRIGGERS="comprar,pay"` (case-insensitive, trim) remove só esses termos; demais triggers seguem ativos.
 - Lockfile per-slot — `~/.claude/chrome-profile-<slot>/.lock`.
 - Perfis per-slot — `~/.claude/chrome-profile-<slot>/` (`<slot>` resolvido em runtime).
 - Wrapper — `~/.claude/skills/browser-actions/wrapper-launch.sh`.

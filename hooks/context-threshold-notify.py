@@ -10,13 +10,41 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 THRESHOLD = 128_000
 FLAG_DIR = Path.home() / ".claude" / "cache" / "context-notify"
 
 
+def _gc(dirpath: Path) -> None:
+    """GC diário: flags >30d são removidas (195 arquivos observados sem limpeza).
+
+    Marcador .last-gc evita varrer a cada Stop (custo típico = 1 stat); o
+    marcador nunca se auto-apaga. Fail-open: qualquer erro vira no-op.
+    """
+    try:
+        if not dirpath.is_dir():
+            return
+        mark = dirpath / ".last-gc"
+        now = time.time()
+        if mark.exists() and now - mark.stat().st_mtime < 86400:
+            return
+        for p in dirpath.iterdir():
+            if p.name == ".last-gc" or not p.is_file():
+                continue
+            try:
+                if now - p.stat().st_mtime > 30 * 86400:
+                    p.unlink()
+            except Exception:
+                pass
+        mark.touch()
+    except Exception:
+        pass
+
+
 def main() -> int:
+    _gc(FLAG_DIR)
     try:
         payload = json.load(sys.stdin)
     except Exception:

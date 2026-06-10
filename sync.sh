@@ -13,6 +13,9 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Seam de teste: SYNC_CLAUDE_HOME sobrescreve a base ~/.claude (testes apontam
 # para um sandbox p/ não poluir o ~/.claude real). Default: ~/.claude.
 CLAUDE_DIR="${SYNC_CLAUDE_HOME:-$HOME/.claude}"
+# Seam de teste: SYNC_LOCAL_BIN sobrescreve o destino dos symlinks de atalho
+# (~/.local/bin). Testes apontam para um sandbox. Default: ~/.local/bin.
+LOCAL_BIN="${SYNC_LOCAL_BIN:-$HOME/.local/bin}"
 
 FILES=(
     "CLAUDE.md"
@@ -278,6 +281,12 @@ sync_to_claude() {
     register_stop_hook
     register_session_start_hook
     register_verify_handoff_hook
+    # claude-yolo: symlink de atalho em ~/.local/bin → cópia instalada em
+    # ~/.claude/bin. ln -sf é idempotente (sobrescreve link existente sem erro).
+    # Seam SYNC_LOCAL_BIN aponta o destino p/ sandbox nos testes.
+    mkdir -p "$LOCAL_BIN"
+    ln -sf "$CLAUDE_DIR/bin/claude-yolo" "$LOCAL_BIN/claude-yolo"
+    echo "  ✓ claude-yolo → $LOCAL_BIN/claude-yolo"
     echo "=== Instalação concluída ==="
 }
 

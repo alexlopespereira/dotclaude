@@ -16,6 +16,7 @@
    - ✅ Edit(`a.md`) + Edit(`b.md`) + Edit(`c.md`) — arquivos distintos; mesmo bloco.
    - ❌ **Contraexemplo (dependência de dado):** Bash(`curl -s https://api/x`) → Bash(`echo "$OUT" \| jq .`) — segundo precisa do output do primeiro. SEQUENCIAL.
    - ❌ Read(`foo.ts`) → Edit(`foo.ts`) — Edit precisa do conteúdo lido. SEQUENCIAL.
+   - ❌ **Contraexemplo (contenção de tty):** múltiplos `ssh -t` interativos no mesmo bloco de tool_calls disputam o tty e a saída intercala — sessões interativas são SEQUENCIAIS (ou em abas separadas). Origem rastreável: análise de logs 2026-06-09, 22 cancels numa sessão.
 10. **Scheduling: árvore de decisão CronCreate / Monitor / ScheduleWakeup.** Polling auto-paced via `ScheduleWakeup` queimou 578 cache-warm wakeups em 3 dias por escolha errada de mecanismo. Decida pelo ramo:
     - **Intervalo conhecido recorrente** (ex: a cada hora, todo dia 6:30) → `CronCreate`. Não usar ScheduleWakeup polling.
     - **Evento conhecido em log/process** (ex: backup terminou, build acabou) → `Monitor`. Event-driven, sem polling.

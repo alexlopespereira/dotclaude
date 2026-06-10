@@ -18,6 +18,22 @@ SESSION_ID="${SESSION_ID:-default}"
 # Debounce
 CACHE_DIR="$HOME/.claude/cache/stop-notify"
 mkdir -p "$CACHE_DIR"
+
+# GC diário: o cache cresce 1 arquivo por session_id e nunca era limpo (739
+# arquivos observados). Marcador .last-gc evita varrer a cada Stop — custo
+# típico por evento = 1 stat. Arquivos >30d são removidos; o marcador nunca
+# se auto-apaga (excluído por nome).
+GC_MARK="$CACHE_DIR/.last-gc"
+NEED_GC=1
+if [ -f "$GC_MARK" ]; then
+  GC_LAST=$(stat -f %m "$GC_MARK" 2>/dev/null || echo 0)
+  [ $(( $(date +%s) - GC_LAST )) -lt 86400 ] && NEED_GC=0
+fi
+if [ "$NEED_GC" = 1 ]; then
+  find "$CACHE_DIR" -type f ! -name '.last-gc' -mtime +30 -delete 2>/dev/null || true
+  touch "$GC_MARK"
+fi
+
 FLAG="$CACHE_DIR/$SESSION_ID"
 
 if [ -f "$FLAG" ]; then

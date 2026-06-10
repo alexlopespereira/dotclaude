@@ -17,9 +17,16 @@
 # Detalhes: ~/.claude/skills/browser-actions/SKILL.md
 # Triggers canônicos: ~/.claude/skills/browser-actions/blocklist.json
 # (este script duplica subset MVP por simplicidade; sync manual).
+#
+# Allowlist por sessão: BBM_ALLOW_TRIGGERS="comprar,pay" remove esses termos
+# (case-insensitive, trim) dos triggers ANTES do match — caso de uso: e2e
+# Playwright contra loja em ambiente de teste, onde clicar "Comprar" é o
+# fluxo sob teste e não uma mutação real (FP observado na análise de logs
+# 2026-06-09). Env ausente/vazia = comportamento estrito inalterado.
 
 PYCODE=$(cat <<'PYEOF'
 import json
+import os
 import re
 import sys
 
@@ -63,7 +70,16 @@ tool_input = payload.get("tool_input") or {}
 strings = collect_strings(tool_input)
 haystack = " | ".join(strings).lower()
 
-for trigger in CRITICAL_TRIGGERS:
+# BBM_ALLOW_TRIGGERS: termos liberados nesta sessão (e2e em ambiente de
+# teste). Só remove matches exatos da lista — os demais triggers seguem ativos.
+_allow = {
+    t.strip().lower()
+    for t in os.environ.get("BBM_ALLOW_TRIGGERS", "").split(",")
+    if t.strip()
+}
+active_triggers = [t for t in CRITICAL_TRIGGERS if t.lower() not in _allow]
+
+for trigger in active_triggers:
     pattern = r"\b" + re.escape(trigger.lower()) + r"\b"
     if re.search(pattern, haystack, flags=re.UNICODE):
         print(

@@ -112,6 +112,7 @@ DEPLOY_WAIT=30
 E2E_URL=""
 UI_EXTENSIONS=""
 PRE_MERGE_TESTS=""
+CI_TIMEOUT=1800   # teto (s) da espera de CI via gh pr checks --watch; override em ship.json.ciTimeoutSeconds
 
 if [ -f "$SHIP_JSON" ]; then
   jq . "$SHIP_JSON" >/dev/null 2>&1 || { echo "ERRO: $SHIP_JSON JSON inválido." >&2; exit 1; }
@@ -123,6 +124,7 @@ if [ -f "$SHIP_JSON" ]; then
   E2E_URL=$(jq -r '.e2eUrl // ""'                       "$SHIP_JSON")
   UI_EXTENSIONS=$(jq -r '(.uiExtensions // []) | join("|")' "$SHIP_JSON")
   PRE_MERGE_TESTS=$(jq -c '.preMergeTests // empty'     "$SHIP_JSON")
+  CI_TIMEOUT=$(jq -r ".ciTimeoutSeconds // $CI_TIMEOUT" "$SHIP_JSON")
   MR_CFG=$(jq -r '.maxRetries // ""'                    "$SHIP_JSON")
   [ -z "$MAX_RETRIES" ] && [ -n "$MR_CFG" ] && MAX_RETRIES="$MR_CFG"
 fi
@@ -286,13 +288,35 @@ if [ -z "$PR_NUM" ]; then
   fi
 fi
 
-# Aguarda auto-merge dispatch (até 30s).
+# Aguarda CI verde via `gh pr checks --watch` com teto por perl alarm — mesmo
+# idioma de force-merge.sh:221 (perl ships com macOS; alarm dispara SIGALRM →
+# exit 142 = timeout). Substitui o antigo polling com `sleep 5`, que aguardava
+# tempo fixo sem observar o resultado do CI. Se a branch já mergeou (auto-merge
+# rápido em repo solo) ou não há checks, segue direto. CI vermelho aborta o
+# caminho de merge — não mergeia com checks falhando.
 if [ -n "$PR_NUM" ]; then
-  for i in 1 2 3 4 5 6; do
-    PR_STATE=$(gh pr view "$PR_NUM" --json state --jq .state 2>/dev/null || echo "UNKNOWN")
-    [ "$PR_STATE" = "MERGED" ] && break
-    sleep 5
-  done
+  PR_STATE=$(gh pr view "$PR_NUM" --json state --jq .state 2>/dev/null || echo "UNKNOWN")
+  if [ "$PR_STATE" != "MERGED" ]; then
+    CHECKS_RAW=$(gh pr checks "$PR_NUM" --json state 2>/dev/null || echo '[]')
+    CHECKS_COUNT=$(echo "$CHECKS_RAW" | jq 'length' 2>/dev/null || echo 0)
+    if [ "$CHECKS_COUNT" -eq 0 ] 2>/dev/null; then
+      echo "  PR #$PR_NUM sem checks configurados — sem CI pra aguardar."
+    else
+      echo "→ Aguardando CI verde do PR #$PR_NUM ($CHECKS_COUNT check(s), timeout ${CI_TIMEOUT}s)..."
+      WATCH_RC=0
+      perl -e 'alarm shift; exec @ARGV' "$CI_TIMEOUT" gh pr checks "$PR_NUM" --watch || WATCH_RC=$?
+      if [ "$WATCH_RC" = "142" ]; then
+        echo "ERRO: timeout (${CI_TIMEOUT}s) aguardando CI do PR #$PR_NUM." >&2
+        exit 1
+      fi
+      if [ "$WATCH_RC" -ne 0 ]; then
+        echo "ERRO: CI vermelho no PR #$PR_NUM — não mergeio com checks falhando." >&2
+        gh pr checks "$PR_NUM" --json name,state --jq '.[] | select(.state=="FAILURE") | "  ✗ " + .name' 2>/dev/null >&2 || true
+        exit 1
+      fi
+      echo "✓ CI verde no PR #$PR_NUM."
+    fi
+  fi
 fi
 
 # ─── Force-merge se ainda aberto + branch não-protegida (AC-1) ───────────
