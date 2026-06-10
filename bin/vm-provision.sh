@@ -64,7 +64,17 @@ fi
 CHROME_DIR="${VM_PROV_CHROME_DIR:-$HOME_DIR/.cache/ms-playwright}"
 DOCKER_BIN="${VM_PROV_DOCKER_BIN:-docker}"
 PYTHON_BIN="${VM_PROV_PYTHON_BIN:-python}"
-SYSTEMD_SRC="${VM_PROV_SYSTEMD_SRC:-$SCRIPT_DIR/../systemd}"
+# SYSTEMD_SRC: seam > systemd/ relativo ao script > checkout canônico do repo.
+# O fallback cobre o caso ~/.claude/bin (sync.sh não propaga systemd/ — P2 do
+# code review #52): instalado via sync, $SCRIPT_DIR/../systemd não existe, mas
+# ~/Projects/dotclaude/systemd sim.
+if [ -n "${VM_PROV_SYSTEMD_SRC:-}" ]; then
+  SYSTEMD_SRC="$VM_PROV_SYSTEMD_SRC"
+elif [ -d "$SCRIPT_DIR/../systemd" ]; then
+  SYSTEMD_SRC="$SCRIPT_DIR/../systemd"
+else
+  SYSTEMD_SRC="$HOME_DIR/Projects/dotclaude/systemd"
+fi
 ETC_UNIT="${VM_PROV_ETC_UNIT:-/etc/systemd/system/claude-code.service}"
 
 WRAPPER="$HOME_DIR/.claude/skills/browser-actions/wrapper-launch.sh"
@@ -118,11 +128,13 @@ smoke_test_browser() {
     return 0
   fi
   echo "smoke test do browser: $chrome"
+  # Flags numa lista única — os ramos com/sem timeout divergiam fácil (P2).
   local rc=0
+  local chrome_args=(--headless --no-sandbox --dump-dom about:blank)
   if command -v "$TIMEOUT_BIN" >/dev/null 2>&1; then
-    "$TIMEOUT_BIN" 20 "$chrome" --headless --no-sandbox --dump-dom about:blank >/dev/null 2>&1 || rc=$?
+    "$TIMEOUT_BIN" 20 "$chrome" "${chrome_args[@]}" >/dev/null 2>&1 || rc=$?
   else
-    "$chrome" --headless --no-sandbox --dump-dom about:blank >/dev/null 2>&1 || rc=$?
+    "$chrome" "${chrome_args[@]}" >/dev/null 2>&1 || rc=$?
   fi
   if [ "$rc" != 0 ]; then
     echo "WARN: smoke test do chromium falhou (rc=$rc) — sugestão: npx playwright install chromium" >&2
@@ -228,12 +240,19 @@ fase_root() {
 
 # ── Modo host: scp + ssh contra a VM ──────────────────────────────────────────
 host_mode() { # vm(1|2) want_root(0|1)
-  local vm="$1" want_root="$2" ip target
-  case "$vm" in
-    1) ip="192.0.2.11" ;;
-    2) ip="192.0.2.12" ;;
-  esac
-  target="dev@$ip"
+  local vm="$1" want_root="$2" ip target _lib
+  # Mapping VM→IP via lib comum (fonte única). Só o modo HOST pode depender
+  # dela — as fases user/root viajam pra VM num scp de arquivo único (SELF)
+  # e não têm bin/lib/ ao lado.
+  for _lib in "$SCRIPT_DIR/lib/vm-common.sh" "$HOME/.claude/bin/lib/vm-common.sh"; do
+    [ -f "$_lib" ] && { . "$_lib"; break; }
+  done
+  if ! command -v vm_ip >/dev/null 2>&1; then
+    echo "ERRO: bin/lib/vm-common.sh não encontrada — modo --vm exige o dotclaude instalado." >&2
+    return 9
+  fi
+  ip="$(vm_ip "$vm")"
+  target="$VM_COMMON_USER@$ip"
   echo "=== vm-provision host → VM$vm ($ip), fase $([ "$want_root" = 1 ] && echo root || echo user) ==="
   "$SCP" "$SELF" "$target:.vm-provision.sh"
   # Leva a unit versionada junto e aponta o SYSTEMD_SRC remoto para ela — em

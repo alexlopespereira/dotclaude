@@ -19,10 +19,8 @@ assert_contains() { case "$1" in *"$2"*) _pass;; *) _fail "$3 :: needle '$2' not
 # Portable "N days ago" ISO timestamp (macOS BSD date OR GNU date). Used so the
 # "fresh" package mock stays inside the 14-day cooldown regardless of wall-clock
 # date (avoids date-drift rotting the fixtures).
-_days_ago_iso() {
-  date -u -v-"$1"d +%Y-%m-%dT%H:%M:%S.000Z 2>/dev/null || \
-    date -u -d "$1 days ago" +%Y-%m-%dT%H:%M:%S.000Z
-}
+# shellcheck source=/dev/null
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/testlib.sh"
 
 # ─── Sandbox ─────────────────────────────────────────────────────────────────
 WORKSPACE=$(mktemp -d)

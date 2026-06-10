@@ -63,13 +63,12 @@ if [ "$git_ok" -eq 1 ] && [ "$branch" = "main" ] && [ -z "$status" ]; then
     # Gate seguro. Opt-in de auto-pull: env OU marcador na base ~/.claude.
     if [ "${DOTCLAUDE_AUTO_PULL:-}" = "1" ] || [ -f "$CLAUDE_HOME/.vm-profile" ]; then
         echo "[dotclaude] SessionStart: opt-in ativo → git pull --ff-only" >&2
-        if command -v timeout >/dev/null 2>&1; then
-            GIT_TERMINAL_PROMPT=0 timeout 20 git -C "$REPO" pull --ff-only --quiet 2>/dev/null \
-                || echo "  • aviso: git pull --ff-only falhou (non-ff / remote inacessível) — install segue do estado local." >&2
-        else
-            GIT_TERMINAL_PROMPT=0 git -C "$REPO" pull --ff-only --quiet 2>/dev/null \
-                || echo "  • aviso: git pull --ff-only falhou (non-ff / remote inacessível) — install segue do estado local." >&2
-        fi
+        # Comando único; `timeout 20` entra como prefixo quando existe (P2:
+        # antes os dois ramos duplicavam o pull inteiro e divergiam fácil).
+        _tmo=""
+        command -v timeout >/dev/null 2>&1 && _tmo="timeout 20"
+        GIT_TERMINAL_PROMPT=0 $_tmo git -C "$REPO" pull --ff-only --quiet 2>/dev/null \
+            || echo "  • aviso: git pull --ff-only falhou (non-ff / remote inacessível) — install segue do estado local." >&2
     fi
     echo "[dotclaude] SessionStart: checkout limpo em main → sync.sh install" >&2
     bash "$SYNC" install >/dev/null 2>&1 || true

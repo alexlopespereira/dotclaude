@@ -21,9 +21,8 @@ assert_lt() { [ "$1" -lt "$2" ] && _pass || _fail "$3 :: $1 not < $2"; }
 
 # Portable "N days ago" ISO timestamp (BSD or GNU date) — keeps the "fresh"
 # fixtures inside the 14-day cooldown regardless of wall-clock date.
-_days_ago_iso() {
-  date -u -v-"$1"d +"$2" 2>/dev/null || date -u -d "$1 days ago" +"$2"
-}
+# shellcheck source=/dev/null
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/testlib.sh"
 
 WORKSPACE=$(mktemp -d)
 trap 'rm -rf "$WORKSPACE"' EXIT

@@ -24,7 +24,14 @@
 set -u
 
 SSH="${VM_OAUTH_SSH:-ssh}"
-VM_USER="dev"
+
+# Mapping VM→IP e user vêm da lib comum (fonte única — P2 dedup).
+_SD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+for _lib in "$_SD/lib/vm-common.sh" "$HOME/.claude/bin/lib/vm-common.sh"; do
+  [ -f "$_lib" ] && { . "$_lib"; break; }
+done
+command -v vm_ip >/dev/null 2>&1 || { echo "ERRO: bin/lib/vm-common.sh não encontrada." >&2; exit 3; }
+VM_USER="$VM_COMMON_USER"
 
 usage() {
   cat >&2 <<EOF
@@ -50,11 +57,7 @@ EOF
 VM="$1"
 PORT="$2"
 
-case "$VM" in
-  1) IP="192.0.2.11" ;;
-  2) IP="192.0.2.12" ;;
-  *) echo "❌ VM inválida: '$VM' (use 1 ou 2)" >&2; usage ;;
-esac
+IP="$(vm_ip "$VM")" || { echo "❌ VM inválida: '$VM' (use 1 ou 2)" >&2; usage; }
 
 # {1,5} dígitos ANTES da aritmética: número maior que isso estoura o `[ -lt ]`
 # do bash ("integer expression expected" rc=2), que numa cadeia `||` é tratado

@@ -117,28 +117,24 @@ MCP_NONE="$TMP/mcp-none.txt"
 printf 'playwright:\n  command: npx @playwright/mcp@latest --browser chrome\n' > "$MCP_NONE"
 
 # chromium bundled: dir com chrome stub que FALHA (AC4) e outro que passa.
+CHROME_SUB="chromium-1224/chrome-linux"   # path interno do bundle (1 lugar só)
 CHROME_FAIL_DIR="$TMP/cache-fail"
-mkdir -p "$CHROME_FAIL_DIR/chromium-1224/chrome-linux"
-cat > "$CHROME_FAIL_DIR/chromium-1224/chrome-linux/chrome" <<'EOF'
+mkdir -p "$CHROME_FAIL_DIR/$CHROME_SUB"
+cat > "$CHROME_FAIL_DIR/$CHROME_SUB/chrome" <<'EOF'
 #!/usr/bin/env bash
 echo "chrome $*" >> "${VM_PROV_CALLLOG:-/dev/null}"
 exit 1
 EOF
-chmod +x "$CHROME_FAIL_DIR/chromium-1224/chrome-linux/chrome"
+chmod +x "$CHROME_FAIL_DIR/$CHROME_SUB/chrome"
 
 CHROME_OK_DIR="$TMP/cache-ok"
-mkdir -p "$CHROME_OK_DIR/chromium-1224/chrome-linux"
-cat > "$CHROME_OK_DIR/chromium-1224/chrome-linux/chrome" <<'EOF'
+mkdir -p "$CHROME_OK_DIR/$CHROME_SUB"
+cat > "$CHROME_OK_DIR/$CHROME_SUB/chrome" <<'EOF'
 #!/usr/bin/env bash
 echo "chrome $*" >> "${VM_PROV_CALLLOG:-/dev/null}"
 exit 0
 EOF
-chmod +x "$CHROME_OK_DIR/chromium-1224/chrome-linux/chrome"
-
-# Helper base de env comum para rodar o provision com stubs.
-run_user() { # call-log ; extra env são exportadas pelo caller via prefixo
-  : > "$1"
-}
+chmod +x "$CHROME_OK_DIR/$CHROME_SUB/chrome"
 
 echo "=== vm-provision tests ==="
 
