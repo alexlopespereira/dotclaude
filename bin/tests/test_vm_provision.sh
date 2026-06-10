@@ -213,6 +213,27 @@ VM_PROV_TMUX="$TMUX_STUB" VM_PROV_CLAUDE="$CLAUDE_STUB" \
 assert_rc "$?" "0" "AC3h 2ª execução idempotente exit 0"
 
 # =============================================================================
+# Hotfix pós-merge #52 — resolução do claude fora do PATH (ssh não-login)
+# =============================================================================
+# Via `ssh vm 'bash script'` o shell NÃO é login → PATH básico sem ~/.local/bin
+# e `claude` dá 127. Visto na execução real (VM1/VM2): add-json falhou rc=127 e
+# o check mcp_already_wrapper tratou 127 como "não-wrapper" (kill-server espúrio).
+# Sem VM_PROV_CLAUDE e sem claude no PATH, o script deve usar o fallback
+# canônico $HOME/.local/bin/claude.
+H="$TMP/home-fallback"; mk_home "$H"
+cp "$CLAUDE_STUB" "$H/.local/bin/claude"
+LOG="$TMP/log.fallback"; : > "$LOG"
+OUT=$(env PATH="/usr/bin:/bin" \
+      VM_PROV_TMUX="$TMUX_STUB" \
+      VM_PROV_HOME="$H" VM_PROV_CHROME_DIR="$TMP/none" \
+      VM_PROV_SYSTEMD_SRC="$SD" VM_PROV_ETC_UNIT="$SD/claude-code.service" \
+      VM_PROV_TEST_MCPGET="$MCP_NONE" VM_PROV_CALLLOG="$LOG" \
+      bash "$PROV" 2>&1); rc=$?
+assert_rc "$rc" "0" "FB-a claude fora do PATH → fallback ~/.local/bin/claude (exit 0)"
+assert_grep "$(cat "$LOG")" "claude mcp add-json playwright" "FB-b add-json roda via fallback"
+assert_nogrep "$OUT" "command not found" "FB-c sem 'command not found' no output"
+
+# =============================================================================
 # AC4 — smoke test do browser falha → WARN + sugestão, NÃO aborta
 # =============================================================================
 H="$TMP/home-ac4"; mk_home "$H"

@@ -38,7 +38,6 @@ else
 fi
 
 TMUX="${VM_PROV_TMUX:-tmux}"
-CLAUDE="${VM_PROV_CLAUDE:-claude}"
 SUDO="${VM_PROV_SUDO:-sudo}"
 SYSTEMCTL="${VM_PROV_SYSTEMCTL:-systemctl}"
 SSH="${VM_PROV_SSH:-ssh}"
@@ -49,6 +48,18 @@ HOME_DIR="${VM_PROV_HOME:-$HOME}"
 UNAME="${VM_PROV_UNAME:-$(uname)}"
 ID_UN="${VM_PROV_ID_UN:-$(id -un)}"
 ID_NG="${VM_PROV_ID_NG:-$(id -nG 2>/dev/null)}"
+
+# claude: via `ssh vm 'bash script'` o shell remoto NÃO é login → PATH básico
+# sem ~/.local/bin e `claude` dá 127 (e o 127 do `mcp get` seria lido como
+# "config não aponta pro wrapper", causando kill-server espúrio). Fallback
+# explícito pro install canônico do usuário. (Hotfix pós-merge #52.)
+if [ -n "${VM_PROV_CLAUDE:-}" ]; then
+  CLAUDE="$VM_PROV_CLAUDE"
+elif command -v claude >/dev/null 2>&1; then
+  CLAUDE="claude"
+else
+  CLAUDE="$HOME_DIR/.local/bin/claude"
+fi
 
 CHROME_DIR="${VM_PROV_CHROME_DIR:-$HOME_DIR/.cache/ms-playwright}"
 DOCKER_BIN="${VM_PROV_DOCKER_BIN:-docker}"
