@@ -332,6 +332,29 @@ Caso real (PR #88 wikiapp-2, 2026-05-21): smoke `action=purge` retornava 4xx sil
 
 ---
 
+## Categoria 9 — Scripts bash utilitários (bin/, provisioning, helpers de harness)
+
+Origem: ciclo `/full-cycle` vm-provisioning (PRs #52/#53, 2026-06-10) + reflect `--learn` dos ciclos #49 e #52 — ambos apontaram que specs de slash command (tarefa 1/8) vestem mal artefatos bash-script; e a execução real expôs três classes de bug que stubs não pegam (overflow aritmético do `test`, PATH de shell ssh não-login, sudo sem tty).
+
+**DoD base (todas as tarefas desta categoria):**
+- [ ] shebang explícito + `set -u` (e `-e`/`pipefail` quando todo erro é fatal); `chmod +x` versionado (modo 0755 no git)
+- [ ] header documenta *o que faz*, *quando usar* e o fluxo ponta-a-ponta (pré-condições, invocação canônica, como encerrar)
+- [ ] args inválidos/ausentes → usage em stderr + exit ≠ 0; exit 0 só no caminho feliz — provado por teste de parsing sem efeitos colaterais
+- [ ] input numérico/posicional validado por forma E comprimento/range ANTES de aritmética ou exec — `[ N -lt M ]` com número gigante estoura ("integer expression expected", rc=2 lido como falso em cadeia `||`) e não pode virar caminho feliz
+- [ ] dependência externa (ssh, sudo, systemctl, tmux, claude, curl…) injetável via seam env var `<PREFIX>_<DEP>` — pattern `vm-doctor`/`vm-provision`
+- [ ] testes em `bin/tests/test_<script>.sh` com stubs + call-log, escritos ANTES (TDD): asserts de argv exato, ORDEM das chamadas e ausência de chamadas proibidas
+- [ ] idempotente: 2ª execução converge pro mesmo estado (mutação condicionada a cmp/check prévio) — provado por teste
+- [ ] binário de user-install resolvido com fallback explícito (`command -v` → `~/.local/bin/<bin>`) — shell ssh não-login tem PATH básico; rc=127 não pode ser interpretado como estado de configuração
+
+### 21. Script com fase remota/privilegiada (SSH/sudo)
+- [ ] separação de privilégio binária: fase default roda sem sudo e RELATA pendências da fase privilegiada; fase `--root` tem guard de OS/usuário que aborta antes de qualquer mutação
+- [ ] prompt interativo (senha sudo) exige tty real: `ssh -t` sem stdin redirecionado — `ssh 'bash -s' < script` e o prefixo `!` do Claude Code matam o prompt; a invocação canônica vai no usage/header
+- [ ] rc de toda mutação crítica (apt-get, usermod, cp em /etc, daemon-reload) é checado e propaga — falha nunca retorna 0 mascarando estado parcial
+- [ ] arquivos-fonte que a fase remota consome são copiados junto (scp) e apontados via seam — path relativo do repo não existe no remoto
+- [ ] execução real em VM/host de verdade registrada no commit/PR — stub não pega PATH/tty/locale (origem: claude 127 + sudo sem tty nos PRs #52/#53)
+
+---
+
 ## Tabela de cobertura
 
 | # | Tarefa | Categoria | DoD-base aplicado | Variação específica |
@@ -356,5 +379,6 @@ Caso real (PR #88 wikiapp-2, 2026-05-21): smoke `action=purge` retornava 4xx sil
 | 18 | Codex CLI / Ralph | 7 | ✅ | ✅ |
 | 19 | Conteúdo educacional LaTeX | 8 | ✅ | ✅ |
 | 20 | Parsing input não-estruturado | 8 | ✅ | ✅ |
+| 21 | Script bash remoto/sudo | 9 | ✅ | ✅ |
 
-**Total de critérios:** ~144 (8 DoDs-base × ~3 + 20 variações × ~6).
+**Total de critérios:** ~157 (9 DoDs-base + 21 variações; Categoria 9 cobre scripts bash utilitários só com a base quando não há fase remota).

@@ -32,6 +32,8 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 | Codex CLI paralelo, Ralph adversarial, segundo agente | 7 | 18 |
 | LaTeX, PDF reproducível, conteúdo educacional, `\exercicio` | 8 | 19 |
 | parsing regex, e-mail/calendar/form scraped | 8 | 20 |
+| script bash utilitário, `bin/*.sh`, seam env var, stub call-log | 9 | base |
+| provisioning de VM, fase `--root`, sudo/ssh -t, scp de fonte | 9 | 21 |
 
 **Mapping não-cobertos pelo índice:** aplicar apenas o `DoD-base` da categoria mais próxima + marcar critérios derivados com `[INFERÊNCIA]`. **Não inventar critérios sem marker.**
 
@@ -293,3 +295,24 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b6] input bruto **arquivado** antes do parse (em `raw/<date>.eml`)
 - [ ] [b7] parser registra `(matched, total, rejected)` por execução — drift detection
 - [ ] [b8] PII (email, CPF) hashada ou removida nos logs
+
+---
+
+## Categoria 9 — Scripts bash utilitários (bin/, provisioning, helpers de harness)
+
+### DoD-base — Categoria 9
+- [ ] [b1] shebang explícito + `set -u` (e `-e`/`pipefail` quando todo erro é fatal); `chmod +x` versionado (modo 0755 no git)
+- [ ] [b2] header documenta *o que faz*, *quando usar* e o fluxo ponta-a-ponta (pré-condições, invocação canônica, como encerrar)
+- [ ] [b3] args inválidos/ausentes → usage em stderr + exit ≠ 0; exit 0 só no caminho feliz — provado por teste de parsing sem efeitos colaterais
+- [ ] [b4] input numérico/posicional validado por forma E comprimento/range ANTES de aritmética ou exec — `[ N -lt M ]` com número gigante estoura (rc=2 lido como falso em cadeia `||`) e não pode virar caminho feliz
+- [ ] [b5] dependência externa (ssh, sudo, systemctl, tmux, claude, curl…) injetável via seam env var `<PREFIX>_<DEP>` — pattern `vm-doctor`/`vm-provision`
+- [ ] [b6] testes em `bin/tests/test_<script>.sh` com stubs + call-log, escritos ANTES (TDD): asserts de argv exato, ORDEM das chamadas e ausência de chamadas proibidas
+- [ ] [b7] idempotente: 2ª execução converge pro mesmo estado (mutação condicionada a cmp/check prévio) — provado por teste
+- [ ] [b8] binário de user-install resolvido com fallback explícito (`command -v` → `~/.local/bin/<bin>`) — shell ssh não-login tem PATH básico; rc=127 não pode ser interpretado como estado de configuração
+
+### Tarefa 21 — Script com fase remota/privilegiada (SSH/sudo)
+- [ ] [b1] separação de privilégio binária: fase default roda sem sudo e RELATA pendências da fase privilegiada; fase `--root` tem guard de OS/usuário que aborta antes de qualquer mutação
+- [ ] [b2] prompt interativo (senha sudo) exige tty real: `ssh -t` sem stdin redirecionado — `ssh 'bash -s' < script` e o prefixo `!` do Claude Code matam o prompt; invocação canônica no usage/header
+- [ ] [b3] rc de toda mutação crítica (apt-get, usermod, cp em /etc, daemon-reload) é checado e propaga — falha nunca retorna 0 mascarando estado parcial
+- [ ] [b4] arquivos-fonte que a fase remota consome são copiados junto (scp) e apontados via seam — path relativo do repo não existe no remoto
+- [ ] [b5] execução real em VM/host de verdade registrada no commit/PR — stub não pega PATH/tty/locale
