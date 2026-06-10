@@ -260,6 +260,46 @@ assert_rc "$rc" "0" "AC8b 2ª execução exit 0"
 assert_count "$(cat "$LOG")" "^claude " "0" "AC8c 2ª execução roda zero retros"
 assert_grep "$OUT" "nada vencido" "AC8d 2ª execução loga 'nada vencido'"
 
+# =============================================================================
+# Hotfix pós-merge #55 — resolução do binário timeout (macOS não tem GNU timeout)
+# =============================================================================
+# Execução real no laptop: "timeout: command not found" rc=127 → retro_attempt
+# espúrio. Cadeia esperada sem RRD_TIMEOUT: timeout → gtimeout → vazio (roda o
+# claude SEM teto, com aviso em stderr). Controlamos via PATH restrito.
+NEED=$(mktemp -d "$TMP/needbin.XXXXXX")
+for b in bash env date jq mktemp awk grep sed sort wc tr basename dirname cat head tail uniq; do
+  p=$(command -v "$b") && ln -s "$p" "$NEED/$b"
+done
+
+# (a) nem timeout nem gtimeout no PATH → claude roda direto + aviso, retro_done gravado
+REM="$TMP/rem-tofix-a.jsonl"
+printf '{"kind":"baseline","pr":"20","repo":"dotclaude","retro_due_at":"2026-05-25T03-15-17Z","created_at":"x"}\n' > "$REM"
+LOG="$TMP/log.tofix-a"; : > "$LOG"
+OUT=$(env PATH="$NEED" RRD_NOW="$NOW" RRD_CLAUDE="$CLAUDE_STUB" RRD_CALLLOG="$LOG" \
+      RRD_REMINDERS="$REM" RRD_PROJECTS_DIR="$PROJ" bash "$RRD" --max 1 2>&1); rc=$?
+assert_rc "$rc" "0" "TOFIX-a sem timeout/gtimeout → exit 0"
+assert_grep "$(cat "$LOG")" "^claude -p /reflect 20 --retro" "TOFIX-b claude invocado DIRETO (sem prefixo timeout)"
+assert_count "$(cat "$LOG")" "^timeout " "0" "TOFIX-c nenhum timeout no call-log"
+assert_grep "$OUT" "[Ss]em teto" "TOFIX-d aviso de execução sem teto"
+assert_grep "$(tail -1 "$REM")" "retro_done" "TOFIX-e retro_done gravado (não attempt rc=127)"
+
+# (b) só gtimeout no PATH → usado como fallback
+GT="$TMP/gtimeout-bin"; mkdir -p "$GT"
+cat > "$GT/gtimeout" <<EOF
+#!/usr/bin/env bash
+echo "gtimeout \$*" >> "\$RRD_CALLLOG"
+shift
+exec "\$@"
+EOF
+chmod +x "$GT/gtimeout"
+REM="$TMP/rem-tofix-b.jsonl"
+printf '{"kind":"baseline","pr":"20","repo":"dotclaude","retro_due_at":"2026-05-25T03-15-17Z","created_at":"x"}\n' > "$REM"
+LOG="$TMP/log.tofix-b"; : > "$LOG"
+OUT=$(env PATH="$NEED:$GT" RRD_NOW="$NOW" RRD_CLAUDE="$CLAUDE_STUB" RRD_CALLLOG="$LOG" \
+      RRD_REMINDERS="$REM" RRD_PROJECTS_DIR="$PROJ" bash "$RRD" --max 1 2>&1); rc=$?
+assert_rc "$rc" "0" "TOFIX-f com gtimeout → exit 0"
+assert_grep "$(cat "$LOG")" "^gtimeout 900 " "TOFIX-g gtimeout usado com 900"
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo "PASS=$PASS  FAIL=$FAIL"

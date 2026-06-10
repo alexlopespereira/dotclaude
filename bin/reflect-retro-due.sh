@@ -49,7 +49,18 @@
 set -u
 
 # ── Seams / defaults ─────────────────────────────────────────────────────────
-TIMEOUT_BIN="${RRD_TIMEOUT:-timeout}"
+# timeout é GNU coreutils — macOS puro NÃO tem (brew instala como gtimeout).
+# Visto na execução real pós-merge #55: rc=127 virou retro_attempt espúrio.
+# Cadeia: RRD_TIMEOUT → timeout → gtimeout → vazio (roda sem teto, com aviso).
+if [ -n "${RRD_TIMEOUT:-}" ]; then
+  TIMEOUT_BIN="$RRD_TIMEOUT"
+elif command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_BIN="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_BIN="gtimeout"
+else
+  TIMEOUT_BIN=""
+fi
 REMINDERS="${RRD_REMINDERS:-$HOME/.claude/cache/reflect/reminders.jsonl}"
 PROJECTS_DIR="${RRD_PROJECTS_DIR:-$HOME/Projects}"
 NOW="${RRD_NOW:-$(date -u +%Y-%m-%dT%H-%M-%SZ)}"
@@ -187,9 +198,16 @@ while IFS=$'\t' read -r due repo pr att; do
 
   count=$((count+1))
   echo "retro: $repo#$pr (due $due) em $path"
-  ( cd "$path" && "$TIMEOUT_BIN" "$RETRO_TIMEOUT_SECS" "$CLAUDE" \
-      -p "/reflect $pr --retro" --allowedTools "$ALLOWED_TOOLS" )
-  rc=$?
+  if [ -n "$TIMEOUT_BIN" ]; then
+    ( cd "$path" && "$TIMEOUT_BIN" "$RETRO_TIMEOUT_SECS" "$CLAUDE" \
+        -p "/reflect $pr --retro" --allowedTools "$ALLOWED_TOOLS" )
+    rc=$?
+  else
+    echo "  AVISO: timeout/gtimeout ausentes — rodando sem teto de ${RETRO_TIMEOUT_SECS}s." >&2
+    ( cd "$path" && "$CLAUDE" \
+        -p "/reflect $pr --retro" --allowedTools "$ALLOWED_TOOLS" )
+    rc=$?
+  fi
   if [ "$rc" -eq 0 ]; then
     append_marker "retro_done" "$repo" "$pr" 0
     echo "  → retro_done ($repo#$pr)"
