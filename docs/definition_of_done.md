@@ -41,6 +41,8 @@
 - [ ] testado em modo `claude --debug` e firing confirmado no log
 - [ ] timeout configurado (`"timeout": 5000`) — hook nunca trava a sessão
 - [ ] commitado em `.claude/settings.json` (projeto) ou `~/.claude/settings.json` (user) — nunca em `.local.json` se for compartilhável
+- [ ] hook de evento não-bloqueante (`SessionStart`, `Notification`) é **best-effort**: nunca usa `exit 2`; falha interna vira log + exit 0 (origem: reflect --learn PR #49)
+- [ ] operação de rede dentro de hook tem timeout explícito + `GIT_TERMINAL_PROMPT=0`; efeito colateral remoto/mutante (auto-pull/push/install) é **opt-in explícito** via env ou marcador (origem: reflect --learn PR #49)
 
 **Referências consultadas:**
 - Anthropic Claude Code docs — Slash Commands, Hooks reference, Skills (code.claude.com/docs)
@@ -342,7 +344,7 @@ Origem: ciclo `/full-cycle` vm-provisioning (PRs #52/#53, 2026-06-10) + reflect 
 - [ ] args inválidos/ausentes → usage em stderr + exit ≠ 0; exit 0 só no caminho feliz — provado por teste de parsing sem efeitos colaterais
 - [ ] input numérico/posicional validado por forma E comprimento/range ANTES de aritmética ou exec — `[ N -lt M ]` com número gigante estoura ("integer expression expected", rc=2 lido como falso em cadeia `||`) e não pode virar caminho feliz
 - [ ] dependência externa (ssh, sudo, systemctl, tmux, claude, curl…) injetável via seam env var `<PREFIX>_<DEP>` — pattern `vm-doctor`/`vm-provision`
-- [ ] testes em `bin/tests/test_<script>.sh` com stubs + call-log, escritos ANTES (TDD): asserts de argv exato, ORDEM das chamadas e ausência de chamadas proibidas
+- [ ] testes em `bin/tests/test_<script>.sh` com stubs + call-log, escritos ANTES (TDD): asserts de argv exato, ORDEM das chamadas e ausência de chamadas proibidas — **capture-proof**: todo assert de ausência tem um assert positivo co-presente provando que o stub rodou (origem: reflect --learn PR #52)
 - [ ] idempotente: 2ª execução converge pro mesmo estado (mutação condicionada a cmp/check prévio) — provado por teste
 - [ ] binário de user-install resolvido com fallback explícito (`command -v` → `~/.local/bin/<bin>`) — shell ssh não-login tem PATH básico; rc=127 não pode ser interpretado como estado de configuração
 
@@ -352,6 +354,14 @@ Origem: ciclo `/full-cycle` vm-provisioning (PRs #52/#53, 2026-06-10) + reflect 
 - [ ] rc de toda mutação crítica (apt-get, usermod, cp em /etc, daemon-reload) é checado e propaga — falha nunca retorna 0 mascarando estado parcial
 - [ ] arquivos-fonte que a fase remota consome são copiados junto (scp) e apontados via seam — path relativo do repo não existe no remoto
 - [ ] execução real em VM/host de verdade registrada no commit/PR — stub não pega PATH/tty/locale (origem: claude 127 + sudo sem tty nos PRs #52/#53)
+
+### 22. Artefato capturado verbatim de host/VM remoto
+Origem: reflect --learn PR #52 (US-01 — unit systemd capturada das VMs).
+- [ ] integridade verificada: hash/diff do conteúdo local vs fonte remota (`ssh <host> md5/sha256` ou `diff <(ssh ... cat)`) ANTES do commit
+- [ ] conteúdo NUNCA reconstruído de memória — captura falhou → aborta/escala; normalizações (ex.: strip de comentário do `systemctl cat`) documentadas
+- [ ] fontes múltiplas (ex.: 2 VMs) comparadas entre si — divergência aborta em vez de escolher uma arbitrariamente
+- [ ] `README.md` no diretório documenta origem (host:path), comando de captura e consumidor do artefato
+- [ ] scan de segredos no conteúdo capturado antes do commit (padrões do Princípio 7)
 
 ---
 
@@ -380,5 +390,6 @@ Origem: ciclo `/full-cycle` vm-provisioning (PRs #52/#53, 2026-06-10) + reflect 
 | 19 | Conteúdo educacional LaTeX | 8 | ✅ | ✅ |
 | 20 | Parsing input não-estruturado | 8 | ✅ | ✅ |
 | 21 | Script bash remoto/sudo | 9 | ✅ | ✅ |
+| 22 | Artefato capturado verbatim | 9 | ✅ | ✅ |
 
 **Total de critérios:** ~157 (9 DoDs-base + 21 variações; Categoria 9 cobre scripts bash utilitários só com a base quando não há fase remota).
