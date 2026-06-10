@@ -73,22 +73,56 @@ echo $$ > "$PID_FILE"
 cleanup() { rm -rf "$LOCK_DIR" 2>/dev/null || true; }
 trap cleanup EXIT INT TERM HUP
 
+# Seam de OS pra testabilidade: default $(uname), override via WRAPPER_OS.
+WRAPPER_OS="${WRAPPER_OS:-$(uname)}"
+
 # Browser: prefere Google Chrome (channel) quando instalado; senão cai no
 # chromium bundled do Playwright (~/.cache/ms-playwright). No Linux sem Chrome
 # (ex: só snap chromium, que quebra com --user-data-dir por confinamento
-# AppArmor) o bundled é o único confiável.
+# AppArmor) o bundled é o único confiável. A detecção é gateada por OS: o path
+# do .app só existe (e só importa) no macOS; os paths/binários google-chrome
+# só no Linux. Sem o gate, rodar o detector num macOS com Chrome.app marcaria
+# `chrome` mesmo num cenário Linux simulado.
+chrome_present() {
+  if [ "$WRAPPER_OS" = "Darwin" ]; then
+    [ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]
+  else
+    command -v google-chrome >/dev/null 2>&1 \
+      || command -v google-chrome-stable >/dev/null 2>&1 \
+      || [ -x "/opt/google/chrome/chrome" ]
+  fi
+}
+
 BROWSER_FLAG="--browser chrome"
-if command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1 \
-   || [ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ] \
-   || [ -x "/opt/google/chrome/chrome" ]; then
+EXTRA_FLAGS=()
+if chrome_present; then
   BROWSER_FLAG="--browser chrome"
 elif ls -d "$HOME/.cache/ms-playwright/chromium-"* >/dev/null 2>&1; then
   BROWSER_FLAG="--browser chromium"
+  # No Linux, o sandbox do chromium usa setuid + user namespaces NÃO
+  # privilegiados. Ubuntu 24.04 entrega kernel.apparmor_restrict_unprivileged_userns=1,
+  # que NEGA a criação desses namespaces; o chromium então aborta no startup com
+  # FATAL "No usable sandbox" (rc=134). --no-sandbox é a mitigação documentada
+  # numa VM dev single-tenant. Só no Linux — no macOS o sandbox funciona e a flag
+  # seria uma regressão de segurança desnecessária.
+  if [ "$WRAPPER_OS" = "Linux" ]; then
+    EXTRA_FLAGS+=(--no-sandbox)
+  fi
+fi
+
+# Sessões tmux do claude-code.service não têm X server (DISPLAY vazio/indefinido);
+# um chromium headed não consegue abrir janela e morre. --headless cobre esse caso.
+# Restrito ao Linux: no macOS o headed é o fluxo normal (laptop com UI).
+if [ "$WRAPPER_OS" = "Linux" ] && [ -z "${DISPLAY:-}" ]; then
+  EXTRA_FLAGS+=(--headless)
 fi
 
 # Não usa exec — wrapper precisa continuar vivo pra trap rodar e limpar lock.
 # Sinais propagam ao filho automaticamente (mesmo grupo de processo).
+# Expansão guardada (${arr[@]+...}) pra não disparar "unbound variable" sob
+# `set -u` quando EXTRA_FLAGS está vazio no bash 3.2 do macOS.
 npx -y @playwright/mcp@latest \
   --user-data-dir "$PROFILE_DIR" \
   $BROWSER_FLAG \
+  ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} \
   "$@"

@@ -1,0 +1,18 @@
+[Unit]
+Description=Claude Code — uma sessao tmux interativa por repo (slot-1), sem Telegram
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+User=dev
+WorkingDirectory=/home/dev/Projects
+ExecStart=/home/dev/.local/bin/claude-sessions.sh
+ExecStop=-/usr/bin/tmux kill-server
+Restart=no
+Environment=TERM=xterm-256color
+Environment=HOME=/home/dev
+Environment=PATH=/home/dev/.bun/bin:/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
