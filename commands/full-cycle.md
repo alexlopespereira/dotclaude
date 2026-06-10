@@ -123,11 +123,23 @@ Antes da Fase 5 Ralph, gere test specs táticos derivados das DoDs referenciadas
 
 **Antes de escalar para humano:** sugira `/reflect --on-failure 5 --context-file <path-com-findings-P0>` para entender qual critério DoD teria capturado os findings P0 antes do Ralph escalar.
 
-## Fase 5.5 — Code review nativo (holístico pós-Ralph)
+## Fase 5.5 — Code review nativo (holístico pós-Ralph) ∥ suíte de testes (Fase 6)
 
-Após Ralph completar (Fase 5 verde), **antes dos testes finais**, execute `/code-review high` para captar simplificações/reuse que o reviewer Codex iteração-por-iteração não vê. Complementa (não substitui) o adversarial do Ralph: o Codex revisa cada commit isoladamente; `/code-review` olha o diff agregado.
+Após Ralph completar (Fase 5 verde), execute `/code-review high` para captar simplificações/reuse que o reviewer Codex iteração-por-iteração não vê. Complementa (não substitui) o adversarial do Ralph: o Codex revisa cada commit isoladamente; `/code-review` olha o diff agregado.
 
-Invoque `/code-review high` na sessão interativa do `/full-cycle`. Anote findings num bloco `## Code review findings` no `progress.txt` (cwd atual). Princípio 11 aplica — transição interna não pede confirmação humana.
+**Paralelização Fase 5.5 ∥ Fase 6 (Princípio 9 + `run_in_background`).** A suíte de testes (Fase 6) e o `/code-review high` são independentes — nenhum consome o output do outro — então rodam **concorrentes**. **Antes** de invocar `/code-review high`, dispare a suíte de testes do projeto em background via Bash `run_in_background: true`. Anote o SHA em que o review foi disparado (`REVIEW_BASE_SHA=$(git rev-parse HEAD)`) — a Fase 6 usa esse SHA na regra de re-review. O `/code-review high` roda em foreground na sessão enquanto a suíte progride em background. O **join explícito** (aguardar AMBOS verdes) acontece na Fase 6, antes da Fase 7: o PR **só abre** com code-review sem P0 **e** suíte verde.
+
+```bash
+# 1. Marque o SHA coberto pelo review (consumido pela regra de re-review da Fase 6)
+REVIEW_BASE_SHA=$(git rev-parse HEAD)
+echo "REVIEW_BASE_SHA=$REVIEW_BASE_SHA" >> progress.txt
+
+# 2. Dispare a suíte em background (run_in_background: true) — NÃO bloqueia a sessão.
+#    Detecte o runner do projeto (package.json scripts.test, pytest, go test, bin/tests/...).
+#    A task re-invoca a sessão na conclusão; o veredicto é avaliado no join da Fase 6.
+```
+
+Em seguida, na mesma sessão, invoque `/code-review high` (foreground). Anote findings num bloco `## Code review findings` no `progress.txt` (cwd atual). Princípio 11 aplica — transição interna não pede confirmação humana.
 
 **Gate:**
 - **Findings P0 (crítico / segurança / correctness):** PARE — não prossiga para Fase 6. Sugira `/reflect --on-failure 5.5 --context-file <path-com-findings-P0>` antes de escalar pra humano.
@@ -137,16 +149,19 @@ Invoque `/code-review high` na sessão interativa do `/full-cycle`. Anote findin
 
 **Non-blocking se indisponível.** Se `/code-review` não existir (Claude Code < v2.1.146) ou falhar, registre o aviso e prossiga para Fase 6 — é layer adicional de qualidade, não gate hard.
 
-## Fase 6 — Testes finais
+## Fase 6 — Join: suíte de testes (disparada na Fase 5.5) + code-review
 
-Antes de abrir PR, rode a suíte de testes do projeto no cwd atual:
-```bash
-# Detecte o runner (package.json, pytest, go test...) e execute
-```
+Esta fase é o **ponto de junção** (join) do paralelismo iniciado na Fase 5.5. O PR só abre com **ambos verdes**: suíte de testes **e** `/code-review high` (sem P0). Aguarde a task de testes em background concluir — o `run_in_background` re-invoca a sessão na conclusão; leia o `TaskOutput` e confirme o exit code.
 
-Se falhar, **PARE** e escale — não abra PR com testes vermelhos.
+Se a suíte falhar, **PARE** e escale — não abra PR com testes vermelhos.
 
 **Antes de escalar para humano:** sugira `/reflect --on-failure 6 --from-stdin` (alimentado por output do test runner) para entender qual critério DoD teria capturado a falha de teste antes do CI.
+
+**Re-review do parecer após auto-fix (gotcha do paralelismo Fase 5.5 ∥ 6).** O `/code-review high` analisou o diff em `REVIEW_BASE_SHA` (marcado na Fase 5.5). Se a suíte falhou e foram commitadas correções (loop de auto-fix) **depois** desse SHA, esses fix-commits **não foram revisados**. Antes de prosseguir para a Fase 7, escolha uma das duas opções:
+   - **(a) Re-review do delta:** re-rode `/code-review high` restrito ao range dos fix-commits — `git diff $REVIEW_BASE_SHA..HEAD`. Use quando o delta tem lógica nova/não-trivial.
+   - **(b) Registrar SHA coberto:** se o delta for trivial (ajuste de teste, typo, formatação), registre em `progress.txt` a linha `CODE_REVIEW_VALID_UNTIL=<REVIEW_BASE_SHA>` documentando até onde o parecer original é válido, mais o range não-revisado (`$REVIEW_BASE_SHA..HEAD`).
+
+   Se nenhum fix-commit ocorreu após `REVIEW_BASE_SHA` (suíte passou de primeira), o parecer cobre todo o diff e nenhuma das duas é necessária.
 
 ## Fase 7 — Branch efêmera + Push + PR
 
@@ -159,20 +174,27 @@ Execute `/commit-push-pr "<mensagem em conventional commits>"` no cwd atual. Ess
 
 Se `git push` falhar por hook do servidor ou política de proteção, reporte ao usuário e **PARE** — não tente bypass.
 
-## Fase 8 — Aguardar merge + sincronizar slots
+## Fase 8 — Watch de CI em background → merge + sync na notificação
 
-Após o PR ser **mergeado no GitHub** (review humano normalmente), detecte o pool:
+Em vez de bloquear a sessão com polling foreground do CI, dispare `gh pr checks --watch` via Bash `run_in_background: true`. A sessão fica **livre** durante o watch — o harness re-invoca a sessão quando a task termina (CI concluído). **Sem polling foreground, sem `ScheduleWakeup`.**
+
 ```bash
-REPO=$(basename "$(cd "$(git rev-parse --show-toplevel)" && pwd)" | sed 's/-[0-9]*$//')
+# run_in_background: true — NÃO bloqueia a sessão; re-invoca na conclusão do CI.
+gh pr checks "$(gh pr view --json number --jq .number)" --watch
 ```
 
-Rode `/checkout-sync-all <REPO>` para:
-- atualizar `main` em todos os slots
-- remover branches locais já mergeadas
+**Princípio 10 (scheduling).** `gh pr checks --watch` em background é o ramo *evento-conhecido-em-process* da árvore de decisão — não escalar para `ScheduleWakeup` polling nem loop foreground.
+
+Quando a **notificação de conclusão** chegar:
+- **CI verde:**
+  1. Se o PR ainda não mergeou (auto-merge não pegou), mergeie via `/force-merge`.
+  2. Detecte o pool: `REPO=$(basename "$(cd "$(git rev-parse --show-toplevel)" && pwd)" | sed 's/-[0-9]*$//')`.
+  3. Rode `/checkout-sync-all <REPO>` para atualizar `main` em todos os slots + remover branches locais já mergeadas.
+- **CI vermelho** (watch retorna exit≠0): **PARE** e escale — não mergeie com CI falhando.
 
 ## Fase 9 — Reflexão sobre DoD (gate heurístico --learn vs --baseline)
 
-Após o sync dos slots, invoque automaticamente `/reflect` para classificar a adequação do Definition of Done aplicado a esta PR. O modo é decidido por gate heurístico inline (AC9 do US-02): `--learn` quando o ciclo correu **anômalo** (precisa LLM analisar a TDD-chain por US), `--baseline` quando correu **limpo** (compliance retroativa basta).
+Após o sync dos slots, dispare a reflexão sobre DoD como **subprocess headless** `claude --model claude-fable-5 -p "/reflect <PR> <modo>"` em **background** (não inline). A invocação inline herdaria o modelo da sessão — impossível pinar; o subprocess propaga `--model claude-fable-5` explicitamente (pattern slash-command-via-claude-p já em produção em `bin/reflect-retro-due.sh`). O modo é decidido por gate heurístico inline (AC9 do US-02): `--learn` quando o ciclo correu **anômalo** (precisa LLM analisar a TDD-chain por US), `--baseline` quando correu **limpo** (compliance retroativa basta).
 
 ```bash
 PR_NUMBER=$(gh pr list --state merged --limit 1 --base main --json number --jq .[0].number)
@@ -200,12 +222,19 @@ if test -f progress.txt && grep -q 'AUTOFIX_TRIGGERED' progress.txt 2>/dev/null;
   NEED_LEARN=true
 fi
 
-REFLECT_NESTED=1 \
-  REFLECT_LEARN_GATE=$([ "$NEED_LEARN" = "true" ] && echo 1 || echo 0) \
-  /reflect $PR_NUMBER $([ "$NEED_LEARN" = "true" ] && echo --learn || echo --baseline)
+REFLECT_MODE=$([ "$NEED_LEARN" = "true" ] && echo --learn || echo --baseline)
+
+# Subprocess headless em background com modelo pinado (US-06). `&` + `disown`
+# garantem que a Fase 9 não bloqueia o término do pipeline; o redirect captura
+# o output pra inspeção pós-merge sem poluir a sessão.
+mkdir -p ~/.claude/cache/reflect
+REFLECT_NESTED=1 REFLECT_LEARN_GATE=$([ "$NEED_LEARN" = "true" ] && echo 1 || echo 0) \
+  claude --model claude-fable-5 -p "/reflect $PR_NUMBER $REFLECT_MODE" \
+  >> ~/.claude/cache/reflect/fase9-fullcycle.log 2>&1 &
+disown
 ```
 
-**Comportamento non-blocking.** Se `/reflect` falhar (ex.: PR não correlaciona com plano, `gh` offline, sessão `/auto-grill-me` ausente), registre o aviso mas **NÃO interrompa o pipeline** — reflexão é auditoria, não gate. O pipeline já considerou Fase 8 (sync) como término efetivo da entrega; Fase 9 apenas anexa metadado de qualidade.
+**Comportamento non-blocking.** O subprocess roda em background (`&` + `disown`): a falha dele (PR não correlaciona com plano, `gh` offline, sessão `/auto-grill-me` ausente, modelo indisponível) **NÃO interrompe o pipeline** — reflexão é auditoria, não gate, e o exit code do background job nem é colhido. O pipeline já considerou Fase 8 (sync) como término efetivo da entrega; Fase 9 apenas anexa metadado de qualidade (output em `~/.claude/cache/reflect/fase9-fullcycle.log`).
 
 ### Verificação (humano pós-merge — Cat 3 explícito)
 

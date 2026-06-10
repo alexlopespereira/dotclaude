@@ -66,6 +66,11 @@ PROJECTS_DIR="${RRD_PROJECTS_DIR:-$HOME/Projects}"
 NOW="${RRD_NOW:-$(date -u +%Y-%m-%dT%H-%M-%SZ)}"
 RETRO_TIMEOUT_SECS=900
 ALLOWED_TOOLS="Bash(git:*),Bash(gh:*),Bash(mkdir:*),Read,Glob,Grep,Write,Edit"
+# Modelo pinado na etapa /reflect (US-06). Default claude-fable-5; override via
+# flag --model <id> (preferência CLI flag > env var). A invocação inline de
+# /reflect herdaria o modelo da sessão — impossível pinar; o subprocess
+# headless aqui propaga --model explicitamente.
+MODEL="claude-fable-5"
 
 # claude resolvido com fallback ~/.local/bin (shell ssh não-login tem PATH básico).
 if [ -n "${RRD_CLAUDE:-}" ]; then
@@ -86,6 +91,7 @@ Uso: reflect-retro-due.sh [--max N] [--help]
 Drena retrospectivas /reflect vencidas (headless) do reminders.jsonl.
 
   --max N    no máximo N execuções por run (default 2; 1..999).
+  --model ID modelo do claude na etapa /reflect (default claude-fable-5).
   --help     esta ajuda.
 
 Seleção:   entradas kind ausente|baseline com retro_due_at <= agora.
@@ -118,6 +124,11 @@ while [ $# -gt 0 ]; do
       [ "${#MAX_ARG}" -gt 3 ] && die_usage
       [ "$MAX_ARG" -ge 1 ] || die_usage
       MAX="$MAX_ARG"
+      ;;
+    --model)
+      shift
+      [ $# -gt 0 ] || die_usage
+      MODEL="$1"
       ;;
     *) die_usage ;;
   esac
@@ -200,12 +211,12 @@ while IFS=$'\t' read -r due repo pr att; do
   echo "retro: $repo#$pr (due $due) em $path"
   if [ -n "$TIMEOUT_BIN" ]; then
     ( cd "$path" && "$TIMEOUT_BIN" "$RETRO_TIMEOUT_SECS" "$CLAUDE" \
-        -p "/reflect $pr --retro" --allowedTools "$ALLOWED_TOOLS" )
+        -p "/reflect $pr --retro" --model "$MODEL" --allowedTools "$ALLOWED_TOOLS" )
     rc=$?
   else
     echo "  AVISO: timeout/gtimeout ausentes — rodando sem teto de ${RETRO_TIMEOUT_SECS}s." >&2
     ( cd "$path" && "$CLAUDE" \
-        -p "/reflect $pr --retro" --allowedTools "$ALLOWED_TOOLS" )
+        -p "/reflect $pr --retro" --model "$MODEL" --allowedTools "$ALLOWED_TOOLS" )
     rc=$?
   fi
   if [ "$rc" -eq 0 ]; then

@@ -486,6 +486,126 @@ assert_eq "$(count_pool_slots "$POOL_DIR" nope)"   "0" "count missing repo → 0
 assert_eq "$(count_pool_slots "/nonexistent" any)" "0" "count missing pool dir → 0"
 rm -rf "$POOL_DIR"
 
+# ─── US-04: touchesFiles disjunction gate ──────────────────────────────────
+
+# Pure helper: literal prefix normalization (SKILL.md algorithm step 1 —
+# substring up to the first glob metacharacter *, ?, [).
+assert_eq "$(touches_literal_prefix 'bin/*.sh')"       "bin/"           "US-04 prefix: * meta → bin/"
+assert_eq "$(touches_literal_prefix 'bin/tests/x.sh')" "bin/tests/x.sh" "US-04 prefix: no meta → whole glob"
+assert_eq "$(touches_literal_prefix 'bin/foo.sh')"     "bin/foo.sh"     "US-04 prefix: dot is NOT a meta"
+assert_eq "$(touches_literal_prefix 'src/?.c')"        "src/"           "US-04 prefix: ? meta → src/"
+assert_eq "$(touches_literal_prefix 'a[bc]d')"         "a"              "US-04 prefix: [ meta → a"
+
+# Pure helper: prefixes_intersect (SKILL.md step 2 — one is a string-prefix
+# of the other).
+prefixes_intersect "bin/" "bin/tests/x.sh" && _pass || _fail "US-04 'bin/' is prefix of 'bin/tests/x.sh' → intersect"
+prefixes_intersect "bin/foo.sh" "bin/"     && _pass || _fail "US-04 'bin/' is prefix of 'bin/foo.sh' → intersect"
+prefixes_intersect "bin/a.sh" "docs/b.md"  && _fail "US-04 disjoint prefixes must NOT intersect" || _pass
+prefixes_intersect "bin/a.sh" "bin/b.sh"   && _fail "US-04 sibling files (neither a prefix) must NOT intersect" || _pass
+
+# AC4: glob case — ['bin/*.sh'] vs ['bin/tests/x.sh'] intersect because the
+# literal prefix 'bin/' is a prefix of 'bin/tests/x.sh' (conservative).
+TMP_PRD=$(mktemp_safe file ac4-glob)
+cat > "$TMP_PRD" <<'JSON'
+{
+  "userStories": [
+    {"id":"US-A","priority":1,"passes":false,"touchesFiles":["bin/*.sh"]},
+    {"id":"US-B","priority":2,"passes":false,"touchesFiles":["bin/tests/x.sh"]}
+  ]
+}
+JSON
+stories_touch_intersect "US-A" "US-B" "$TMP_PRD" && _pass || _fail "AC4 bin/*.sh ∩ bin/tests/x.sh → intersect"
+assert_eq "$(next_dispatchable_excluding "$TMP_PRD" "US-A")" "" "AC4 US-A in-flight → US-B serialized (empty)"
+rm -f "$TMP_PRD"
+
+# AC1: intersecting touchesFiles (['bin/foo.sh'] vs ['bin/']) → the second is
+# NOT co-dispatched while the first is in-flight.
+TMP_PRD=$(mktemp_safe file ac1-intersect)
+cat > "$TMP_PRD" <<'JSON'
+{
+  "userStories": [
+    {"id":"US-A","priority":1,"passes":false,"touchesFiles":["bin/foo.sh"]},
+    {"id":"US-B","priority":2,"passes":false,"touchesFiles":["bin/"]}
+  ]
+}
+JSON
+assert_eq "$(next_dispatchable_excluding "$TMP_PRD" "")"     "US-A" "AC1 nothing in-flight → US-A first"
+assert_eq "$(next_dispatchable_excluding "$TMP_PRD" "US-A")" ""     "AC1 US-A in-flight → US-B blocked (intersect)"
+rm -f "$TMP_PRD"
+
+# AC2: disjoint touchesFiles (['bin/a.sh'] vs ['docs/b.md']) → co-dispatch in
+# the same tick (US-A in-flight, US-B still selected).
+TMP_PRD=$(mktemp_safe file ac2-disjoint)
+cat > "$TMP_PRD" <<'JSON'
+{
+  "userStories": [
+    {"id":"US-A","priority":1,"passes":false,"touchesFiles":["bin/a.sh"]},
+    {"id":"US-B","priority":2,"passes":false,"touchesFiles":["docs/b.md"]}
+  ]
+}
+JSON
+stories_touch_intersect "US-A" "US-B" "$TMP_PRD" && _fail "AC2 disjoint must NOT intersect" || _pass
+assert_eq "$(next_dispatchable_excluding "$TMP_PRD" "US-A")" "US-B" "AC2 US-A in-flight → US-B co-dispatched"
+rm -f "$TMP_PRD"
+
+# AC3: a story without the touchesFiles field is dispatchable with no extra
+# restriction — pre-US-04 behavior preserved.
+# (a) candidate lacks touchesFiles, in-flight declares one → candidate ok.
+TMP_PRD=$(mktemp_safe file ac3-cand-absent)
+cat > "$TMP_PRD" <<'JSON'
+{
+  "userStories": [
+    {"id":"US-A","priority":1,"passes":false,"touchesFiles":["bin/"]},
+    {"id":"US-B","priority":2,"passes":false}
+  ]
+}
+JSON
+stories_touch_intersect "US-A" "US-B" "$TMP_PRD" && _fail "AC3 absent field → no intersect" || _pass
+assert_eq "$(next_dispatchable_excluding "$TMP_PRD" "US-A")" "US-B" "AC3 US-B (no touchesFiles) co-dispatched despite US-A bin/"
+rm -f "$TMP_PRD"
+
+# (b) candidate declares touchesFiles, in-flight does NOT → candidate ok.
+TMP_PRD=$(mktemp_safe file ac3-inflight-absent)
+cat > "$TMP_PRD" <<'JSON'
+{
+  "userStories": [
+    {"id":"US-A","priority":1,"passes":false},
+    {"id":"US-B","priority":2,"passes":false,"touchesFiles":["bin/foo.sh"]}
+  ]
+}
+JSON
+assert_eq "$(next_dispatchable_excluding "$TMP_PRD" "US-A")" "US-B" "AC3 in-flight without touchesFiles → US-B unrestricted"
+rm -f "$TMP_PRD"
+
+# (c) an empty touchesFiles array behaves like an absent field.
+TMP_PRD=$(mktemp_safe file ac3-empty)
+cat > "$TMP_PRD" <<'JSON'
+{
+  "userStories": [
+    {"id":"US-A","priority":1,"passes":false,"touchesFiles":[]},
+    {"id":"US-B","priority":2,"passes":false,"touchesFiles":["bin/foo.sh"]}
+  ]
+}
+JSON
+stories_touch_intersect "US-A" "US-B" "$TMP_PRD" && _fail "AC3 empty array → no intersect" || _pass
+assert_eq "$(next_dispatchable_excluding "$TMP_PRD" "US-A")" "US-B" "AC3 empty touchesFiles array → unrestricted"
+rm -f "$TMP_PRD"
+
+# Regression: the dependsOn gate still composes with the new touchesFiles
+# gate. US-B has disjoint files but depends on the still-unfinished US-A →
+# remains blocked by deps (proves the new gate did not replace the old one).
+TMP_PRD=$(mktemp_safe file us04-compose)
+cat > "$TMP_PRD" <<'JSON'
+{
+  "userStories": [
+    {"id":"US-A","priority":1,"passes":false,"touchesFiles":["bin/a.sh"]},
+    {"id":"US-B","priority":2,"passes":false,"touchesFiles":["docs/b.md"],"dependsOn":["US-A"]}
+  ]
+}
+JSON
+assert_eq "$(next_dispatchable_excluding "$TMP_PRD" "US-A")" "" "US-04 deps gate still blocks disjoint dependent"
+rm -f "$TMP_PRD"
+
 # ─── Report ────────────────────────────────────────────────────────────────
 
 echo ""

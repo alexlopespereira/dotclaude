@@ -135,6 +135,8 @@ Aguarde resposta. Se (1), prossiga pra Fase 4. Se (2), invoque `/full-cycle` com
 
 ## Fase 6 — Testes (suite + Playwright se UI) com auto-fix até 3 iterações
 
+**Divergência vs `/full-cycle` (paralelismo Fase 5.5 ∥ 6).** O `/full-cycle-simple` **não tem Fase 5.5** (`/code-review` é pulado neste modo enxuto), então não há review concorrente para paralelizar a suíte contra, não há join de dois veredictos, e a regra de re-review pós-auto-fix é **N/A** (sem parecer concorrente para invalidar). Aqui a suíte de testes é o **único gate pré-PR** e roda em foreground com o loop de auto-fix abaixo. O watch de CI em background (Fase 8) é idêntico ao `/full-cycle`.
+
 Antes de abrir PR:
 
 1. **Detecte se a feature tocou UI:** `git diff origin/main..HEAD --name-only | grep -iE '\.(tsx?|jsx?|vue|svelte|html|css|scss)$'`. Se houver match, é UI.
@@ -167,26 +169,41 @@ Execute `/commit-push-pr "<mensagem em conventional commits>"` no cwd atual. Ess
 
 Se `git push` falhar por hook do servidor ou política de proteção, reporte ao usuário e **PARE** — não tente bypass.
 
-## Fase 8 — Aguardar merge + sincronizar slots — IDÊNTICO ao /full-cycle
+## Fase 8 — Watch de CI em background → merge + sync na notificação — equivalente ao /full-cycle
 
-Após o PR ser **mergeado no GitHub** (auto-merge quando CI passar), detecte o pool:
+Em vez de bloquear a sessão com polling foreground do CI, dispare `gh pr checks --watch` via Bash `run_in_background: true`. A sessão fica **livre** durante o watch — o harness re-invoca a sessão quando a task termina (CI concluído). **Sem polling foreground, sem `ScheduleWakeup`.**
+
 ```bash
-REPO=$(basename "$(cd "$(git rev-parse --show-toplevel)" && pwd)" | sed 's/-[0-9]*$//')
+# run_in_background: true — NÃO bloqueia a sessão; re-invoca na conclusão do CI.
+gh pr checks "$(gh pr view --json number --jq .number)" --watch
 ```
 
-Rode `/checkout-sync-all <REPO>` para:
-- atualizar `main` em todos os slots
-- remover branches locais já mergeadas
+**Princípio 10 (scheduling).** `gh pr checks --watch` em background é o ramo *evento-conhecido-em-process* da árvore de decisão — não escalar para `ScheduleWakeup` polling nem loop foreground.
+
+Quando a **notificação de conclusão** chegar:
+- **CI verde:** o auto-merge (ligado por default no `/commit-push-pr` da Fase 7) já mergeou o PR. Detecte o pool e sincronize:
+  ```bash
+  REPO=$(basename "$(cd "$(git rev-parse --show-toplevel)" && pwd)" | sed 's/-[0-9]*$//')
+  ```
+  Rode `/checkout-sync-all <REPO>` para atualizar `main` em todos os slots + remover branches locais já mergeadas. Se o auto-merge não pegou (repo sem `allow_auto_merge`), mergeie via `/force-merge` antes do sync.
+- **CI vermelho** (watch retorna exit≠0): **PARE** e escale — não mergeie com CI falhando.
 
 ## Fase 9 — Reflexão sobre DoD (auto-baseline --quick)
 
-Após o sync dos slots, invoque automaticamente `/reflect --baseline --quick` para classificar a adequação do Definition of Done aplicado a esta PR. Modo `--quick` é subset do `--baseline` — roda apenas camadas 1 (decisions.jsonl) e 2 (git log paths-touched) do algoritmo D1, sem fetch de PR comments. Mantém o espírito enxuto do `/full-cycle-simple` (custo de tokens reduzido). Gera relatório baseline em `.claude/reflections/<ts>-<slug>-baseline.md` e agenda follow-up retro D+7 via `~/.claude/cache/reflect/reminders.jsonl`.
+Após o sync dos slots, dispare a reflexão `/reflect --baseline --quick` como **subprocess headless** `claude --model claude-fable-5 -p` em **background** (não inline — a invocação inline herdaria o modelo da sessão, impossível pinar; o pattern slash-command-via-claude-p já é produção em `bin/reflect-retro-due.sh`). Modo `--quick` é subset do `--baseline` — roda apenas camadas 1 (decisions.jsonl) e 2 (git log paths-touched) do algoritmo D1, sem fetch de PR comments. Mantém o espírito enxuto do `/full-cycle-simple` (custo de tokens reduzido). Gera relatório baseline em `.claude/reflections/<ts>-<slug>-baseline.md` e agenda follow-up retro D+7 via `~/.claude/cache/reflect/reminders.jsonl`.
 
 ```bash
-PR_NUMBER=$(gh pr list --state merged --limit 1 --base main --json number --jq .[0].number) && /reflect $PR_NUMBER --baseline --quick
+PR_NUMBER=$(gh pr list --state merged --limit 1 --base main --json number --jq .[0].number)
+
+# Subprocess headless em background com modelo pinado (US-06). `&` + `disown`
+# garantem término non-blocking do pipeline.
+mkdir -p ~/.claude/cache/reflect
+claude --model claude-fable-5 -p "/reflect $PR_NUMBER --baseline --quick" \
+  >> ~/.claude/cache/reflect/fase9-fullcycle-simple.log 2>&1 &
+disown
 ```
 
-**Comportamento non-blocking.** Se `/reflect` falhar (ex.: PR não correlaciona com plano, `gh` offline, sessão `/auto-grill-me` ausente), registre o aviso mas **NÃO interrompa o pipeline** — reflexão é auditoria, não gate. O pipeline já considerou Fase 8 (sync) como término efetivo da entrega; Fase 9 apenas anexa metadado de qualidade.
+**Comportamento non-blocking.** O subprocess roda em background (`&` + `disown`): a falha dele (PR não correlaciona com plano, `gh` offline, sessão `/auto-grill-me` ausente, modelo indisponível) **NÃO interrompe o pipeline** — reflexão é auditoria, não gate, e o exit code do background job nem é colhido. O pipeline já considerou Fase 8 (sync) como término efetivo da entrega; Fase 9 apenas anexa metadado de qualidade (output em `~/.claude/cache/reflect/fase9-fullcycle-simple.log`).
 
 ### Verificação (humano pós-merge)
 

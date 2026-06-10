@@ -8,8 +8,8 @@ set -euo pipefail
 #   reflect-learn-bundle.sh <PR_NUM> <US_ID>
 #     → Emite JSON do bundle no stdout (AC6).
 #
-#   reflect-learn-bundle.sh <PR_NUM> <US_ID> --with-llm <OUTPUT_DIR>
-#     → Monta bundle, invoca `claude --print --max-turns 1` com timeout
+#   reflect-learn-bundle.sh <PR_NUM> <US_ID> --with-llm <OUTPUT_DIR> [--model <id>]
+#     → Monta bundle, invoca `claude --model <id> --print --max-turns 1` com timeout
 #       HARD 600s (AC4), grava raw-llm-output.txt SEMPRE (AC5), parseia
 #       jq fail-graceful e produz report.md + proposed.diff + proposal.json
 #       em <OUTPUT_DIR> (AC8). Sempre exit 0 quando alcança LLM (fail-soft).
@@ -24,6 +24,9 @@ set -euo pipefail
 #   BUNDLE_CLAUDE_BIN       — path do claude binary (default: claude)
 #   BUNDLE_LLM_TIMEOUT_SEC  — override timeout (default: 600)
 #
+# Flag --model <id> (US-06): modelo do claude --print (default claude-fable-5;
+# preferência CLI flag > env var).
+#
 # NÃO escreve refs git. NÃO commita arquivos. Output só em $OUTPUT_DIR + stdout.
 
 usage() {
@@ -37,15 +40,32 @@ esac
 
 PR_NUM="${1:-}"
 US_ID="${2:-}"
-[[ -z "$PR_NUM" || -z "$US_ID" ]] && { echo "uso: $(basename "$0") <PR_NUM> <US_ID> [--with-llm <DIR>]" >&2; exit 2; }
+[[ -z "$PR_NUM" || -z "$US_ID" ]] && { echo "uso: $(basename "$0") <PR_NUM> <US_ID> [--with-llm <DIR>] [--model <id>]" >&2; exit 2; }
+shift 2
 
+# Modelo pinado na etapa /reflect (US-06). Default claude-fable-5; override via
+# flag --model <id> (preferência CLI flag > env var).
+MODEL="claude-fable-5"
 WITH_LLM=0
 OUT_DIR=""
-if [[ "${3:-}" == "--with-llm" ]]; then
-  WITH_LLM=1
-  OUT_DIR="${4:-}"
-  [[ -z "$OUT_DIR" ]] && { echo "--with-llm exige <OUTPUT_DIR>" >&2; exit 2; }
-fi
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --with-llm)
+      WITH_LLM=1
+      OUT_DIR="${2:-}"
+      [[ -z "$OUT_DIR" ]] && { echo "--with-llm exige <OUTPUT_DIR>" >&2; exit 2; }
+      shift 2
+      ;;
+    --model)
+      MODEL="${2:-}"
+      [[ -z "$MODEL" ]] && { echo "--model exige <id>" >&2; exit 2; }
+      shift 2
+      ;;
+    *)
+      echo "argumento desconhecido: $1" >&2; exit 2
+      ;;
+  esac
+done
 
 PRD_PATH="${BUNDLE_PRD_PATH:-./prd.json}"
 DOD_PATH="${BUNDLE_DOD_PATH:-skills/auto-grill-me/references/DOD.md}"
@@ -215,16 +235,16 @@ $BUNDLE_JSON"
 : > "$RAW_PATH"
 LLM_RC=0
 if command -v timeout >/dev/null 2>&1; then
-  timeout --foreground "$TIMEOUT_SEC" "$CLAUDE_BIN" --print --max-turns 1 "$PROMPT" \
+  timeout --foreground "$TIMEOUT_SEC" "$CLAUDE_BIN" --model "$MODEL" --print --max-turns 1 "$PROMPT" \
     > "$RAW_PATH" 2>&1 || LLM_RC=$?
 else
   # macOS sem coreutils → fallback via gtimeout ou sem timeout (custo aceito;
   # documentado como Gotcha em commands/reflect.md).
   if command -v gtimeout >/dev/null 2>&1; then
-    gtimeout "$TIMEOUT_SEC" "$CLAUDE_BIN" --print --max-turns 1 "$PROMPT" \
+    gtimeout "$TIMEOUT_SEC" "$CLAUDE_BIN" --model "$MODEL" --print --max-turns 1 "$PROMPT" \
       > "$RAW_PATH" 2>&1 || LLM_RC=$?
   else
-    "$CLAUDE_BIN" --print --max-turns 1 "$PROMPT" > "$RAW_PATH" 2>&1 || LLM_RC=$?
+    "$CLAUDE_BIN" --model "$MODEL" --print --max-turns 1 "$PROMPT" > "$RAW_PATH" 2>&1 || LLM_RC=$?
   fi
 fi
 

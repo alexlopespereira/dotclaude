@@ -60,6 +60,90 @@ Arquivo `prd.json` na raiz do repositório com este formato:
 
 7. **Propague `hasFinancialCost`.** Aplicar regra documentada na seção "Saída" acima. Adição é aditiva (campo opcional); prd.json sem o campo continua válido (default `false`).
 
+8. **Gere o DAG (`dependsOn` / `touchesFiles`) quando o PRD será rodado em paralelo.** O dispatcher paralelo (`/ralph-adversarial --parallel`) co-despacha stories em slots distintos do pool; esses dois campos opcionais dizem ao dispatcher o que pode rodar junto e o que precisa serializar. Veja a seção "Campos de DAG paralelo" abaixo. Ambos são **opcionais e aditivos** — um prd.json sem eles continua válido e a validação jq da Fase 4 do `/full-cycle` passa normalmente (campos ausentes = sem restrição extra; o dispatcher trata cada story como independente).
+
+## Campos de DAG paralelo: `dependsOn` e `touchesFiles`
+
+Estes campos são lidos pelo dispatcher em `skills/ralph-adversarial/lib/dispatch.sh`. **Ambos são opcionais.** A semântica do default ausente é deliberada: **ausência ≡ sem restrição** (a story é despachável sem esperar ninguém e sem reservar arquivos). Preencha-os apenas quando o PRD for executado em modo paralelo e a story tiver, de fato, pré-requisito ou risco de colisão de arquivos.
+
+### `dependsOn` — pré-requisitos de ordem
+
+- **Tipo:** array de `id`s de outras stories do mesmo prd.json.
+- **Semântica:** a story só é despachada quando **toda** story listada em `dependsOn` tem `passes: true` (literal `true` — `"ESCALATED"` **não** satisfaz a dependência; uma story escalada bloqueia suas dependentes até resolução humana).
+- **Quando preencher:** quando a story consome um artefato (função, schema, contrato, arquivo) produzido por outra story do PRD. Ex.: US-04 implementa um gate que usa a especificação escrita por US-03 → `"dependsOn": ["US-03"]`.
+- **Default ausente / `[]`:** sem pré-requisito; despachável imediatamente.
+- **Ciclos são proibidos.** O dispatcher roda `detect_dependsOn_cycle` (DFS) e aborta com `ciclo detectado: A → B → A` se o grafo tiver ciclo. Nunca crie dependência circular.
+
+### `touchesFiles` — globs estimados de arquivos tocados
+
+- **Tipo:** array de globs (estilo path glob) que o Planejador **estima** que a story vai criar/modificar.
+- **Semântica:** duas stories sem relação de `dependsOn` só co-despacham se seus `touchesFiles` **não intersectam** (ver algoritmo abaixo). Interseção ⇒ serializa (a segunda espera a primeira sair de voo).
+- **Quando preencher:** sempre que possível em PRDs paralelos — é o que permite ao dispatcher evitar que dois workers editem o mesmo arquivo e gerem conflito de merge. Use os mesmos paths que você colocaria mentalmente no "arquivos tocados" da fatia.
+- **Default ausente:** sem reserva de arquivos; a story não impõe restrição de colisão **nem sofre** restrição vinda de outra (campo ausente em qualquer um dos lados = sem interseção). É o comportamento conservador-permissivo: só serializa quando **ambas** declaram e os prefixos colidem.
+- **Conservadorismo intencional:** a estimativa pode errar para mais (falso-positivo de interseção) — isso apenas **serializa desnecessariamente**, nunca corrompe. Errar para menos (esquecer um arquivo realmente compartilhado) degrada para conflito de merge na integração serial, que já escala para humano. Prefira listar de mais a de menos.
+
+### Algoritmo de interseção de `touchesFiles` (implementável)
+
+O gate de disjunção (US-04, `lib/dispatch.sh`) decide se dois globs intersectam por **prefixo literal**, não por matching de glob completo. É deliberadamente conservador:
+
+1. **Normalize cada glob para seu prefixo literal:** pegue a substring do início até (exclusivo) o **primeiro metacaractere glob** (`*`, `?`, `[`). Se não houver metacaractere, o prefixo literal é o glob inteiro.
+   - `bin/*.sh` → prefixo `bin/`
+   - `bin/tests/x.sh` → prefixo `bin/tests/x.sh` (sem metacaractere)
+   - `skills/prd/SKILL.md` → prefixo `skills/prd/SKILL.md`
+   - `lib/[ab].sh` → prefixo `lib/`
+2. **Dois prefixos intersectam ⇔ um é prefixo (string) do outro.** Compare os dois prefixos literais como strings: se `prefixoA` começa com `prefixoB` **ou** `prefixoB` começa com `prefixoA`, há interseção → serializa.
+   - `bin/` vs `bin/tests/x.sh` → `bin/` é prefixo de `bin/tests/x.sh` → **intersecta** (serializa).
+   - `bin/foo.sh` vs `bin/` → `bin/` é prefixo de `bin/foo.sh` → **intersecta**.
+   - `bin/a.sh` vs `docs/b.md` → nenhum é prefixo do outro → **disjunto** (co-despacha).
+3. **Duas listas de `touchesFiles` intersectam se existe pelo menos um par (gA, gB), gA na primeira e gB na segunda, cujos prefixos intersectam.** Basta um par colidir para serializar as duas stories.
+
+> Por que prefixo literal e não glob real: matching de glob completo é caro e ambíguo entre shells; o prefixo literal é barato, determinístico e **conservador** — ele nunca declara disjunção falsa (que corromperia), só pode declarar interseção falsa (que no pior caso serializa algo que poderia ter paralelizado).
+
+### Exemplo completo — prd.json com DAG de 3 stories
+
+```json
+{
+  "projectName": "Exemplo DAG",
+  "branchName": "feat/exemplo-dag",
+  "sourcePlan": ".claude/plans/exemplo-dag.md",
+  "hasFinancialCost": false,
+  "userStories": [
+    {
+      "id": "US-01",
+      "title": "Schema de validação em lib/schema.sh",
+      "description": "Define o contrato consumido por US-02 e US-03.",
+      "dependsOn": [],
+      "touchesFiles": ["lib/schema.sh", "tests/test_schema.sh"],
+      "acceptanceCriteria": ["AC1: lib/schema.sh exporta validate() testado em tests/test_schema.sh"],
+      "priority": 1,
+      "passes": false
+    },
+    {
+      "id": "US-02",
+      "title": "Endpoint que usa o schema",
+      "description": "Consome validate() de US-01; toca apenas a camada de API.",
+      "dependsOn": ["US-01"],
+      "touchesFiles": ["api/handler.sh", "tests/test_handler.sh"],
+      "acceptanceCriteria": ["AC1: api/handler.sh rejeita payload inválido via validate()"],
+      "priority": 2,
+      "passes": false
+    },
+    {
+      "id": "US-03",
+      "title": "Docs do schema",
+      "description": "Documenta o contrato; só toca docs/, disjunto de US-02.",
+      "dependsOn": ["US-01"],
+      "touchesFiles": ["docs/schema.md"],
+      "acceptanceCriteria": ["AC1: docs/schema.md descreve cada campo de validate()"],
+      "priority": 3,
+      "passes": false
+    }
+  ]
+}
+```
+
+Leitura do DAG acima pelo dispatcher: US-01 despacha primeiro (sem deps). Quando US-01 vira `passes: true`, US-02 e US-03 ficam ambas elegíveis (dependem só de US-01); como seus `touchesFiles` são disjuntos (`api/` + `tests/test_handler.sh` vs `docs/`), **co-despacham no mesmo tick** em slots distintos. Se US-02 também tocasse `docs/`, o gate de interseção serializaria as duas.
+
 ## ACs [CAT3-MANUAL] — validação manual pós-merge
 
 Alguns critérios são **Categoria 3 (humano-validated post-merge)** — não podem ser automaticamente verificados pelo agente Claude (implementer) nem pelo Codex (reviewer) dentro do loop Ralph, tipicamente por limite físico (slash command recursivo, dependência de UI ao vivo, side-effect contra serviço externo pago, validação subjetiva de UX). Para sinalizar isso, marque o AC com o prefixo `[CAT3-MANUAL]` logo após o número do AC.

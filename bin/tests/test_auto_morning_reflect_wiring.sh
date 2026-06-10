@@ -64,12 +64,23 @@ exit 1
 EOF
 chmod +x "$REFLECT_FAIL"
 
+# backlog-dispatch stub: no-op para isolar o wiring do reflect (US-07 adicionou
+# uma 2ª chamada non-blocking ao auto-morning; sem stub ela rodaria o dispatcher
+# real contra o ambiente do laptop).
+BACKLOG_STUB="$TMP/backlog-dispatch.sh"
+cat > "$BACKLOG_STUB" <<EOF
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$BACKLOG_STUB"
+
 run_am() { # reflect_stub ; ecoa nada, só roda o wrapper
   : > "$CALLLOG"
   AM_SKIP_WAIT=1 \
   AM_LOG="$TMP/auto-morning.log" \
   AM_VM_MORNING="$VM_STUB" \
   AM_REFLECT_RETRO="$1" \
+  AM_BACKLOG_DISPATCH="$BACKLOG_STUB" \
     bash "$AM"
 }
 

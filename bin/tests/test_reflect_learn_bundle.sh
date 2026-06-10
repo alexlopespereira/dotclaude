@@ -244,6 +244,52 @@ else
   _pass; _pass  # 2 _pass equivalente aos 2 asserts da branch behavioral, mantém TOTAL constante
 fi
 
+# ─── US-06 (AC3) — flag --model propagada ao claude --print ──────────────
+# Mock que loga argv num call-log (capture-proof) e emite JSON válido.
+MODEL_LOG="$TMP/model-calllog.txt"
+cat > "$MOCK_BIN_DIR/claude-logargv" <<EOF
+#!/usr/bin/env bash
+echo "claude \$*" >> "$MODEL_LOG"
+echo '{"summary":"ok","proposals":[],"findings":[]}'
+EOF
+chmod +x "$MOCK_BIN_DIR/claude-logargv"
+
+# AC3 default → --model claude-fable-5 no argv de claude --print
+: > "$MODEL_LOG"
+OUT_DIR_M="$TMP/learn-out-model-default"
+BUNDLE_PRD_PATH="$TMP/prd.json" \
+BUNDLE_DOD_PATH="$TMP/dod.md" \
+BUNDLE_SPECS_PATH="$TMP/specs.md" \
+BUNDLE_TEST_GLOB_ROOT="$TMP" \
+BUNDLE_COMMITS_OVERRIDE="abc1234 fixture commit" \
+BUNDLE_CLAUDE_BIN="$MOCK_BIN_DIR/claude-logargv" \
+BUNDLE_LLM_TIMEOUT_SEC=10 \
+  "$TARGET" 999 US-FIXT --with-llm "$OUT_DIR_M" > /dev/null 2>&1
+RC=$?
+assert_rc "$RC" 0 "US06-AC3a --with-llm default exit 0"
+# capture-proof: o mock rodou co-presente (call-log não-vazio)
+if [ -s "$MODEL_LOG" ]; then _pass; else _fail "US06-AC3b capture-proof: claude mock não rodou"; fi
+assert_contains "$(cat "$MODEL_LOG")" "--model claude-fable-5" "US06-AC3c default --model claude-fable-5 no argv"
+assert_contains "$(cat "$MODEL_LOG")" "--print" "US06-AC3d --print presente (invocação correta)"
+
+# AC3 --model custom respeitado
+: > "$MODEL_LOG"
+OUT_DIR_M2="$TMP/learn-out-model-custom"
+BUNDLE_PRD_PATH="$TMP/prd.json" \
+BUNDLE_DOD_PATH="$TMP/dod.md" \
+BUNDLE_SPECS_PATH="$TMP/specs.md" \
+BUNDLE_TEST_GLOB_ROOT="$TMP" \
+BUNDLE_COMMITS_OVERRIDE="abc1234 fixture commit" \
+BUNDLE_CLAUDE_BIN="$MOCK_BIN_DIR/claude-logargv" \
+BUNDLE_LLM_TIMEOUT_SEC=10 \
+  "$TARGET" 999 US-FIXT --with-llm "$OUT_DIR_M2" --model claude-opus-4-8 > /dev/null 2>&1
+assert_contains "$(cat "$MODEL_LOG")" "--model claude-opus-4-8" "US06-AC3e --model custom respeitado no argv"
+
+# AC3 --model sem valor → exit != 0
+"$TARGET" 999 US-FIXT --model > /dev/null 2>&1
+RC=$?
+if [ "$RC" -ne 0 ]; then _pass; else _fail "US06-AC3f --model sem valor → exit != 0 (rc=$RC)"; fi
+
 # ─── Summary ───────────────────────────────────────────────────────────────
 TOTAL=$((PASS + FAIL))
 echo ""

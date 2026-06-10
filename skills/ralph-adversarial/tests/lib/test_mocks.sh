@@ -346,6 +346,12 @@ cat > "$REPO/prd.json" <<JSON
 }
 JSON
 
+# US-02: o run-log fica FORA do repo-under-test. O pré-flight do run_serial
+# aborta quando há untracked não-framework na árvore; um _run.log dentro do
+# repo seria exatamente isso (false-positive de artefato de teste). Mantendo
+# o log fora, este e2e continua exercitando o caminho default COM pré-flight
+# ativo — a árvore só tem framework dirt (prd.json untracked + progress.txt).
+RUN_LOG=$(mktemp_safe file mock-ac1-run)
 start=$(date +%s)
 (
     cd "$REPO"
@@ -355,7 +361,7 @@ start=$(date +%s)
     export FAKE_VERDICT=MERGE
     export RALPH_HANG_TIMEOUT=15
     bash "$RALPH_SCRIPT" 2
-) > "$REPO/_run.log" 2>&1
+) > "$RUN_LOG" 2>&1
 rc=$?
 elapsed=$(( $(date +%s) - start ))
 
@@ -365,9 +371,10 @@ assert_eq "$passes" "true" "AC1 e2e marks story passes:true"
 if [ "$elapsed" -lt 10 ]; then
     _pass
 else
-    _fail "AC1 e2e elapsed < 10s (was ${elapsed}s) — log: $REPO/_run.log"
+    _fail "AC1 e2e elapsed < 10s (was ${elapsed}s) — log: $RUN_LOG"
 fi
 rm -rf "$REPO"
+rm -f "$RUN_LOG"
 
 # ─── Report ───────────────────────────────────────────────────────────────
 

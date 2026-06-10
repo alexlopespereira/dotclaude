@@ -642,10 +642,91 @@ count_dispatchable() {
     echo "$n"
 }
 
+# ─── touchesFiles disjunction gate (US-04) ─────────────────────────────────
+# Conservative literal-prefix algorithm specified in skills/prd/SKILL.md
+# ("Algoritmo de interseção de touchesFiles"). Glob matching is deliberately
+# NOT used: it is cheap, deterministic, and only ever errs toward declaring
+# a FALSE intersection (which serializes — safe), never a false disjunction
+# (which would corrupt via concurrent edits to the same file).
+
+# Args: glob
+# Prints the literal prefix: the substring up to (exclusive) the first glob
+# metacharacter (* ? [). No metacharacter → the whole string. The bracket
+# class [*?[] matches any of those three chars; %% strips it and everything
+# after. Verified under bash 3.2.
+touches_literal_prefix() {
+    printf '%s\n' "${1%%[*?[]*}"
+}
+
+# Args: a  b  (two literal prefixes)
+# Returns 0 when one prefix is a string-prefix of the other (SKILL.md step 2).
+# Prefixes are metachar-free, but $b is quoted so any stray char stays literal.
+prefixes_intersect() {
+    local a="$1" b="$2"
+    case "$a" in "$b"*) return 0 ;; esac
+    case "$b" in "$a"*) return 0 ;; esac
+    return 1
+}
+
+# Args: story_id  prd_path
+# Prints each touchesFiles entry on its own line (nothing when absent/empty).
+touches_files_for() {
+    jq -r --arg id "$1" \
+        '.userStories[] | select(.id == $id) | (.touchesFiles // [])[]' "$2"
+}
+
+# Args: id_a  id_b  prd_path
+# Returns 0 when stories A and B have intersecting touchesFiles (SKILL.md
+# step 3 — any pair of prefixes intersects). If EITHER story lacks the field
+# (absent OR empty array), returns 1 (no restriction — pre-US-04 behavior).
+stories_touch_intersect() {
+    local id_a="$1" id_b="$2" prd_path="$3"
+    local files_a files_b
+    files_a=$(touches_files_for "$id_a" "$prd_path")
+    files_b=$(touches_files_for "$id_b" "$prd_path")
+    [ -z "$files_a" ] && return 1
+    [ -z "$files_b" ] && return 1
+
+    local ga gb pa pb
+    while IFS= read -r ga; do
+        [ -z "$ga" ] && continue
+        pa=$(touches_literal_prefix "$ga")
+        while IFS= read -r gb; do
+            [ -z "$gb" ] && continue
+            pb=$(touches_literal_prefix "$gb")
+            if prefixes_intersect "$pa" "$pb"; then
+                return 0
+            fi
+        done <<< "$files_b"
+    done <<< "$files_a"
+    return 1
+}
+
+# Args: candidate_id  in_flight_ids (space-separated)  prd_path
+# Returns 0 when the candidate's touchesFiles intersect ANY in-flight story's
+# touchesFiles (→ must serialize). Returns 1 when there is no conflict.
+candidate_touch_conflicts() {
+    local candidate="$1" in_flight="$2" prd_path="$3"
+    local other
+    for other in $in_flight; do
+        [ -z "$other" ] && continue
+        [ "$other" = "$candidate" ] && continue
+        if stories_touch_intersect "$candidate" "$other" "$prd_path"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Args: prd_path  excluded_ids (space-separated)
 # Like next_dispatchable but skips ids already in flight on a worker. The
 # orchestrator calls this with the current set of in-flight story_ids so the
 # same story is never dispatched twice in parallel.
+#
+# US-04: the excluded set IS the in-flight set, so it doubles as the input
+# to the touchesFiles disjunction gate — a candidate whose touchesFiles
+# intersect any in-flight story is skipped (serialized) even when its
+# dependsOn are satisfied. Field absent on either side → no extra restriction.
 next_dispatchable_excluding() {
     local prd_path="$1"
     local excluded="$2"
@@ -655,6 +736,9 @@ next_dispatchable_excluding() {
         [ -z "$id" ] && continue
         case " $excluded " in *" $id "*) continue ;; esac
         if is_dispatchable "$id" "$prd_path"; then
+            if candidate_touch_conflicts "$id" "$excluded" "$prd_path"; then
+                continue
+            fi
             echo "$id"
             return 0
         fi

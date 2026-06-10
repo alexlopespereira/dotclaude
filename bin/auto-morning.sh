@@ -10,6 +10,7 @@ set -uo pipefail
 #   AM_LOG           path do log (default ~/.claude/cache/auto-morning.log)
 #   AM_VM_MORNING    wrapper que abre as sessões VM (default vm-morning.sh)
 #   AM_REFLECT_RETRO drenador de retros vencidas (default bin/reflect-retro-due.sh)
+#   AM_BACKLOG_DISPATCH dispatcher de backlog entre repos (default bin/backlog-dispatch.sh)
 #   AM_SKIP_WAIT     1 = pula a espera por iTerm/Dock (testes não dependem da UI)
 LOG="${AM_LOG:-$HOME/.claude/cache/auto-morning.log}"
 mkdir -p "$(dirname "$LOG")"
@@ -36,6 +37,7 @@ mkdir -p "$(dirname "$LOG")"
   # VMs via vm-morning.sh. Edite a lista de abas no topo desse script.
   VM_MORNING="${AM_VM_MORNING:-$HOME/Projects/dotclaude/vm-morning.sh}"
   REFLECT_RETRO="${AM_REFLECT_RETRO:-$HOME/Projects/dotclaude/bin/reflect-retro-due.sh}"
+  BACKLOG_DISPATCH="${AM_BACKLOG_DISPATCH:-$HOME/Projects/dotclaude/bin/backlog-dispatch.sh}"
   # =============================================
 
   if [ ! -x "$VM_MORNING" ]; then
@@ -54,6 +56,17 @@ mkdir -p "$(dirname "$LOG")"
     bash "$REFLECT_RETRO" --max 2 || true
   else
     echo "→ reflect-retro-due.sh ausente/não-executável em $REFLECT_RETRO — pulado."
+  fi
+
+  # Drena a fila de backlog entre repos (headless, non-blocking): despacha até 2
+  # ciclos /full-cycle-simple em slots livres do pool. PARA no PR aberto sem
+  # auto-merge (nada integra sem humano). Uma falha aqui NÃO derruba o
+  # auto-morning (|| true).
+  if [ -x "$BACKLOG_DISPATCH" ]; then
+    echo "→ drenando backlog: $BACKLOG_DISPATCH --max 2"
+    bash "$BACKLOG_DISPATCH" --max 2 || true
+  else
+    echo "→ backlog-dispatch.sh ausente/não-executável em $BACKLOG_DISPATCH — pulado."
   fi
 
   echo "═══ concluído ═══"

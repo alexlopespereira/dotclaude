@@ -12,12 +12,15 @@ set -e
 PARALLEL_MODE=false
 PARALLEL_N="${RALPH_PARALLEL_N:-4}"
 SKIP_REVIEWER=false
+# US-02: --allow-dirty pula o pré-flight de árvore limpa do run_serial.
+ALLOW_DIRTY=false
 POSITIONAL=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --parallel)    PARALLEL_MODE=true; shift ;;
         --parallel=*)  PARALLEL_MODE=true; PARALLEL_N="${1#*=}"; shift ;;
         --no-review)   SKIP_REVIEWER=true; shift ;;
+        --allow-dirty) ALLOW_DIRTY=true; shift ;;
         --) shift; while [ $# -gt 0 ]; do POSITIONAL+=("$1"); shift; done; break ;;
         *)             POSITIONAL+=("$1"); shift ;;
     esac
@@ -152,8 +155,11 @@ kill_agent_pg() {
 # US-05 F5: Bootstrap --parallel. Executa pool detection + pré-flight ANTES
 # dos prereqs (jq, prd.json, claude/codex) para que falhas fora do pool (AC1)
 # e pool < 2 slots (AC4) sejam reportadas com mensagens específicas, sem
-# depender de prd.json estar presente. Execução real do paralelismo chega em
-# US-06; aqui o run_parallel ainda chama run_serial.
+# depender de prd.json estar presente. O dispatcher real está implementado:
+# run_parallel() (abaixo) roda o loop de ticks (poll_workers → poll_review →
+# dispatch_workers_tick), co-despachando stories elegíveis em slots do pool e
+# serializando a review. A elegibilidade honra dependsOn via is_dispatchable
+# (lib/dispatch.sh) e — após US-04 — a disjunção de touchesFiles.
 #
 # Capacidade de workers (AC3): documentada em commands/ralph-adversarial.md.
 #   pool=2  → cap=1  worker
@@ -462,11 +468,78 @@ set_api_timeout_count() {
     mv "${API_TIMEOUT_FILE}.tmp" "$API_TIMEOUT_FILE"
 }
 
+# ─── US-02: pré-flight de árvore limpa + lista de framework files ───────────
+# Incidente real (2026-06-10): um worker em HANG rodou `git stash push -u`
+# GLOBAL e varreu o WIP NÃO-commitado do usuário (vm1.sh/vm2.sh/vm-paste.sh).
+# Defesa em dupla camada, ambas usando a MESMA lista de framework files:
+#   (1) preflight_clean_tree aborta o run_serial se a árvore está suja FORA
+#       da lista, ANTES de qualquer mutação (--allow-dirty pula);
+#   (2) o stash da rota HANG usa pathspec que exclui os mesmos arquivos.
+#
+# Framework files = arquivos que o próprio Ralph cria/atualiza por design
+# (prd.json/progress.txt antes do loop; deltas dos workers em paralelo).
+# Sujeira neles é legítima — ressalva R1 da revisão adversária: repos que NÃO
+# os gitignoram (como o dotclaude) têm sujeira por design e não devem abortar.
+#
+# As duas representações DEVEM permanecer sincronizadas: os case-patterns de
+# is_framework_file e os pathspecs de RALPH_FRAMEWORK_PATHSPEC_EXCLUDES.
+RALPH_FRAMEWORK_PATHSPEC_EXCLUDES=(
+    ':(exclude)prd.json'
+    ':(exclude)progress.txt'
+    ':(exclude)progress-*.txt'
+    ':(exclude)progress-*.jsonl'
+    ':(exclude)agents-delta-*.md'
+    ':(exclude).claude'
+    ':(exclude)graphify-out'
+)
+
+is_framework_file() {
+    case "$1" in
+        prd.json|progress.txt)            return 0 ;;
+        progress-*.txt|progress-*.jsonl)  return 0 ;;
+        agents-delta-*.md)                return 0 ;;
+        .claude|.claude/*)                return 0 ;;
+        graphify-out|graphify-out/*)      return 0 ;;
+        *)                                return 1 ;;
+    esac
+}
+
+# preflight_clean_tree — return 1 (abortar) se `git status --porcelain` lista
+# qualquer path FORA da lista de framework files (tracked-modificado OU
+# untracked). --allow-dirty → return 0. NÃO faz nenhuma mutação: só inspeciona.
+preflight_clean_tree() {
+    [ "${ALLOW_DIRTY:-false}" = true ] && return 0
+    local -a dirty_user=()
+    local line path
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        # porcelain v1: "XY PATH"; rename = "XY OLD -> NEW" (pega o destino).
+        path="${line:3}"
+        case "$path" in *" -> "*) path="${path##* -> }" ;; esac
+        # porcelain envolve em aspas paths com espaço/char especial.
+        path="${path#\"}"; path="${path%\"}"
+        is_framework_file "$path" || dirty_user+=("$path")
+    done < <(git status --porcelain 2>/dev/null)
+
+    [ ${#dirty_user[@]} -eq 0 ] && return 0
+
+    echo "ERRO: árvore de trabalho suja fora da lista de framework files:" >&2
+    printf '  %s\n' "${dirty_user[@]}" >&2
+    echo "" >&2
+    echo "run_serial aborta o pré-flight para não varrer WIP do usuário (incidente 2026-06-10)." >&2
+    echo "Framework files (sujeira legítima): prd.json, progress.txt, progress-*.txt," >&2
+    echo "  progress-*.jsonl, agents-delta-*.md, .claude/, graphify-out/." >&2
+    echo "Para pular o pré-flight assumindo responsabilidade: --allow-dirty." >&2
+    return 1
+}
+
 # ─── Loop Principal ─────────────────────────────────────────
-# US-05 F5: o loop está em run_serial(); run_parallel() é um skeleton que
-# delega ao serial até US-06 implementar o dispatch real para os workers.
+# US-05 F5: o loop está em run_serial(); run_parallel() tem seu próprio
+# pré-flight (preflight_slot por slot) no bootstrap --parallel.
 
 run_serial() {
+# US-02 AC1/AC2/AC3: pré-flight ANTES de qualquer iteração/mutação.
+preflight_clean_tree || exit 1
 while [ $ITERATION -lt $MAX_ITERATIONS ]; do
     ITERATION=$((ITERATION + 1))
 
@@ -558,9 +631,15 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
         else
             # AC6: working tree pode estar sujo (agente parou no meio de edits).
             # `git stash` preserva sem perda; nunca usar `reset --hard` aqui.
+            # US-02: pathspec de exclusão ('.' positivo + framework excludes).
+            # Preserva o WIP do worker (src/*) mas NÃO captura framework files
+            # (prd.json/progress.txt/deltas), que o orquestrador/usuário precisa
+            # ler — fecha o vetor do incidente 2026-06-10 (stash -u global varreu
+            # WIP do usuário). Os framework files ficam intactos no working tree.
             if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-                git stash push -u -m "ralph-hang-${STORY_ID}-iter${ITERATION}" >/dev/null 2>&1 || true
-                echo "  Working tree sujo após hang — git stash criado."
+                git stash push -u -m "ralph-hang-${STORY_ID}-iter${ITERATION}" -- \
+                    '.' "${RALPH_FRAMEWORK_PATHSPEC_EXCLUDES[@]}" >/dev/null 2>&1 || true
+                echo "  Working tree sujo após hang — git stash criado (excl. framework files)."
             fi
             # AC8: dump no formato existente.
             echo "$(date -Iseconds) | HANG | $STORY_ID | timeout ${TIMEOUT}s sem novo commit" >> progress.txt
