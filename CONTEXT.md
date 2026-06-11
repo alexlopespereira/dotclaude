@@ -1,42 +1,46 @@
 # Context — dotclaude
 
-## Glossary
+Glossário de domínio do `dotclaude` para a integração de **knowledge graph** (Graphify) que substituiu o gerador de wiki próprio (llm-wiki). As decisões hard-to-reverse desta área estão registradas em [ADR 0001 — Adopt Graphify; sunset llm-wiki](docs/adr/0001-adopt-graphify-sunset-llm-wiki.md); este arquivo é só o glossário.
 
-### Graphify
-Gerador de knowledge graph de código escolhido para substituir o `bootstrap/llm-wiki/` neste repo. Pacote PyPI `graphifyy` (com double-y). Repo upstream: https://github.com/safishamsi/graphify.
+## Language
 
-Produz 3 artefatos em `graphify-out/` por projeto:
-- `graph.json` — grafo serializado (fonte do viewer)
-- `graph.html` — viewer interativo standalone
-- `GRAPH_REPORT.md` — relatório markdown lido pelo agente
+**Graphify**:
+Gerador de knowledge graph de código (PyPI `graphifyy`, com double-y; upstream `safishamsi/graphify`) que materializa o grafo como JSON local + HTML estático, sem banco de dados, ChromaDB, FAISS ou store vetorial.
+_Avoid_: graph tool, wiki, vector store
 
-**Não usa banco de dados.** Não há servidor, ChromaDB, FAISS ou store vetorial — é JSON local + HTML estático.
+**llm-wiki**:
+Sistema predecessor (removido em 2026-05-07) que versionava `wiki/` markdown com auto-update via GitHub Action em PR merged.
+_Avoid_: wiki, repo wiki
 
-**Convenção upstream (oficial, README:183–197):** `graphify-out/` **deve ser commitado** ("meant to be committed to git so everyone on the team starts with a map"). Excluir via `.gitignore`:
-- `graphify-out/manifest.json` (mtime-based, quebra após `git clone`)
-- `graphify-out/cost.json` (local-only)
-- `graphify-out/cache/` (opcional)
+**graphify-out/**:
+Diretório versionado onde o Graphify grava seus artefatos por projeto, com `.gitignore` excluindo apenas `manifest.json`, `cost.json` e `cache/`.
+_Avoid_: build dir, output dir
 
-Nota: o repo upstream do próprio Graphify ignora `graphify-out/` no seu `.gitignore`, mas isso é porque é o repo da própria ferramenta (meta-recursivo) — não é padrão recomendado pra usuários.
+**GRAPH_REPORT.md**:
+Artefato em `graphify-out/` — relatório markdown que o agente consulta antes de ler arquivos do repo.
+_Avoid_: report, wiki page
 
-### llm-wiki (removido em 2026-05-07)
-Sistema anterior em `bootstrap/llm-wiki/` que mantinha `wiki/` markdown versionado, com auto-update via GitHub Action em PR merged. Substituído por Graphify e diretório deletado na mesma migração — registro completo em `docs/adr/0001-adopt-graphify-sunset-llm-wiki.md`.
+**graph.json**:
+Artefato em `graphify-out/` — grafo serializado que alimenta o viewer e serve de sentinela pro hook PreToolUse do Graphify.
+_Avoid_: graph data, dump
 
-### Decisão: estratégia de versionamento Graphify
-Seguir padrão oficial do autor (README:183–197): **versionar `graphify-out/` inteiro**, com `.gitignore` excluindo apenas `manifest.json`, `cost.json` e `cache/`. Manter fresco via `graphify hook install` (git post-commit + post-checkout, AST-only, sem custo de LLM). Sem CI customizado.
+**graph.html**:
+Artefato em `graphify-out/` — viewer interativo standalone do grafo.
+_Avoid_: viewer, dashboard
 
-### Decisão: bootstrap pra repos novos
-Criar slash command `/graphify-init` (executa os 6 passos: build inicial, `graphify claude install`, `graphify hook install`, `.gitignore`, `.gitattributes`, commit). Estender `/checkout-init` pra rodar `graphify hook install` + `graphify claude install` em cada um dos 5 slots Boris automaticamente. Deletar `bootstrap/llm-wiki/` na mesma migração.
+## Relationships
 
-### Decisão: hook PreToolUse — per-repo
-`graphify claude install` mantém comportamento default: grava hook em `.claude/settings.json` **versionado no repo**, não no `~/.claude/settings.json` global. Coexiste sem conflito com hook global de secret-scan (`block-dangerous-git.sh`). Colaboradores que clonem o repo herdam o hook automaticamente. `/graphify-init` deve incluir o passo `graphify claude install` por repo.
+- **Graphify** substituiu **llm-wiki** — migração e trade-offs em [ADR 0001](docs/adr/0001-adopt-graphify-sunset-llm-wiki.md).
+- **Graphify** produz três artefatos dentro de **graphify-out/**: **GRAPH_REPORT.md**, **graph.json** e **graph.html**.
+- **graphify-out/** é versionado no git ([ADR 0001](docs/adr/0001-adopt-graphify-sunset-llm-wiki.md), Decision 3); o `.gitignore` exclui só `manifest.json`, `cost.json` e `cache/`.
+- **graph.json** resolve conflito de merge via `merge=theirs` ([ADR 0001](docs/adr/0001-adopt-graphify-sunset-llm-wiki.md), Decision 4).
+- Bootstrap de repos novos (`/graphify-init`) e o escopo per-repo do hook PreToolUse são Decisions 5 e 6 do mesmo [ADR 0001](docs/adr/0001-adopt-graphify-sunset-llm-wiki.md).
 
-### Decisão: estratégia de merge para `graphify-out/graph.json`
-`.gitattributes` com `graphify-out/graph.json merge=theirs` — em conflito, sempre preserva a versão de `origin/main`. Após `git pull` / `/sync`, rodar `graphify update .` (CLI, AST-only, zero LLM) localmente pra regenerar refletindo o working tree do slot. Hook permanece no modo `post-commit` padrão (background, assíncrono, lag de 1 commit aceito). Fluxo: `/sync` → resolve conflitos via merge=theirs → `graphify update .` → próximo commit traz `graph.json` re-alinhado.
+## Example dialogue
 
-### Instalação Graphify (dois níveis)
-- **Nível máquina (1× por máquina):** `uv tool install graphifyy && graphify install` — instala CLI globalmente e registra slash command `/graphify` no Claude Code.
-- **Nível repo (por projeto):** `/graphify .` (slash command de agente AI; usa subagents Claude Code via subscription) para o build inicial + `graphify update .` (CLI, AST-only) para re-build incremental + `graphify claude install` (CLI) para gravar hook PreToolUse no `.claude/` local que faz o agente consultar `GRAPH_REPORT.md` antes de ler arquivos.
+> **Dev:** "Onde fica o relatório que o agente lê antes de abrir um arquivo?"
+> **Domain expert:** "É o **GRAPH_REPORT.md**, dentro de **graphify-out/** — quem mantém esse diretório fresco é o **Graphify** via git hook, sem custo de LLM."
 
-### `graphify hook install`
-Comando separado de `graphify claude install`. Instala **git hooks** (`post-commit` + `post-checkout`) no `.git/hooks/` local, que **reconstroem `graphify-out/` automaticamente** após cada commit ou checkout. Rebuild é **AST-only — sem chamada a LLM, sem custo de API**. É o mecanismo oficial pra manter `graphify-out/` fresco sem CI.
+## Flagged ambiguities
+
+- "wiki" já significou tanto **llm-wiki** (sistema removido) quanto o conceito genérico — resolvido: **llm-wiki** é o sistema específico descontinuado em favor do **Graphify**; não use "wiki" pra falar do estado atual.

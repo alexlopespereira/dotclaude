@@ -186,6 +186,19 @@ register_dod_usage_hook() {
     fi
 }
 
+# Registra o Stop hook adr-materialize-warn (US-05; backstop ressalva Alta #1).
+# Best-effort: avisa quando o plano mais recente promete '## ADRs propostos' sem
+# marcador de quitação nem mudança em docs/adr/. Matcher Stop vazio (mesmo grupo
+# do dod-usage/telemetria) + timeout explícito 5000ms (pattern verify-handoff).
+register_adr_warn_hook() {
+    if _register_hook "Stop" "hooks/adr-materialize-warn.sh" \
+            "$CLAUDE_DIR/hooks/adr-materialize-warn.sh" "" "5000"; then
+        echo "  ✓ Stop hook (adr-materialize-warn) registrado em settings.json"
+    else
+        echo "  ⚠ settings.json: registro do adr-materialize-warn hook pulado (JSON inválido / python3 ausente)" >&2
+    fi
+}
+
 # Registra o SessionStart hook híbrido (auto-install gated; Adv #6 / M8 parte 2).
 register_session_start_hook() {
     if _register_hook "SessionStart" "hooks/session-start-sync.sh" "$CLAUDE_DIR/hooks/session-start-sync.sh"; then
@@ -279,6 +292,7 @@ sync_to_claude() {
     done
     register_dod_usage_hook
     register_stop_hook
+    register_adr_warn_hook
     register_session_start_hook
     register_verify_handoff_hook
     # claude-yolo: symlink de atalho em ~/.local/bin → cópia instalada em

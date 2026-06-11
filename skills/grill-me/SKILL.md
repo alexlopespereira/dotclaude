@@ -9,6 +9,10 @@ Ask the questions one at a time.
 
 If a question can be answered by exploring the codebase, explore the codebase instead.
 
+## Docs de domínio (modo inline)
+
+Quando a entrevista cristalizar um **termo de domínio** ou uma **decisão hard-to-reverse**, aplique o **modo inline** da biblioteca `domain-docs` — escreva o `CONTEXT.md` na hora e ofereça o ADR quando a decisão passar no gate triplo. Não reproduza as regras aqui: leia `~/.claude/skills/domain-docs/SKILL.md` (criação lazy + anúncio de 1 linha, gate triplo de ADR, formatos) e siga o modo inline descrito lá. Sessão sem termo/decisão de domínio não cria nada.
+
 ## Ao produzir o plano (telemetria de DoD)
 
 Se durante a entrevista **emergir um artefato concreto** (ex.: "isso vira um hook", "vamos criar uma skill"), ao encerrar persista um plano em `.claude/plans/<ISO-timestamp>-<slug>.md` (formato ReAct+Feynman) com seção `## Artefatos a produzir`: mapeie cada artefato a uma Categoria/Tarefa do `DOD.md`, copie o DoD **verbatim** em checklist, e emita o marcador `<!-- dod-use: <id> -->` após cada bloco. Siga [DOD-MAPPING.md](../auto-grill-me/references/DOD-MAPPING.md). **Não chame `log_event`** — o Stop hook conta a partir do marcador. Entrevista exploratória sem artefato mapeável continua efêmera (sem arquivo).

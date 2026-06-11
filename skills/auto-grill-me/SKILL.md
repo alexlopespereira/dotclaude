@@ -50,6 +50,16 @@ Ao encerrar:
 
 Slug = 5–8 palavras derivadas do tópico ou da pergunta-raiz. Criar `.claude/plans/` se não existir.
 
+## Docs de domínio (CONTEXT.md + ADRs)
+
+Esta skill consome a biblioteca `domain-docs` para escrever `CONTEXT.md`/`docs/adr/` — leia `~/.claude/skills/domain-docs/SKILL.md` (formatos canônicos + regras: criação lazy + anúncio de 1 linha, gate triplo de ADR, modo inline vs batch, materialização). **Não reproduza as regras de formato aqui.**
+
+Restrição própria desta skill — **só a decisão do usuário vira termo no glossário**:
+
+- **Tipo 1 (score > 60, pergunta efetivamente respondida pelo usuário):** se a resposta cristaliza um **termo de domínio**, escreva-o no `CONTEXT.md` **inline** (na hora, modo inline da biblioteca). É decisão do usuário → é fato do domínio.
+- **Tipo 2 / Tipo 3 (score < 35 e 35–60, assunção assumida sem perguntar):** a assunção silenciosa **NÃO** vai pro `CONTEXT.md`. **Assunção silenciosa não é decisão do usuário** e o glossário canônico não registra suposição — ela fica só no log (Tipo 2) / footnote (Tipo 3) e na Árvore de Design do plano.
+- **Restante (termos OBSERVADOS e ADRs propostos):** modo batch — ao persistir o plano, escreva os termos observados no `CONTEXT.md` e inclua a seção `## ADRs propostos` com o texto integral; materializam nos gates de cada fluxo (ver biblioteca). Termo CUNHADO por uma assunção silenciosa não-confirmada nunca entra no glossário, nem em batch.
+
 ## Audit log
 
 Append por decisão (Tipo 1/2/3) em `~/.claude/cache/auto-grill/<basename-cwd>-decisions.jsonl`, schema definido em [RUBRICA.md §8](references/RUBRICA.md).

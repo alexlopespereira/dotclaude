@@ -133,3 +133,19 @@ Alternativas rejeitadas:
 - **Reverter Decision 3 (gitignorar `graphify-out/`)** — perde hook PreToolUse em fresh clone (depende de `graph.json` presente para alertar o agente).
 - **PR upstream pra clustering determinístico** — fix correto a longo prazo, mas dependência externa não-bloqueante; instrução cobre 100% dos casos hoje.
 - **L1 em todos os scripts mutantes** — sustenta-se mas é whack-a-mole; cada script novo precisaria do pattern. Instrução universal cobre também comandos ad-hoc fora de `bin/`.
+
+## Errata — 2026-06-10 (migração dogfood do CONTEXT.md)
+
+O `CONTEXT.md` do repo foi reformatado pro formato canônico de glossário (US-06). Os 4 blocos `### Decisão:` que ele carregava eram **duplicatas das decisões deste ADR** e foram substituídos por referência — nenhum virou ADR novo (passariam no gate triplo, mas a decisão já estava registrada aqui):
+
+| Bloco `### Decisão:` removido do CONTEXT.md | Decisão equivalente neste ADR |
+|---|---|
+| estratégia de versionamento Graphify (versionar `graphify-out/`, gitignore `manifest.json`/`cost.json`/`cache/`) | **Decision 3** |
+| bootstrap pra repos novos (`/graphify-init`, estender `/checkout-init`) | **Decision 5** (refinada pela Errata 2026-05-08) |
+| hook PreToolUse — per-repo (`graphify claude install` grava em `.claude/` versionado) | **Decision 6** |
+| estratégia de merge para `graphify-out/graph.json` (`merge=theirs` + `graphify update .` pós-pull) | **Decision 4** (+ Errata 2026-05-07 corrigindo `graphify .` → `graphify update .`) |
+
+Dois fatos operacionais que **só viviam no CONTEXT.md** ficam preservados aqui (no information lost):
+
+- **Setup nível-máquina (1× por máquina):** `uv tool install graphifyy && graphify install` — instala a CLI globalmente e registra o slash command `/graphify` no Claude Code. (O nível-repo — `/graphify .` para build inicial, `graphify update .` CLI AST-only para rebuild, `graphify claude install` para o hook — já está na Errata 2026-05-07.)
+- **Por que versionar apesar do upstream ignorar:** o repo upstream do próprio Graphify ignora `graphify-out/` no seu `.gitignore`, mas isso é porque é o repo da própria ferramenta (meta-recursivo) — não contradiz a Decision 3, que segue o "Team setup" do README (183–197) recomendado pra *usuários*.

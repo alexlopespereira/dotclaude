@@ -1,6 +1,6 @@
 ---
 description: Ciclo end-to-end — planejamento + revisão adversária + PRD + Ralph + PR/merge
-allowed-tools: Read, Write, Glob, Grep, Bash(find *), Bash(bash *), Bash(chmod *), Bash(cat *), Bash(jq *), Bash(git *), Bash(gh *), Bash(ls *), Bash(pwd), Bash(cd *), Bash(echo *), Bash(test *)
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(find *), Bash(bash *), Bash(chmod *), Bash(cat *), Bash(jq *), Bash(git *), Bash(gh *), Bash(ls *), Bash(pwd), Bash(cd *), Bash(echo *), Bash(test *)
 argument-hint: [descrição do problema ou feature]
 ---
 
@@ -38,6 +38,7 @@ Para apenas planejar (sem executar/merge), use `/full-planning-cycle`.
        echo "HAS_FINANCIAL_COST=false" > "$FLAGS_FILE"
    fi
    ```
+7. **Docs de domínio (modo batch):** ao salvar o plano, escreva os **termos OBSERVADOS** no `CONTEXT.md` (criação lazy + anúncio de 1 linha) e inclua a seção `## ADRs propostos` com o texto integral de cada ADR que passa no gate triplo. Regras na biblioteca `domain-docs` (`~/.claude/skills/domain-docs/SKILL.md`) — não duplique o formato. Os ADRs materializam no início da fase de execução (Fase 4).
 
 ## Fase 2 — Revisão Adversária (Agente Revisor)
 
@@ -67,6 +68,7 @@ Para apenas planejar (sem executar/merge), use `/full-planning-cycle`.
 
 ## Fase 4 — Conversão em PRD
 
+0. **Materialização de ADRs (gate `/full-cycle` — início da fase de execução, pós-gate de aprovação da Fase 3):** antes de converter o plano em PRD, materialize a seção `## ADRs propostos` do plano em `docs/adr/` (e os termos cunhados pela solução no `CONTEXT.md`), resolvendo a numeração na hora, e emita o marcador `<!-- adr-materialized -->` na seção do plano. Regras na biblioteca `domain-docs` (`~/.claude/skills/domain-docs/SKILL.md`) — não reproduza o formato aqui. Plano sem seção `## ADRs propostos` → nada a materializar, siga.
 1. Leia `~/.claude/skills/prd/SKILL.md`.
 2. Converta o plano em `prd.json` no cwd atual seguindo a skill `prd`:
    - 1 fatia = 1 user story

@@ -1,6 +1,6 @@
 ---
 description: Ciclo end-to-end enxuto pra features simples — sem revisão adversária (Fase 2) e sem Codex review no Ralph. Use quando a feature tem escopo único, ≤5 arquivos tocados, sem schema migration / nova dependência / mudança em auth, sem custo financeiro recorrente. Se mid-Plan algum desses critérios disparar, agente pausa e oferece escalar pra /full-cycle.
-allowed-tools: Read, Write, Glob, Grep, Bash(find *), Bash(bash *), Bash(chmod *), Bash(cat *), Bash(jq *), Bash(grep *), Bash(wc *), Bash(git *), Bash(gh *), Bash(ls *), Bash(pwd), Bash(cd *), Bash(echo *), Bash(test *)
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(find *), Bash(bash *), Bash(chmod *), Bash(cat *), Bash(jq *), Bash(grep *), Bash(wc *), Bash(git *), Bash(gh *), Bash(ls *), Bash(pwd), Bash(cd *), Bash(echo *), Bash(test *)
 argument-hint: [descrição curta da feature simples]
 ---
 
@@ -43,6 +43,7 @@ Antes de invocar `/full-cycle-simple`:
        echo "HAS_FINANCIAL_COST=false" > "$FLAGS_FILE"
    fi
    ```
+7. **Docs de domínio (modo batch):** ao salvar o plano, escreva os **termos OBSERVADOS** no `CONTEXT.md` (criação lazy + anúncio de 1 linha) e inclua a seção `## ADRs propostos` com o texto integral de cada ADR que passa no gate triplo. Regras na biblioteca `domain-docs` (`~/.claude/skills/domain-docs/SKILL.md`) — não duplique o formato. Os ADRs materializam no início da fase de execução (Fase 4).
 
 ## Fase 1.5 — Gate de complexidade (E3)
 
@@ -103,6 +104,7 @@ Aguarde resposta. Se (1), prossiga pra Fase 4. Se (2), invoque `/full-cycle` com
 
 ## Fase 4 — Conversão em PRD — IDÊNTICO ao /full-cycle
 
+0. **Materialização de ADRs (gate `/full-cycle-simple` — início da fase de execução, pós-gate de aprovação da Fase 1.5):** antes de converter o plano em PRD, materialize a seção `## ADRs propostos` do plano em `docs/adr/` (e os termos cunhados pela solução no `CONTEXT.md`), resolvendo a numeração na hora, e emita o marcador `<!-- adr-materialized -->` na seção do plano. Regras na biblioteca `domain-docs` (`~/.claude/skills/domain-docs/SKILL.md`) — não reproduza o formato aqui. Plano sem seção `## ADRs propostos` → nada a materializar, siga.
 1. Leia `~/.claude/skills/prd/SKILL.md`.
 2. Converta o plano em `prd.json` no cwd atual seguindo a skill `prd`:
    - 1 fatia = 1 user story

@@ -77,6 +77,9 @@ Sempre presente; "Nenhum." se o plano não envolve SaaS pago.
 ### Artefatos a produzir
 Quando o plano gera artefatos concretos (hook, skill, comando, página…), liste cada um mapeado a uma Categoria/Tarefa do [`DOD.md`](../auto-grill-me/references/DOD.md), com o DoD copiado **verbatim** em checklist `- [ ]`, seguido do marcador `<!-- dod-use: <id> -->`. Persista o plano em `.claude/plans/<ISO-timestamp>-<slug>.md`. A telemetria de DoD é emitida pelo **Stop hook** a partir do marcador — **não** chame `log_event`. Ver [DOD-MAPPING.md](../auto-grill-me/references/DOD-MAPPING.md). Omitir a seção se o plano é puramente exploratório (sem artefato mapeável).
 
+### ADRs propostos
+A seção `## ADRs propostos` do plano persistido carrega o **texto integral** de cada decisão hard-to-reverse que passa no gate triplo (o ADR inteiro, não só o título) + os termos CUNHADOS pela solução. Ela materializa em `docs/adr/` (e os termos cunhados no `CONTEXT.md`) no **gate de cada fluxo** — `/plan` (aceite do usuário), `/full-planning-cycle` (veredito APROVADO), `/full-cycle*` (início da execução) — emitindo o marcador `<!-- adr-materialized -->` na quitação. Termos OBSERVADOS (fato do domínio, independem da solução) vão pro `CONTEXT.md` já ao persistir o plano. Formato do ADR, gate triplo, distinção OBSERVADO vs CUNHADO e a tabela de gates de materialização vivem na biblioteca `domain-docs` (`~/.claude/skills/domain-docs/SKILL.md`) — **não reproduza aqui**. Omitir a seção se nenhuma decisão passa no gate triplo.
+
 ## Modo HST — Hierarchical Systems Thinking (`/plan --hst`)
 
 Quando `/plan` recebe `--hst`, produza o plano nas **6 fases HST abaixo** em vez do **Template: Plano** padrão. Regras que continuam valendo *dentro* das fases:
@@ -145,6 +148,13 @@ Para **cada componente**: dados necessários · processos internos · exceções
 
 ### Fase 6 — Roadmap (compatível com `/prd-convert`)
 Organize a implementação em fases: **MVP** · **melhorias** · **versão escalável**. **Cada item do MVP é uma "fatia"/user story** — esse é o formato que `/prd-convert` consome para gerar `prd.json`, então um plano `--hst` continua alimentando o loop Ralph sem adaptação. Termine com **Decisões Pendentes** e a tabela de **Custos recorrentes**.
+
+### Transbordo de docs de domínio (HST)
+Regra de transbordo pra não prender conhecimento no store do System Intent (a §Transbordo HST da biblioteca `domain-docs` — `~/.claude/skills/domain-docs/SKILL.md` — é a fonte):
+
+- A **Fase 1 (System Intent)** permanece no seu **store próprio** (`$STORE/system_intent_*.md`, lifecycle delete-then-rewrite) — **não** transborda pro `CONTEXT.md`.
+- **Termo de domínio** resolvido em **qualquer fase HST** transborda pro `CONTEXT.md` (glossário curado e versionado), seguindo o modo da biblioteca.
+- **Restrição global** que passa no **gate triplo** vira **ADR proposto** — entra na seção `## ADRs propostos` do plano e materializa na aprovação, registrada no **Roadmap (Fase 6)**.
 
 ## Template: Revisão Adversária (Codex como Red Team)
 
