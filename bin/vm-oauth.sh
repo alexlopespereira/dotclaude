@@ -28,6 +28,7 @@ SSH="${VM_OAUTH_SSH:-ssh}"
 # Mapping VM→IP e user vêm da lib comum (fonte única — P2 dedup).
 _SD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 for _lib in "$_SD/lib/vm-common.sh" "$HOME/.claude/bin/lib/vm-common.sh"; do
+  # shellcheck source=/dev/null  # caminho resolvido em runtime (lib ao lado ou em ~/.claude)
   [ -f "$_lib" ] && { . "$_lib"; break; }
 done
 command -v vm_ip >/dev/null 2>&1 || { echo "ERRO: bin/lib/vm-common.sh não encontrada." >&2; exit 3; }

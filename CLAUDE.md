@@ -47,26 +47,19 @@ Use `/adversarial-review` para gerar o parecer de revisão adversária.
 Use `/full-planning-cycle [--grill]` para executar planejamento + auto-revisão em sequência (para só quando aprovado; não executa).
 Use `/full-cycle` para o ciclo end-to-end: planejamento + revisão + prd.json + Ralph Adversarial (execução automática).
 Use `/full-cycle-simple` para features **simples** (escopo único, ≤5 arquivos, sem migration/dep nova/auth/custo): pula adversarial review (Fase 2) e reviewer Codex no Ralph (`--no-review`). Mantém Plan completo + gate E3 que escala pra `/full-cycle` se o plano disparar trigger de complexidade.
+
+> **Disambiguação família `full-*`** (nomes estáveis, sem rename) — decida pelos eixos *executa?* / *adversarial?*:
+> - `/full-planning-cycle` — **só planeja** (Plano + auto-revisão; para no aprovado, não toca código).
+> - `/full-cycle-simple` — **planeja + executa**, mas **sem** adversarial review nem Codex (features simples).
+> - `/full-cycle` — **ciclo completo**: planeja + adversarial + executa (Ralph) + PR/ship.
 Use `/adversarial-research` para deep research com 3 provedores (Gemini + Perplexity + OpenAI).
 Use `/research-status` para listar pesquisas.
 Use `/research-synthesize` para sintetizar pesquisa pendente.
 Use `/diagnose [bug]` para loop disciplinado de diagnóstico (Phase 1 = construir feedback loop).
 
-### Nativas do Claude Code (built-in, v2.1.139–146)
+### Comandos nativos & skills de alinhamento
 
-Use `/code-review [low|high]` para review local multi-agent do diff atual — substitui a skill nativa `simplify` (renomeada em v2.1.146).
-Use `/goal <condição>` para autonomy goal-driven leve — alternativa a `/plan` quando o overhead estruturado é overkill.
-Use `claude agents` (subcomando CLI) para dashboard unificado de sessions running/blocked/completed.
-Use `/resume` para retomar background sessions com modelo/effort/permissions preservados.
-Use `/schedule` para cron remoto de agentes recorrentes — alternativa a `/loop` (polling auto-paced).
-
-## Skills de alinhamento e exploração (Tier 1 — Matt Pocock)
-
-- **`grill-me`** — interview adversário para alinhar plano/design. Pergunta uma de cada vez. Invocada manualmente ou via `/plan --grill`.
-- **`grill-with-docs`** — superset do `grill-me` que mantém `CONTEXT.md` (glossário de domínio) e `docs/adr/` (decisões hard-to-reverse). Use quando a área já tem ou merece esses artefatos.
-- **`zoom-out`** — mapeia módulos/callers de uma área desconhecida usando o vocabulário do domínio. Usado por `/plan` e `/techdebt` quando o contexto de código está raso.
-- **`diagnose`** — protocolo de 6 fases (feedback loop → reproduzir → hipotetizar → instrumentar → fix+regressão → cleanup). Invocada por `/diagnose` ou pelo `ralph-adversarial` após 2 falhas consecutivas.
-- **`git-guardrails-claude-code`** — hook PreToolUse global em `~/.claude/settings.json` (`block-dangerous-git.sh`). **Apenas secret scan**: bloqueia `commit`/`push` se o diff staged contém segredos (Stripe/GH/Netlify/AWS/Google/Slack/PEM) ou arquivos `.env`/`credentials`/`*.pem`/`*.key`. Operações destrutivas (`--force`, `reset --hard`, `clean -f`, `branch -D`) **não são bloqueadas** — Princípio 7 cobre só segredos.
+Comandos nativos do Claude Code (`/code-review`, `/goal`, `/resume`, `/schedule`, `claude agents`) e skills de alinhamento/exploração (`grill-me`, `grill-with-docs`, `zoom-out`, `diagnose`, e `git-guardrails-claude-code` — hook PreToolUse **secret-scan-only**: bloqueia segredos/`.env` no diff, NÃO bloqueia ops destrutivas; Princípio 7 cobre só segredos) estão catalogados no **README** (guia) e no **WORKFLOW.md** (mapa tático), conforme a hierarquia documental no topo do README.
 
 ## Workflow Boris Cherny — Checkouts paralelos + branch efêmera no push
 
@@ -82,8 +75,8 @@ Use `/checkout-use <repo> <slot> [label]` para preparar slot — atualiza `main`
 Use `/checkout-status [repo]` para ver estado dos slots.
 Use `/sync` (ou `/checkout-sync-all <repo>`) para sincronizar slots com `origin/main` e podar branches mergeadas. `/sync` auto-detecta o pool a partir do cwd. Em slots com Graphify configurado, regenera `graphify-out/` localmente após o pull (compensa `merge=theirs` em `graph.json`).
 Use `/commit-push-pr ["msg"]` para criar branch efêmera + commit + push + PR (substitui `/pr`). Argumentos opcionais — Claude infere mensagem/branch do contexto. Auto-merge é default; em repo **com** branch protection aguarda CI/reviews (`--auto`); em repo **sem** proteção, mergeia direto após push (soft auto-fallback) — `/force-merge` continua disponível para casos especiais. **Modo A (inferência) sem prompt y/n** — anuncia e executa direto; mantém guardrails fail-closed de segredo no diff e inferência fraca.
-Use `/ship ["msg"]` para auto-pipeline de entrega: testes pré-merge (loop 3x auto-fix) → PR → auto-merge (ou force-merge soft em não-protegida) → deploy (se `.claude/ship.json` configura) → e2e pós-merge contra URL real (loop 3x hotfix por iteração). Standalone ou invocado por `/full-cycle*` na fase final. Config per-repo em `.claude/ship.json` (cascata: config > auto-detect > flag CLI).
-Use `/force-merge [PR|branch] [--wait] [--admin]` para mergear PR aberto agora; auto-sync do pool após merge. Cobre o caso onde `gh pr merge --auto` não pegou (ex: repo sem `allow_auto_merge` ligado, branch protection exigindo reviews que não chegaram, ou repo solo onde você quer mergear sem esperar). Modos: soft (default — mergeia agora), `--wait` (aguarda CI até timeout 30min, override `--wait-timeout=Nm`), `--admin` (bypassa proteção; sempre confirma).
+Use `/ship ["msg"]` para auto-pipeline de entrega (testes pré-merge → PR → auto-merge → deploy → e2e pós-merge contra URL real). Standalone ou na fase final de `/full-cycle*`. Config per-repo em `.claude/ship.json`.
+Use `/force-merge [PR|branch] [--wait] [--admin]` para mergear PR aberto agora (soft default; `--wait` aguarda CI; `--admin` bypassa proteção, sempre confirma); auto-sync do pool após merge. Cobre o caso onde `gh pr merge --auto` não pegou.
 Use `/techdebt [escopo]` para análise + plano de limpeza de tech debt.
 Use `/create-worktree <slug>` *(legado)* para git worktree isolado.
 Use `/delete-worktree [path|slug]` *(legado)*.
@@ -96,15 +89,7 @@ Use `/browser-logout-all [--confirm]` para limpar todos os cookies do perfil Chr
 
 ### Graphify: dirt em `graphify-out/` é design, não bug
 
-Em slots de repos Graphified, os arquivos `graphify-out/{.graphify_root, GRAPH_REPORT.md, graph.json, graph.html}` ficam dirty após qualquer commit ou branch switch — os hooks `post-commit`/`post-checkout` do graphify regeneram em background, e parte do output é estruturalmente per-slot (caminho absoluto em `.graphify_root`, `basename(cwd)` no título do `GRAPH_REPORT.md`) ou não-determinística entre runs (community IDs do clustering). **Isso é design conhecido — ADR 0001 Errata 2026-05-12.**
-
-Comportamento esperado:
-
-- **Não tratar como user work-in-progress.** São arquivos derivados.
-- **Não commitar a dirt isoladamente** — não tem valor semântico per-slot (vira ruído no diff do próximo PR).
-- **Não tentar `git stash`** — stash pop conflita quando outro slot atualizou os mesmos paths.
-- **Antes de comandos que fazem checkout interno** (`gh pr merge --delete-branch`, `git rebase`, `git switch <branch>`) em slot Graphified: descartar com `git checkout -- graphify-out/`. Pattern canônico em `bin/checkout-sync-all.sh:49-56`.
-- **Se um git/gh command falhar com `"would be overwritten by checkout"` citando `graphify-out/`:** descartar com `git checkout -- graphify-out/` e re-executar. Não stash, não commit.
+`graphify-out/*` fica dirty após commit/checkout em slots Graphified (hooks regeneram; output per-slot/não-determinístico) — **design conhecido, não work-in-progress (ADR 0001 Errata 2026-05-12)**. Não commitar isolado, não `git stash`; antes de checkout interno (`gh pr merge --delete-branch`, `git rebase`, `git switch`) ou se um comando falhar com `"would be overwritten by checkout"` citando `graphify-out/`, descartar com `git checkout -- graphify-out/` e re-executar. Detalhe/pattern canônico no README (§ Knowledge Graph via Graphify) + `bin/checkout-sync-all.sh:49-56`.
 
 ## Testing (sempre ativo)
 

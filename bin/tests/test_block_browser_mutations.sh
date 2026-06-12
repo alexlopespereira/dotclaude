@@ -51,6 +51,21 @@ printf 'not-json' | BBM_ALLOW_TRIGGERS=comprar bash "$HOOK" 2>/dev/null; assert_
 # AC5b — tool diferente passa direto
 printf '{"tool_name":"Bash","tool_input":{"command":"comprar"}}' | bash "$HOOK" 2>/dev/null; assert_rc "$?" "0" "AC5b outra tool não é interceptada"
 
+# --- US-02 fail-closed hardening ---
+assert_contains() { case "$1" in *"$2"*) _pass;; *) _fail "$3 :: '$2' ausente";; esac; }
+
+# AC2 (US-02) — python3 ausente (seam BBM_PYTHON → path inexistente) → exit 2
+# com stderr citando python3 (fail-closed, nunca exit 1/0 silencioso).
+err=$(payload "Delete account" | BBM_PYTHON=/nonexistent/python3 bash "$HOOK" 2>&1 1>/dev/null); rc=$?
+assert_rc "$rc" "2" "AC2(US-02) python3 ausente bloqueia (fail-closed)"
+assert_contains "$err" "python3" "AC2(US-02) stderr cita a dependência python3"
+
+# AC4 (US-02) — hook tem set -u e trap ERR→exit 2 no source
+src=$(cat "$HOOK")
+assert_contains "$src" "set -u" "AC4(US-02) set -u presente no hook"
+case "$src" in *trap*ERR*) _pass;; *) _fail "AC4(US-02) trap ERR ausente no hook";; esac
+case "$src" in *"exit 2"*) _pass;; *) _fail "AC4(US-02) hook bloqueia com exit 2";; esac
+
 echo "test_block_browser_mutations.sh: $PASS passed, $FAIL failed"
 [ "$FAIL" -gt 0 ] && { echo "FALHAS:$FAILED" >&2; exit 1; }
 exit 0

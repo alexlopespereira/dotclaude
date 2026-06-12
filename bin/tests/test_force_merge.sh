@@ -26,13 +26,14 @@ setup_mock() {
   MOCK_DIR=$(mktemp -d)
   MOCK_LOG="$MOCK_DIR/mock.log"
   : > "$MOCK_LOG"
-  # Mock for sync.sh: stub that says "fora do pool" so tests don't depend on real sync state.
-  cat > "$MOCK_DIR/sync.sh" <<'STUB'
+  # Mock for checkout-sync.sh: stub that says "fora do pool" so tests don't depend on real sync state.
+  # (force-merge.sh resolve SYNC_SCRIPT="$SCRIPT_DIR/checkout-sync.sh" desde US-05.)
+  cat > "$MOCK_DIR/checkout-sync.sh" <<'STUB'
 #!/usr/bin/env bash
 echo "ERRO: cwd não está em /Users/dev/Projects/checkouts/<repo>-N/."
 exit 1
 STUB
-  chmod +x "$MOCK_DIR/sync.sh"
+  chmod +x "$MOCK_DIR/checkout-sync.sh"
 }
 
 teardown_mock() {
@@ -40,9 +41,9 @@ teardown_mock() {
   unset MOCK_DIR MOCK_LOG
 }
 
-# Run force-merge.sh with PATH shadowed by mock + a fake sync.sh in same dir.
+# Run force-merge.sh with PATH shadowed by mock + a fake checkout-sync.sh in same dir.
 # We copy force-merge.sh into MOCK_DIR so SCRIPT_DIR resolves to MOCK_DIR
-# (where the stub sync.sh lives), letting us test the sync-skip path.
+# (where the stub checkout-sync.sh lives), letting us test the sync-skip path.
 run_script() {
   cp "$SCRIPT" "$MOCK_DIR/force-merge.sh"
   chmod +x "$MOCK_DIR/force-merge.sh"
@@ -271,7 +272,7 @@ unset MOCK_PR_VIEW MOCK_PROTECTED
 teardown_mock
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Test (l): --no-sync pula auto-sync (assert via não invocar sync.sh stub)
+# Test (l): --no-sync pula auto-sync (assert via não invocar checkout-sync.sh stub)
 # ═══════════════════════════════════════════════════════════════════════════
 setup_mock
 export MOCK_PR_VIEW='{"state":"OPEN","isDraft":false,"baseRefName":"main","title":"feat: nosync"}'

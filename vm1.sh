@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# vm1.sh — SSH na VM1 (192.0.2.11) já dentro do Claude Code, no slot escolhido.
+# vm1.sh — SSH na VM1 já dentro do Claude Code, no slot escolhido.
 #          Repos disponíveis: etl-crm e storefront (slots 1–5 cada).
 #          X11 forwarding habilitado (ssh -Y): apps gráficos da VM (chromium, xeyes,
 #          Playwright headed) aparecem no Mac — requer XQuartz instalado e rodando.
@@ -10,8 +10,14 @@
 #
 set -euo pipefail
 
-VM_IP="192.0.2.11"
-VM_USER="dev"
+# IP/usuário vêm da lib comum (fonte única — P2 dedup). Ver bin/lib/vm-common.sh.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/bin/lib/vm-common.sh"
+command -v vm_ip >/dev/null 2>&1 || { echo "ERRO: bin/lib/vm-common.sh não encontrada." >&2; exit 3; }
+
+VM_IP="$(vm_ip 1)"
+VM_USER="$VM_COMMON_USER"
 CHECKOUTS="/home/dev/Projects/checkouts"
 
 usage() {

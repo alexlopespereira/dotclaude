@@ -15,7 +15,7 @@
 #   --wait      wait   gh pr checks --watch (com timeout) então soft
 #   --admin     admin  gh pr merge <num> --admin --squash --delete-branch
 #
-# Auto-sync: após merge, dispara bin/sync.sh (auto-detect pool Boris).
+# Auto-sync: após merge, dispara bin/checkout-sync.sh (auto-detect pool Boris).
 # Skip silencioso fora do pool. Desliga via --no-sync.
 #
 # Uso:
@@ -31,7 +31,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SYNC_SCRIPT="$SCRIPT_DIR/sync.sh"
+SYNC_SCRIPT="$SCRIPT_DIR/checkout-sync.sh"
 
 # ─── Flags ────────────────────────────────────────────────────────────────
 ARG=""
@@ -87,7 +87,7 @@ command -v jq >/dev/null 2>&1 || { echo "ERRO: jq não instalado." >&2; exit 1; 
 # ─── Helpers ──────────────────────────────────────────────────────────────
 run_sync_or_skip() {
   if [ ! -x "$SYNC_SCRIPT" ]; then
-    echo "  aviso: sync.sh não encontrado em $SYNC_SCRIPT — sync pulado."
+    echo "  aviso: checkout-sync.sh não encontrado em $SYNC_SCRIPT — sync pulado."
     return 0
   fi
   echo "→ Disparando auto-sync do pool Boris..."

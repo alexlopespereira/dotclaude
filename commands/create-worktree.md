@@ -1,8 +1,10 @@
 ---
-description: Cria um git worktree isolado em ~/Projects/worktrees/ com branch dedicado para trabalhar uma feature
+description: "DEPRECATED: Cria um git worktree isolado em ~/Projects/worktrees/ com branch dedicado para trabalhar uma feature"
 allowed-tools: Bash(git *), Bash(mkdir *), Bash(basename *), Bash(pwd), Bash(ls *), Bash(realpath *), Bash(echo *), Bash(cat *), Bash(test *), Read, Write
 argument-hint: <slug> [base-branch]
 ---
+
+> **DEPRECATED** — sunset 2026-09-01; use o workflow Boris `/checkout-*`
 
 Cria um git worktree isolado para a feature `$ARGUMENTS`.
 

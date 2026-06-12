@@ -11,7 +11,27 @@
 | `/prd-convert [plano]` | Converte plano aprovado em `prd.json` |
 | `/ralph-adversarial [--parallel\|--parallel=N] [max_iter]` | Loop de implementação com revisão Codex |
 | `/commit-push-pr ["msg"]` | Branch efêmera + commit + push + PR |
+| `/ship ["msg"]` | Auto-pipeline de entrega: testes pré-merge (**loop 3x auto-fix**) → PR → auto-merge (ou force-merge soft em repo não-protegido) → deploy (se `.claude/ship.json` configura) → e2e pós-merge contra URL real (**loop 3x hotfix por iteração**) |
+| `/force-merge [PR\|branch] [--wait] [--admin]` | Mergeia PR aberto agora. Modos: soft (default), `--wait` aguarda CI até **30min** (override `--wait-timeout=Nm`), `--admin` bypassa proteção (**sempre confirma**). Auto-sync do pool após merge |
 | `/export-report` | Exporta última resposta como Markdown |
+
+### Comandos nativos do Claude Code (built-in, v2.1.139–146)
+
+| Comando | Uso |
+|---------|-----|
+| `/code-review [low\|high]` | Review local multi-agent do diff atual (substitui a skill nativa `simplify`, renomeada em v2.1.146) |
+| `/goal <condição>` | Autonomy goal-driven leve — alternativa a `/plan` quando o overhead estruturado é overkill |
+| `claude agents` (CLI) | Dashboard unificado de sessions running/blocked/completed |
+| `/resume` | Retoma background sessions com modelo/effort/permissions preservados |
+| `/schedule` | Cron remoto de agentes recorrentes — alternativa a `/loop` |
+
+### Skills de alinhamento e exploração (Tier 1)
+
+- **`grill-me`** — interview adversário, uma pergunta por vez, até shared understanding. Via `/plan --grill` ou manual.
+- **`grill-with-docs`** — superset do grill-me que mantém `CONTEXT.md` (glossário) e `docs/adr/` (decisões hard-to-reverse).
+- **`zoom-out`** — mapeia módulos/callers de uma área desconhecida usando o vocabulário do domínio; usado por `/plan` e `/techdebt` quando o contexto de código está raso.
+- **`diagnose`** — protocolo de 6 fases (feedback loop → reproduzir → hipotetizar → instrumentar → fix+regressão → cleanup); invocado por `/diagnose` ou pelo Ralph após 2 falhas consecutivas.
+- **`git-guardrails-claude-code`** — hook PreToolUse global **secret-scan-only**: bloqueia commit/push com segredos ou arquivos `.env`/`credentials`/`*.pem`/`*.key` no diff; ops destrutivas NÃO são bloqueadas (Princípio 7 cobre só segredos).
 
 ## Fluxo de Planejamento
 

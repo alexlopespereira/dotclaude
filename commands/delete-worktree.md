@@ -1,8 +1,10 @@
 ---
-description: Remove git worktree em ~/Projects/worktrees/ após merge, verifica segurança e deleta o branch local
+description: "DEPRECATED: Remove git worktree em ~/Projects/worktrees/ após merge, verifica segurança e deleta o branch local"
 allowed-tools: Bash(git *), Bash(gh *), Bash(basename *), Bash(pwd), Bash(ls *), Bash(rm *), Bash(realpath *), Bash(echo *), Bash(cat *), Bash(test *), Read
 argument-hint: [path-ou-slug] [--force]
 ---
+
+> **DEPRECATED** — sunset 2026-09-01; use o workflow Boris `/checkout-*`
 
 Remove o worktree indicado (ou detecta automaticamente pelo cwd atual), após verificar que as mudanças foram merged.
 

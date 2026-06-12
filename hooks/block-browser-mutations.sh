@@ -11,8 +11,14 @@
 # Input: JSON via stdin (formato hook PreToolUse do Claude Code).
 # Output: exit 0 (libera) ou exit 2 (bloqueia + mensagem em stderr).
 #
-# Fail-open por desenho: bug no hook não trava browsing (exit 0 em parse
-# error). A defesa em profundidade vem do modelo + da revisão humana.
+# Fail-closed em DEPENDÊNCIA/erro de processo, fail-open em payload inválido
+# (ressalva R3 / US-02): no contrato PreToolUse só exit 2 bloqueia. Se o
+# interpretador python3 some ou o wrapper bash falha, o hook BLOQUEIA (exit 2)
+# em vez de liberar silenciosamente — `set -u` + `trap ... exit 2 ERR` garantem
+# que nenhum erro interno vire exit 1/0. Já um payload JSON malformado de uma
+# tool não-alvo continua FAIL-OPEN (o Python sai 0): não faz sentido travar
+# todo o browsing por lixo de entrada — a defesa em profundidade vem do modelo
+# + revisão humana.
 #
 # Detalhes: ~/.claude/skills/browser-actions/SKILL.md
 # Triggers canônicos: ~/.claude/skills/browser-actions/blocklist.json
@@ -23,6 +29,18 @@
 # Playwright contra loja em ambiente de teste, onde clicar "Comprar" é o
 # fluxo sob teste e não uma mutação real (FP observado na análise de logs
 # 2026-06-09). Env ausente/vazia = comportamento estrito inalterado.
+
+set -u
+# shellcheck disable=SC2154  # rc é atribuído (rc=$?) no início da própria string do trap
+trap 'rc=$?; echo "BLOQUEADO (hook error): block-browser-mutations.sh falhou internamente (rc=$rc) — fail-closed (Princípio 12 / Zona 3). Verifique python3 e o ambiente antes de prosseguir." >&2; exit 2' ERR
+
+# Dependência obrigatória: python3. Seam BBM_PYTHON permite o teste apontar
+# para um caminho inexistente e provar o fail-closed (python ausente → exit 2).
+PYBIN="${BBM_PYTHON:-/usr/bin/python3}"
+if ! command -v "$PYBIN" >/dev/null 2>&1; then
+  echo "BLOQUEADO (dependency missing): python3 não encontrado ('$PYBIN') — block-browser-mutations.sh precisa de python3 para avaliar o click. Fail-closed por segurança (Zona 3)." >&2
+  exit 2
+fi
 
 PYCODE=$(cat <<'PYEOF'
 import json
@@ -96,4 +114,4 @@ sys.exit(0)
 PYEOF
 )
 
-exec /usr/bin/python3 -c "$PYCODE"
+exec "$PYBIN" -c "$PYCODE"

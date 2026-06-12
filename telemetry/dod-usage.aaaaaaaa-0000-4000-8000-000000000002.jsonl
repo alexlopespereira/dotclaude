@@ -100,3 +100,10 @@
 {"v":1,"ts":"2026-06-10T16:03:45Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-1","kind":"use","sha":"34366ca85ade54e4c0aaeb71e6dc2591450231316d70de18c0d88d506237e3b9"}
 {"v":1,"ts":"2026-06-10T16:03:45Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-2","kind":"use","sha":"09820043adafe666ecfe3605611e92909ba5768b4111493d2a898e610c62a701"}
 {"v":1,"ts":"2026-06-10T22:29:13Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-8","kind":"use","sha":"b0c63ee1472eb14f6bd99cd296b9b2d86dcb275ef4dd74d8138ae57555a65b9d"}
+{"v":1,"ts":"2026-06-12T16:26:29Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"cat-1-base","kind":"use","sha":"b22280013ce150bf26da5fc7588013612824cff843cd6f224238e73dbce44e84"}
+{"v":1,"ts":"2026-06-12T16:26:29Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-8","kind":"use","sha":"b0c63ee1472eb14f6bd99cd296b9b2d86dcb275ef4dd74d8138ae57555a65b9d"}
+{"v":1,"ts":"2026-06-12T16:26:29Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"cat-9-base","kind":"use","sha":"a1f4212ed64bea26244665a6a464eeb6b5ab2bb715247fe856e88f047d1fc344"}
+{"v":1,"ts":"2026-06-12T16:26:29Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-1","kind":"use","sha":"34366ca85ade54e4c0aaeb71e6dc2591450231316d70de18c0d88d506237e3b9"}
+{"v":1,"ts":"2026-06-12T16:26:29Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-3","kind":"use","sha":"e9e6a53dc58b80695ff8f29ce3cbabe1ff4eb79c27509caa66d1706b10b51214"}
+{"v":1,"ts":"2026-06-12T16:26:29Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"cat-2-base","kind":"use","sha":"7d52987499811d599772480fb39f57d77c91ac9459b1401eb578247d902225da"}
+{"v":1,"ts":"2026-06-12T16:26:29Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-4","kind":"use","sha":"2470634305079ec02f6f7928d2aa57f2f0888f9974e027ea5cf7e06639f223ef"}

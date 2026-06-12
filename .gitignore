@@ -10,6 +10,13 @@
 # under skills/, commands/, hooks/, agents/.
 .claude/
 
+# telemetry/ é versionada DE PROPÓSITO — NÃO listar aqui, NÃO gitignorar.
+# A telemetria DoD/test-spec é escrita per-máquina em ~/.claude/telemetry/.
+# O Stop hook hooks/sync-telemetry-log.sh copia esse log da máquina para
+# repo/telemetry/ e o stageia (plano M8 / Adv #1): git é o transporte/backup
+# cross-máquina. O consumidor bin/lib/usage-fold.sh lê SÓ ~/.claude/telemetry/,
+# nunca a cópia do repo — por isso versionar telemetry/ é seguro e intencional.
+
 # Ralph Adversarial framework artifacts — must never be versioned.
 # Worker writes these to its slot WT; orchestrator stashes them via
 # stash_worker_deltas (lib/dispatch.sh) and integrates into central

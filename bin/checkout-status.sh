@@ -16,10 +16,10 @@ fi
 
 # Listar slots
 SLOTS=()
+NAME_GLOB="${FILTER:+${FILTER}-*}"; NAME_GLOB="${NAME_GLOB:-*-*}"
 while IFS= read -r d; do
   [ -n "$d" ] && SLOTS+=("$d")
-done < <(find "$CHECKOUT_BASE" -maxdepth 1 -type d \
-  $([ -n "$FILTER" ] && echo "-name ${FILTER}-*" || echo "-name *-*") 2>/dev/null \
+done < <(find "$CHECKOUT_BASE" -maxdepth 1 -type d -name "$NAME_GLOB" 2>/dev/null \
   | sort -V)
 
 if [ ${#SLOTS[@]} -eq 0 ]; then

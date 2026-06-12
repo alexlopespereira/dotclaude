@@ -276,6 +276,15 @@ sync_to_claude() {
         fi
     fi
 
+    # Aviso (não-fatal) de divergência de CLAUDE.md: se a cópia instalada diferir
+    # do repo, alerta ANTES de sobrescrever. Útil sobretudo em --force (o guard de
+    # abort acima é pulado) e como heads-up de que a config em uso estava
+    # dessincronizada. cmp -s é silencioso; nunca aborta o install (só echo em stderr).
+    if [ -f "$REPO_DIR/CLAUDE.md" ] && [ -f "$CLAUDE_DIR/CLAUDE.md" ] \
+       && ! cmp -s "$REPO_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"; then
+        echo "  ⚠ ~/.claude/CLAUDE.md divergia do repo — install vai sobrescrever com a versão do repo." >&2
+    fi
+
     echo "=== Instalando: repo → ~/.claude/ ==="
     for f in "${FILES[@]}"; do
         if [ -f "$REPO_DIR/$f" ]; then

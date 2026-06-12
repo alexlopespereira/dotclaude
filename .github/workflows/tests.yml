@@ -20,3 +20,22 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run bin/tests suite
         run: bash bin/tests/run-all.sh
+
+  shellcheck:
+    # Lint estático dos scripts de produção. Falha em qualquer finding
+    # severity>=warning. Escopo: bin/*.sh, bin/lib/*.sh, hooks/*.sh e os
+    # scripts da raiz — NÃO inclui bin/tests/ (pre-mortem #3: ~20 findings
+    # legados nas suítes; entram em fatia futura para não bloquear este job).
+    # Falsos-positivos são silenciados só com `# shellcheck disable=SCnnnn`
+    # inline justificado — sem --exclude global no comando.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Run shellcheck (severity=warning)
+        run: |
+          shellcheck --severity=warning \
+            bin/*.sh bin/lib/*.sh hooks/*.sh \
+            vm1.sh vm2.sh vm-morning.sh vm-paste.sh sync.sh

@@ -1,5 +1,7 @@
 # Rubrica Numérica Ponderada para Decisão "Perguntar vs. Assumir" em Skill do Claude Code
 
+> **Status — referência, não gate.** O scoring desta rubrica é aplicado pelo **LLM em runtime** via a skill `auto-grill-me`; **não** existe hook que calcule os pesos. Os números abaixo orientam a decisão do agente, não um corte determinístico.
+
 ## TL;DR
 
 - **Calibragem assimétrica para "assumir mais":** thresholds em escala 0–100 com cortes **0 ≤ s < 35 → ASSUME silencioso (tipo 2)**, **35 ≤ s ≤ 60 → ASSUME + footnote (tipo 3)**, **s > 60 → PERGUNTA (tipo 1)**.

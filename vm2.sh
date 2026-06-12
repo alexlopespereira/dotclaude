@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# vm2.sh — SSH na VM2 (192.0.2.12) já dentro do Claude Code, no slot escolhido.
+# vm2.sh — SSH na VM2 já dentro do Claude Code, no slot escolhido.
 #          Repo: wikiapp (slots 1–5).
 #          X11 forwarding habilitado (ssh -Y): apps gráficos da VM (chromium, xeyes,
 #          Playwright headed) aparecem no Mac — requer XQuartz instalado e rodando.
@@ -10,8 +10,14 @@
 #
 set -euo pipefail
 
-VM_IP="192.0.2.12"
-VM_USER="dev"
+# IP/usuário vêm da lib comum (fonte única — P2 dedup). Ver bin/lib/vm-common.sh.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/bin/lib/vm-common.sh"
+command -v vm_ip >/dev/null 2>&1 || { echo "ERRO: bin/lib/vm-common.sh não encontrada." >&2; exit 3; }
+
+VM_IP="$(vm_ip 2)"
+VM_USER="$VM_COMMON_USER"
 CHECKOUTS="/home/dev/Projects/checkouts"
 
 usage() {

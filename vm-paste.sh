@@ -10,19 +10,27 @@
 # prompt (funciona em qualquer plataforma; é o mesmo mecanismo do `clipssh`).
 #
 # Uso:
-#   ./vm-paste.sh        # VM1 (192.0.2.11 — etl-crm/storefront)
-#   ./vm-paste.sh 2      # VM2 (192.0.2.12 — wikiapp)
+#   ./vm-paste.sh        # VM1 (etl-crm/storefront)
+#   ./vm-paste.sh 2      # VM2 (wikiapp)
 #
 # Fluxo: tira/copia o screenshot (Cmd+Ctrl+Shift+4 vai pro clipboard) → roda este
 # script → volta pra aba do Claude na VM e cola (Cmd+V) + Enter.
 set -euo pipefail
 
-case "${1:-1}" in
-  1) VM_IP="192.0.2.11"; VM_LABEL="VM1" ;;
-  2) VM_IP="192.0.2.12"; VM_LABEL="VM2" ;;
+# IP/usuário vêm da lib comum (fonte única — P2 dedup). Ver bin/lib/vm-common.sh.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/bin/lib/vm-common.sh"
+command -v vm_ip >/dev/null 2>&1 || { echo "ERRO: bin/lib/vm-common.sh não encontrada." >&2; exit 3; }
+
+VM_ID="${1:-1}"
+case "$VM_ID" in
+  1|2) ;;
   *) echo "Uso: $0 [1|2]   (1=etl-crm/storefront · 2=wikiapp)" >&2; exit 1 ;;
 esac
-VM_USER="dev"
+VM_IP="$(vm_ip "$VM_ID")"
+VM_LABEL="VM${VM_ID}"
+VM_USER="$VM_COMMON_USER"
 REMOTE_DIR="/home/${VM_USER}/.claude-pastes"
 
 ts="$(date +%Y%m%d-%H%M%S)"

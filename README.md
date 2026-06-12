@@ -4,6 +4,18 @@
 
 Global commands, skills and protocols for [Claude Code](https://claude.ai/code) that turn your AI assistant into a disciplined engineering partner — one that plans before coding, attacks its own ideas, and never ships unchallenged assumptions.
 
+## Document Hierarchy & Language Convention
+
+Five root documents, in descending order of authority — when two disagree, the higher one wins:
+
+- **`CLAUDE.md`** — *normative*. The protocol Claude must follow (principles + available skills); overrides default model behavior.
+- **`README.md`** — *the guide*. Human-facing overview of every command, skill, and the rationale behind them (this file).
+- **`WORKFLOW.md`** — *tactical map*. The condensed how-to for the multi-agent flow.
+- **`AGENTS.md`** — *implementation notes*. Patterns and gotchas discovered while building the harness.
+- **`CONTEXT.md`** — *glossary*. Domain terms and operating model, kept by the planning skills per [ADR 0003](docs/adr/0003-planning-skills-write-domain-docs.md).
+
+**Language rule (D6):** command and skill *names* are English `kebab-case` (stable identifiers across the harness); the *body* and frontmatter *descriptions* are free Brazilian Portuguese.
+
 ## The Problem
 
 LLMs are confident by default. They produce plausible-sounding plans, skip over assumptions, and rarely question their own reasoning. When you use an AI coding assistant without structure, you get fast output — but not necessarily *good* output. Bugs hide behind fluent explanations. Architectural flaws get buried under confident prose.
@@ -208,6 +220,8 @@ What `/graphify-init` does (two stages — see `commands/graphify-init.md`):
 
 **Boris workflow integration:** `/checkout-init <repo>` installs Graphify hooks in all 5 slots automatically (when CLI is present); `/sync` regenerates `graphify-out/` per slot after pull to realign the graph with the working tree (compensating for `merge=theirs`).
 
+**Expected dirt in `graphify-out/` (by design — ADR 0001 Errata 2026-05-12):** the `post-commit`/`post-checkout` hooks regenerate `graphify-out/{.graphify_root, GRAPH_REPORT.md, graph.json, graph.html}` in the background, and part of the output is per-slot (absolute path, cwd basename) or non-deterministic (clustering community IDs). Handle it as derived files, never as user work-in-progress: don't commit the dirt in isolation, don't `git stash` it (pop conflicts across slots); before any command that performs an internal checkout (`gh pr merge --delete-branch`, `git rebase`, `git switch`) — or whenever git fails with `"would be overwritten by checkout"` citing `graphify-out/` — discard with `git checkout -- graphify-out/` and re-run. Canonical pattern: `bin/checkout-sync-all.sh:49-56`.
+
 > **Why it matters:** the previous wiki-based system relied on a per-PR LLM call via GitHub Actions to keep docs fresh — that costs money, has lag, and breaks when the action token rotates. AST-derived knowledge graphs cost nothing per rebuild and stay in sync with code by construction. The trade-off is that the artifact (`graph.json`) is binary-shaped JSON in PR diffs; we accept that explicitly in the ADR.
 
 ### Bonus: Context Threshold Notification
@@ -253,6 +267,7 @@ Before a plan is worth reviewing, it has to target the right problem. Three mode
 - **`grill-me`** (`/plan --grill`) — an adversarial interview that asks **one question at a time**, resolving each branch of the decision tree until planner and human share the same mental model. **`grill-with-docs`** is a superset that maintains a domain glossary (`CONTEXT.md`) and ADRs (`docs/adr/`) as it goes.
 - **`auto-grill-me`** (`/plan --auto-grill`) — same idea, but a rubric **scores each candidate question** before interrupting: low score → assume silently, medium → assume + footnote, high → actually ask. It emits a plan with a **Definition of Done per artifact**.
 - **`/plan --hst`** — Hierarchical Systems Thinking: six top-down phases with a persisted **System Intent** stored once per project/feature tier and reused on later plans, so scope isn't re-litigated every time.
+- **`zoom-out`** — maps the modules/callers of an unfamiliar area using the domain's own vocabulary before any plan is written; invoked by `/plan` and `/techdebt` whenever code context is shallow.
 
 > **Why it matters:** the most expensive bug is solving the wrong problem precisely. Alignment-first planning makes the human resolve ambiguity before any code — and the rubric in `auto-grill-me` keeps that from devolving into twenty questions.
 
@@ -263,6 +278,7 @@ A plan's acceptance criteria are only as good as the tests that prove them. dotc
 - **`/test-spec`** turns each Definition of Done into Gherkin-lite specs (Given/When/Then), appended to the plan or to `skills/testing/references/TEST-PATTERNS.md`. `/full-cycle` auto-invokes it (Phase 4.5) so specs exist *before* implementation.
 - **TDD-chain traceability** — every spec bullet carries an ID (`[bN]`) that threads through the test, the commit, and the review, so you can audit which DoD a given test defends.
 - **`/reflect`** is post-merge supervision that classifies how well the DoD applied to a merged PR. Modes: `--baseline` (immediate compliance), `--retro` (full retrospective after D+7), `--on-failure` (audit at a stop gate), `--learn` (an LLM consumes the per-story TDD-chain bundle and proposes DoD / TEST-PATTERNS improvements). `/full-cycle` runs it as Phase 9.
+- **Cross-machine telemetry** — DoD/test-spec usage is logged per-machine to `~/.claude/telemetry/*.jsonl`. A Stop hook (`hooks/sync-telemetry-log.sh`) copies each machine's log into the repo's `telemetry/` and stages it, so the next commit carries it — git is the transport/backup across machines (plan M8 / Adv #1). `bin/lib/usage-fold.sh` folds the logs for `/reflect --learn`, reading **only** the local `~/.claude/telemetry/` and never the repo copy. That is why `telemetry/` is versioned on purpose and *not* gitignored.
 
 > **Why it matters:** "negative-branch" criteria — the cases a feature must *reject* — are the ones agents quietly skip. Materialising DoDs into specs, threading IDs through the chain, and reflecting after merge keeps the suite from going vacuous.
 
@@ -327,6 +343,7 @@ A few smaller guardrails round out the harness:
 - **Git secret-scan** (`hooks/block-dangerous-git.sh`, skill `git-guardrails-claude-code`) — a `PreToolUse` hook that blocks `commit`/`push` when the staged diff contains secrets (Stripe/GH/Netlify/AWS/Google/Slack keys, `.pem`/`.key`, `.env`/`credentials` files). Scoped to secrets only — destructive ops are *not* pre-blocked (Principle 7).
 - **Browser-as-agent** (skills `browser-actions` / `browser-inspect`, Principle 12) — when an external action falls through the precedence ladder (domain CLI → domain MCP → direct API → Playwright MCP), the browser is the last resort: it announces every open, runs a cookie pre-check, asks you to log in via chat, and applies a "Zone 3" blocklist of irreversible actions. `browser-inspect` is the anti-laziness rule — if a page is reachable by Playwright, the agent reads the console/network itself instead of asking you to paste it.
 - **`/handoff-continue`** — distills the current session into a handoff doc + a pending pointer, and lazy-installs a `SessionStart` hook so the next session **has the handoff as silent context**. It prints the handoff and asks you to `/clear` — it never clears for you. After `/clear` the session opens blank: the handoff is injected as an invisible system reminder and **does not auto-start the work** (no Claude Code hook can trigger an assistant turn) — type `continuar` (or any message) to resume from the "Próximo passo".
+- **Branch protection on `main`** — the `main` branch requires the `bin-tests` status check (the job id in `.github/workflows/tests.yml`) to pass before merge, with **0 required approvals** (solo repo — the Boris auto-merge workflow must not deadlock) and `strict=false`. `allow_auto_merge` stays enabled so `/commit-push-pr` and `/ship` merge automatically once `bin-tests` is green. Because the config lives on GitHub (not in the repo), `bin/verify-branch-protection.sh` encodes these invariants as a versioned drift-check — run it to confirm the live config still matches, or catch a silent change (a `tests`-vs-`bin-tests` rename, a re-enabled review requirement, `allow_auto_merge` turned off). Revert in one line: `gh api -X DELETE repos/alexlopespereira/dotclaude/branches/main/protection`.
 
 > **Why it matters:** the failure modes here aren't reasoning errors — they're a leaked token, an irreversible click, or a lost thread after compaction. Each rail makes the dangerous path the explicit one.
 

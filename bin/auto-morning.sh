@@ -23,7 +23,7 @@ mkdir -p "$(dirname "$LOG")"
 
   # Aguarda iTerm e Dock estarem prontos (até 30s)
   if [ "${AM_SKIP_WAIT:-0}" != "1" ]; then
-    for i in $(seq 1 30); do
+    for _ in $(seq 1 30); do
       if pgrep -x Dock >/dev/null && [ -d /Applications/iTerm.app ]; then
         break
       fi

@@ -11,7 +11,7 @@ Equivalente a `/checkout-sync-all <repo>` mas sem precisar lembrar o nome.
 ## Passos
 
 ```bash
-SCRIPT="$HOME/Projects/dotclaude/bin/sync.sh"
+SCRIPT="$HOME/Projects/dotclaude/bin/checkout-sync.sh"
 test -x "$SCRIPT" || chmod +x "$SCRIPT"
 bash "$SCRIPT" $ARGUMENTS
 ```

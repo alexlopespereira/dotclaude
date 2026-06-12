@@ -1,0 +1,36 @@
+# release.yml — tag CalVer + GitHub Release notes a cada push na main (US-09).
+#
+# DECISÃO (AC4) — RELEASE-NOTES-ONLY, NÃO commita CHANGELOG na main:
+#   A US-01 ligou branch protection na main. Um workflow que gerasse CHANGELOG.md
+#   e commitasse de volta entraria em loop com a protection (cada push exigiria
+#   PR/CI) ou precisaria de bypass de admin. Por isso este pipeline só cria uma
+#   TAG CalVer (vYYYY.MM.DD, sufixo -N em colisão no mesmo dia) e publica as notas
+#   como GitHub Release notes anexadas à tag — tags não são branch protegida, o
+#   push da tag e o `gh release create` não tocam a main. Detalhe e racional
+#   completo no header de bin/release-notes.sh.
+#
+# SEM ACTION DE TERCEIROS (AC1, D9): só actions/checkout oficial + bash/git/gh.
+# Toda a lógica de versão/agrupamento vive em bin/release-notes.sh (testável —
+# bin/tests/test_release_notes.sh). gh já vem pré-instalado nos runners GitHub.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+# Necessário para o push da tag e para `gh release create`.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # histórico + tags completos: describe e for-each-ref precisam deles
+      - name: Tag CalVer + Release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash bin/release-notes.sh run

@@ -245,6 +245,7 @@ host_mode() { # vm(1|2) want_root(0|1)
   # dela — as fases user/root viajam pra VM num scp de arquivo único (SELF)
   # e não têm bin/lib/ ao lado.
   for _lib in "$SCRIPT_DIR/lib/vm-common.sh" "$HOME/.claude/bin/lib/vm-common.sh"; do
+    # shellcheck source=/dev/null  # caminho resolvido em runtime (lib ao lado ou em ~/.claude)
     [ -f "$_lib" ] && { . "$_lib"; break; }
   done
   if ! command -v vm_ip >/dev/null 2>&1; then

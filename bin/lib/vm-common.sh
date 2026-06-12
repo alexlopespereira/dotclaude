@@ -5,12 +5,13 @@
 # VM_COMMON_USER. Antes, o mapping vivia duplicado em vm-oauth.sh e
 # vm-provision.sh — mudança de IP exigia editar N arquivos em sincronia.
 #
-# QUANDO USAR: source deste arquivo em scripts de bin/ que falam com as VMs
-# E que rodam no host (laptop). Scripts que viajam sozinhos pra VM via scp
-# (ex.: vm-provision.sh) só podem depender da lib em ramos host-side.
-#
-# Nota: vm1.sh/vm2.sh (raiz) também hardcodam IPs mas são WIP do usuário.
+# QUANDO USAR: source deste arquivo em scripts que falam com as VMs e rodam
+# no host (laptop) — bin/ e também os launchers da raiz (vm1.sh, vm2.sh,
+# vm-morning.sh, vm-paste.sh, consumidores desde US-10). Scripts que viajam
+# sozinhos pra VM via scp (ex.: vm-provision.sh) só podem depender da lib em
+# ramos host-side.
 
+# shellcheck disable=SC2034  # consumida por quem dá source (ex.: vm-oauth.sh: VM_USER="$VM_COMMON_USER")
 VM_COMMON_USER="dev"
 
 vm_ip() { # 1|2 → ecoa IP; desconhecido → rc 1

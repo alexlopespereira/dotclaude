@@ -175,7 +175,7 @@ select_items() { # <qfile>
 # Acha um slot livre p/ o repo: clean + na branch main + ainda não usado neste
 # run. Ecoa o path e retorna 0; sem candidato → 1. USED_SLOTS é global.
 find_free_slot() { # <repo>
-  local repo="$1" slot name branch dirty
+  local repo="$1" slot branch dirty
   for slot in "$POOL_BASE/$repo"-*; do
     [ -d "$slot" ] || continue
     case " $USED_SLOTS " in *" $slot "*) continue ;; esac

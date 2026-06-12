@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # bin/tests/test_sync_pool.sh — Cobre o fallback de inferência de pool do
-# bin/sync.sh (US-03 do ciclo quick-wins-item3).
+# bin/checkout-sync.sh (US-03 do ciclo quick-wins-item3; renomeado de bin/sync.sh em US-05).
 #
-# Estratégia: bin/sync.sh resolve o checkout base e o script checkout-sync-all
+# Estratégia: bin/checkout-sync.sh resolve o checkout base e o script checkout-sync-all
 # via seams de env (SYNC_CHECKOUT_BASE, SYNC_CHECKOUT_SYNC_ALL). Cada teste
 # injeta um stub de checkout-sync-all que loga argv em $CALL_LOG, monta um repo
-# git real fora do base (git é read-only aqui: só rev-parse) e roda sync.sh do
+# git real fora do base (git é read-only aqui: só rev-parse) e roda checkout-sync.sh do
 # cwd certo. `git` é real; nenhuma chamada de rede.
 
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-SYNC="$BIN_DIR/sync.sh"
+SYNC="$BIN_DIR/checkout-sync.sh"
 
 PASS=0; FAIL=0; FAILED=""
 _fail() { FAIL=$((FAIL+1)); FAILED="${FAILED}
@@ -44,7 +44,7 @@ make_git_repo() {
 }
 
 run_sync() {
-  # $1 = cwd, resto = args de sync.sh
+  # $1 = cwd, resto = args de checkout-sync.sh
   local cwd="$1"; shift
   ( cd "$cwd" && SYNC_CHECKOUT_BASE="$BASE" SYNC_CHECKOUT_SYNC_ALL="$STUB" \
       CALL_LOG="$CALL_LOG" bash "$SYNC" "$@" 2>&1 )
