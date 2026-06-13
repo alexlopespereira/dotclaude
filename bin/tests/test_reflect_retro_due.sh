@@ -301,18 +301,19 @@ assert_rc "$rc" "0" "TOFIX-f com gtimeout → exit 0"
 assert_grep "$(cat "$LOG")" "^gtimeout 900 " "TOFIX-g gtimeout usado com 900"
 
 # =============================================================================
-# US-06 — flag --model na etapa /reflect (default claude-fable-5; CLI > env)
+# US-06 — flag --model na etapa /reflect (default: modelo padrão do Claude Code,
+# SEM --model no argv; override CLI > env)
 # =============================================================================
-# AC1 — invocação default contém `--model claude-fable-5` no argv; capture-proof
-#       (assert positivo de "^claude " prova que o stub rodou co-presente, não
-#       que a ausência do padrão passou por arquivo vazio).
+# AC1 — invocação default NÃO contém `--model` no argv (usa o default do Claude
+#       Code); capture-proof: assert positivo de "^claude " prova que o stub
+#       rodou co-presente, então a ausência de --model é real, não arquivo vazio.
 REM="$TMP/rem-model.jsonl"
 echo '{"pr":"70","repo":"dotclaude","retro_due_at":"2026-05-26T00-00-00Z"}' > "$REM"
 LOG="$TMP/log.model"; : > "$LOG"
 OUT=$(run env RRD_REMINDERS="$REM" RRD_CALLLOG="$LOG" bash "$RRD" 2>&1); rc=$?
 assert_rc "$rc" "0" "US06-AC1a exit 0"
 assert_count "$(cat "$LOG")" "^claude " "1" "US06-AC1b capture-proof: stub claude rodou (co-presente)"
-assert_grep "$(cat "$LOG")" "claude .*--model claude-fable-5" "US06-AC1c default --model claude-fable-5 no argv"
+assert_nogrep "$(cat "$LOG")" "claude .*--model" "US06-AC1c default SEM --model no argv (modelo padrão do Claude Code)"
 
 # AC2 — --model custom respeitado no argv; substitui o default
 REM="$TMP/rem-model2.jsonl"
@@ -321,7 +322,7 @@ LOG="$TMP/log.model2"; : > "$LOG"
 OUT=$(run env RRD_REMINDERS="$REM" RRD_CALLLOG="$LOG" bash "$RRD" --model claude-opus-4-8 2>&1); rc=$?
 assert_rc "$rc" "0" "US06-AC2a --model custom exit 0"
 assert_grep "$(cat "$LOG")" "claude .*--model claude-opus-4-8" "US06-AC2b --model custom respeitado no argv"
-assert_nogrep "$(cat "$LOG")" "claude .*--model claude-fable-5" "US06-AC2c default substituído pelo custom"
+assert_count "$(cat "$LOG")" "claude .*--model" "1" "US06-AC2c só o --model custom aparece (default não injeta outro)"
 
 # AC2 — --model sem valor → usage em stderr + exit != 0 (antes de qualquer exec)
 ERR=$(bash "$RRD" --model 2>&1 >/dev/null); rc=$?

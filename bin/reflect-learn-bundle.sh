@@ -24,8 +24,8 @@ set -euo pipefail
 #   BUNDLE_CLAUDE_BIN       — path do claude binary (default: claude)
 #   BUNDLE_LLM_TIMEOUT_SEC  — override timeout (default: 600)
 #
-# Flag --model <id> (US-06): modelo do claude --print (default claude-fable-5;
-# preferência CLI flag > env var).
+# Flag --model <id>: modelo do claude --print (default: modelo padrão do Claude
+# Code — sem --model no argv; preferência CLI flag > env var).
 #
 # NÃO escreve refs git. NÃO commita arquivos. Output só em $OUTPUT_DIR + stdout.
 
@@ -43,9 +43,11 @@ US_ID="${2:-}"
 [[ -z "$PR_NUM" || -z "$US_ID" ]] && { echo "uso: $(basename "$0") <PR_NUM> <US_ID> [--with-llm <DIR>] [--model <id>]" >&2; exit 2; }
 shift 2
 
-# Modelo pinado na etapa /reflect (US-06). Default claude-fable-5; override via
-# flag --model <id> (preferência CLI flag > env var).
-MODEL="claude-fable-5"
+# Modelo do claude --print na etapa /reflect. Default VAZIO = usa o modelo
+# padrão configurado do Claude Code (o subprocess headless é um processo novo:
+# lê o default do settings/`/model`, NÃO herda o modelo volátil da sessão pai).
+# Override explícito via flag --model <id> (preferência CLI flag > env var).
+MODEL=""
 WITH_LLM=0
 OUT_DIR=""
 while [[ $# -gt 0 ]]; do
@@ -234,17 +236,21 @@ $BUNDLE_JSON"
 # Garante que o raw é gravado SEMPRE (AC5), mesmo se o comando falhar.
 : > "$RAW_PATH"
 LLM_RC=0
+# MODEL vazio → não passa --model (claude usa o default configurado). Array-safe
+# sob set -u em bash 3.2: ${arr[@]+"${arr[@]}"} não estoura quando vazio.
+MODEL_ARGS=()
+[[ -n "$MODEL" ]] && MODEL_ARGS=(--model "$MODEL")
 if command -v timeout >/dev/null 2>&1; then
-  timeout --foreground "$TIMEOUT_SEC" "$CLAUDE_BIN" --model "$MODEL" --print --max-turns 1 "$PROMPT" \
+  timeout --foreground "$TIMEOUT_SEC" "$CLAUDE_BIN" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --print --max-turns 1 "$PROMPT" \
     > "$RAW_PATH" 2>&1 || LLM_RC=$?
 else
   # macOS sem coreutils → fallback via gtimeout ou sem timeout (custo aceito;
   # documentado como Gotcha em commands/reflect.md).
   if command -v gtimeout >/dev/null 2>&1; then
-    gtimeout "$TIMEOUT_SEC" "$CLAUDE_BIN" --model "$MODEL" --print --max-turns 1 "$PROMPT" \
+    gtimeout "$TIMEOUT_SEC" "$CLAUDE_BIN" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --print --max-turns 1 "$PROMPT" \
       > "$RAW_PATH" 2>&1 || LLM_RC=$?
   else
-    "$CLAUDE_BIN" --model "$MODEL" --print --max-turns 1 "$PROMPT" > "$RAW_PATH" 2>&1 || LLM_RC=$?
+    "$CLAUDE_BIN" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --print --max-turns 1 "$PROMPT" > "$RAW_PATH" 2>&1 || LLM_RC=$?
   fi
 fi
 

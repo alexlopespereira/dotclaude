@@ -66,11 +66,11 @@ PROJECTS_DIR="${RRD_PROJECTS_DIR:-$HOME/Projects}"
 NOW="${RRD_NOW:-$(date -u +%Y-%m-%dT%H-%M-%SZ)}"
 RETRO_TIMEOUT_SECS=900
 ALLOWED_TOOLS="Bash(git:*),Bash(gh:*),Bash(mkdir:*),Read,Glob,Grep,Write,Edit"
-# Modelo pinado na etapa /reflect (US-06). Default claude-fable-5; override via
-# flag --model <id> (preferência CLI flag > env var). A invocação inline de
-# /reflect herdaria o modelo da sessão — impossível pinar; o subprocess
-# headless aqui propaga --model explicitamente.
-MODEL="claude-fable-5"
+# Modelo do claude na etapa /reflect. Default VAZIO = usa o modelo padrão
+# configurado do Claude Code (o subprocess headless é um processo novo: lê o
+# default do settings/`/model`, não herda o modelo volátil da sessão pai).
+# Override explícito via flag --model <id> (preferência CLI flag > env var).
+MODEL=""
 
 # claude resolvido com fallback ~/.local/bin (shell ssh não-login tem PATH básico).
 if [ -n "${RRD_CLAUDE:-}" ]; then
@@ -91,7 +91,7 @@ Uso: reflect-retro-due.sh [--max N] [--help]
 Drena retrospectivas /reflect vencidas (headless) do reminders.jsonl.
 
   --max N    no máximo N execuções por run (default 2; 1..999).
-  --model ID modelo do claude na etapa /reflect (default claude-fable-5).
+  --model ID modelo do claude na etapa /reflect (default: modelo padrão do Claude Code).
   --help     esta ajuda.
 
 Seleção:   entradas kind ausente|baseline com retro_due_at <= agora.
@@ -209,14 +209,18 @@ while IFS=$'\t' read -r due repo pr att; do
 
   count=$((count+1))
   echo "retro: $repo#$pr (due $due) em $path"
+  # MODEL vazio → não passa --model (claude usa o default configurado). Array-safe
+  # sob set -u em bash 3.2: ${arr[@]+"${arr[@]}"} não estoura quando vazio.
+  MODEL_ARGS=()
+  [ -n "$MODEL" ] && MODEL_ARGS=(--model "$MODEL")
   if [ -n "$TIMEOUT_BIN" ]; then
     ( cd "$path" && "$TIMEOUT_BIN" "$RETRO_TIMEOUT_SECS" "$CLAUDE" \
-        -p "/reflect $pr --retro" --model "$MODEL" --allowedTools "$ALLOWED_TOOLS" )
+        -p "/reflect $pr --retro" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --allowedTools "$ALLOWED_TOOLS" )
     rc=$?
   else
     echo "  AVISO: timeout/gtimeout ausentes — rodando sem teto de ${RETRO_TIMEOUT_SECS}s." >&2
     ( cd "$path" && "$CLAUDE" \
-        -p "/reflect $pr --retro" --model "$MODEL" --allowedTools "$ALLOWED_TOOLS" )
+        -p "/reflect $pr --retro" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --allowedTools "$ALLOWED_TOOLS" )
     rc=$?
   fi
   if [ "$rc" -eq 0 ]; then

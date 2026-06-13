@@ -2,10 +2,11 @@
 # test_fase9_reflect_model.sh — US-06 AC4.
 #
 # Trava a Fase 9 de commands/full-cycle.md e commands/full-cycle-simple.md no
-# pattern: subprocess `claude --model claude-fable-5 -p "/reflect ..."` em
-# BACKGROUND (& + disown) com falha non-blocking documentada. Regressão que
-# voltasse à invocação inline `/reflect` (herda modelo da sessão — impossível
-# pinar) faria este teste falhar.
+# pattern: subprocess `claude -p "/reflect ..."` em BACKGROUND (& + disown) com
+# falha non-blocking documentada. O subprocess usa o MODELO PADRÃO do Claude
+# Code (sem --model — processo novo lê o default configurado, não herda a
+# sessão pai). Regressão que voltasse à invocação inline `/reflect`, ou que
+# re-pinasse `--model`, faria este teste falhar.
 
 set -u
 
@@ -27,9 +28,11 @@ for f in "$FC" "$FCS"; do
   [ -f "$f" ] || { echo "FAIL: $f inexistente" >&2; exit 1; }
 done
 
-# AC4 — subprocess claude --model claude-fable-5 -p "/reflect ..."
-assert_file_grep "$FC"  'claude --model claude-fable-5 -p "/reflect' "AC4a full-cycle.md: subprocess claude --model claude-fable-5 -p"
-assert_file_grep "$FCS" 'claude --model claude-fable-5 -p "/reflect' "AC4b full-cycle-simple.md: subprocess claude --model claude-fable-5 -p"
+# AC4 — subprocess `claude -p "/reflect ..."` SEM --model (modelo padrão do Claude Code)
+assert_file_grep   "$FC"  'claude -p "/reflect'             "AC4a full-cycle.md: subprocess claude -p"
+assert_file_grep   "$FCS" 'claude -p "/reflect'             "AC4b full-cycle-simple.md: subprocess claude -p"
+assert_file_nogrep "$FC"  'claude --model [^ ]+ -p "/reflect'  "AC4a2 full-cycle.md: sem --model pinado na invocação"
+assert_file_nogrep "$FCS" 'claude --model [^ ]+ -p "/reflect'  "AC4b2 full-cycle-simple.md: sem --model pinado na invocação"
 
 # AC4 — invocação em background (linha terminando em & e/ou disown)
 assert_file_grep "$FC"  '(&[[:space:]]*$|disown)' "AC4c full-cycle.md: invocação em background (&/disown)"

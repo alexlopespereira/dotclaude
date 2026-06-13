@@ -192,15 +192,16 @@ Quando a **notificação de conclusão** chegar:
 
 ## Fase 9 — Reflexão sobre DoD (auto-baseline --quick)
 
-Após o sync dos slots, dispare a reflexão `/reflect --baseline --quick` como **subprocess headless** `claude --model claude-fable-5 -p` em **background** (não inline — a invocação inline herdaria o modelo da sessão, impossível pinar; o pattern slash-command-via-claude-p já é produção em `bin/reflect-retro-due.sh`). Modo `--quick` é subset do `--baseline` — roda apenas camadas 1 (decisions.jsonl) e 2 (git log paths-touched) do algoritmo D1, sem fetch de PR comments. Mantém o espírito enxuto do `/full-cycle-simple` (custo de tokens reduzido). Gera relatório baseline em `.claude/reflections/<ts>-<slug>-baseline.md` e agenda follow-up retro D+7 via `~/.claude/cache/reflect/reminders.jsonl`.
+Após o sync dos slots, dispare a reflexão `/reflect --baseline --quick` como **subprocess headless** `claude -p` em **background** (não inline). O subprocess é um processo `claude` novo: usa o **modelo padrão configurado do Claude Code** (settings/`/model`), não herda o modelo volátil da sessão pai (pattern slash-command-via-claude-p já é produção em `bin/reflect-retro-due.sh`). Para pinar, acrescente `--model <id>`. Modo `--quick` é subset do `--baseline` — roda apenas camadas 1 (decisions.jsonl) e 2 (git log paths-touched) do algoritmo D1, sem fetch de PR comments. Mantém o espírito enxuto do `/full-cycle-simple` (custo de tokens reduzido). Gera relatório baseline em `.claude/reflections/<ts>-<slug>-baseline.md` e agenda follow-up retro D+7 via `~/.claude/cache/reflect/reminders.jsonl`.
 
 ```bash
 PR_NUMBER=$(gh pr list --state merged --limit 1 --base main --json number --jq .[0].number)
 
-# Subprocess headless em background com modelo pinado (US-06). `&` + `disown`
+# Subprocess headless em background usando o modelo padrão do Claude Code
+# (sem --model — processo novo lê o default configurado). `&` + `disown`
 # garantem término non-blocking do pipeline.
 mkdir -p ~/.claude/cache/reflect
-claude --model claude-fable-5 -p "/reflect $PR_NUMBER --baseline --quick" \
+claude -p "/reflect $PR_NUMBER --baseline --quick" \
   >> ~/.claude/cache/reflect/fase9-fullcycle-simple.log 2>&1 &
 disown
 ```

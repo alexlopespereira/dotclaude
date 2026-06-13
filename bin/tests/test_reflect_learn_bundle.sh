@@ -254,7 +254,7 @@ echo '{"summary":"ok","proposals":[],"findings":[]}'
 EOF
 chmod +x "$MOCK_BIN_DIR/claude-logargv"
 
-# AC3 default → --model claude-fable-5 no argv de claude --print
+# AC3 default → SEM --model no argv (usa o modelo padrão do Claude Code)
 : > "$MODEL_LOG"
 OUT_DIR_M="$TMP/learn-out-model-default"
 BUNDLE_PRD_PATH="$TMP/prd.json" \
@@ -269,7 +269,7 @@ RC=$?
 assert_rc "$RC" 0 "US06-AC3a --with-llm default exit 0"
 # capture-proof: o mock rodou co-presente (call-log não-vazio)
 if [ -s "$MODEL_LOG" ]; then _pass; else _fail "US06-AC3b capture-proof: claude mock não rodou"; fi
-assert_contains "$(cat "$MODEL_LOG")" "--model claude-fable-5" "US06-AC3c default --model claude-fable-5 no argv"
+case "$(cat "$MODEL_LOG")" in *"--model"*) _fail "US06-AC3c default NÃO deve ter --model (modelo padrão do Claude Code)";; *) _pass;; esac
 assert_contains "$(cat "$MODEL_LOG")" "--print" "US06-AC3d --print presente (invocação correta)"
 
 # AC3 --model custom respeitado

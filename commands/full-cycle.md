@@ -196,7 +196,7 @@ Quando a **notificação de conclusão** chegar:
 
 ## Fase 9 — Reflexão sobre DoD (gate heurístico --learn vs --baseline)
 
-Após o sync dos slots, dispare a reflexão sobre DoD como **subprocess headless** `claude --model claude-fable-5 -p "/reflect <PR> <modo>"` em **background** (não inline). A invocação inline herdaria o modelo da sessão — impossível pinar; o subprocess propaga `--model claude-fable-5` explicitamente (pattern slash-command-via-claude-p já em produção em `bin/reflect-retro-due.sh`). O modo é decidido por gate heurístico inline (AC9 do US-02): `--learn` quando o ciclo correu **anômalo** (precisa LLM analisar a TDD-chain por US), `--baseline` quando correu **limpo** (compliance retroativa basta).
+Após o sync dos slots, dispare a reflexão sobre DoD como **subprocess headless** `claude -p "/reflect <PR> <modo>"` em **background** (não inline). O subprocess é um processo `claude` novo: usa o **modelo padrão configurado do Claude Code** (settings/`/model`), não herda o modelo volátil da sessão pai (pattern slash-command-via-claude-p já em produção em `bin/reflect-retro-due.sh`). Para pinar um modelo específico, acrescente `--model <id>`. O modo é decidido por gate heurístico inline (AC9 do US-02): `--learn` quando o ciclo correu **anômalo** (precisa LLM analisar a TDD-chain por US), `--baseline` quando correu **limpo** (compliance retroativa basta).
 
 ```bash
 PR_NUMBER=$(gh pr list --state merged --limit 1 --base main --json number --jq .[0].number)
@@ -226,12 +226,13 @@ fi
 
 REFLECT_MODE=$([ "$NEED_LEARN" = "true" ] && echo --learn || echo --baseline)
 
-# Subprocess headless em background com modelo pinado (US-06). `&` + `disown`
-# garantem que a Fase 9 não bloqueia o término do pipeline; o redirect captura
-# o output pra inspeção pós-merge sem poluir a sessão.
+# Subprocess headless em background usando o modelo padrão do Claude Code
+# (sem --model — processo novo lê o default configurado, não herda a sessão).
+# `&` + `disown` garantem que a Fase 9 não bloqueia o término do pipeline; o
+# redirect captura o output pra inspeção pós-merge sem poluir a sessão.
 mkdir -p ~/.claude/cache/reflect
 REFLECT_NESTED=1 REFLECT_LEARN_GATE=$([ "$NEED_LEARN" = "true" ] && echo 1 || echo 0) \
-  claude --model claude-fable-5 -p "/reflect $PR_NUMBER $REFLECT_MODE" \
+  claude -p "/reflect $PR_NUMBER $REFLECT_MODE" \
   >> ~/.claude/cache/reflect/fase9-fullcycle.log 2>&1 &
 disown
 ```
