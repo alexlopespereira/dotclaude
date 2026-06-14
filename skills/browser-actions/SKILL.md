@@ -204,7 +204,7 @@ Workflow Boris Cherny tem 5 checkouts paralelos (`~/Projects/checkouts/<repo>-{1
 2. `basename($PWD)` quando bate `<repo>-<N>` regex (pool Boris).
 3. `"default"` (fallback para repos diretos, worktrees, sessões sem pool).
 
-Lock per-profile (`~/.claude/chrome-profile-<slot>/.lock`) ainda existe para cobrir o caso raro de 2 sessões Claude Code no MESMO slot. Trap remove em SIGINT/TERM/HUP; SIGKILL deixa órfão (detectado na próxima invocação via `kill -0` no PID gravado).
+Lock per-profile (`~/.claude/chrome-profile-<slot>/.lock`) serializa acesso ao mesmo profile. Quando 2+ sessões Claude Code resolvem o **mesmo slot** (comum — ex.: systemd auto-start + sessão manual no mesmo checkout, ou subagentes), a 2ª **não falha mais**: cai para um profile **efêmero** exclusivo da sessão (`~/.claude/chrome-profile-<slot>-pid<PID>/`, removido no exit), e emite `AVISO: slot '...' já em uso ... usando profile efêmero` no stderr. Custo: essa 2ª sessão não herda cookies; ganho: playwright funciona em paralelo, sem `MCP error -32000: Connection closed`. Trap remove o lock (e o profile efêmero) em SIGINT/TERM/HUP; SIGKILL deixa órfão (detectado na próxima invocação via `kill -0` no PID gravado, ou contornado pelo fallback). Regressão coberta por `bin/tests/test_wrapper_launch.sh` AC6.
 
 **Trade-off aceito:** cookies/login não compartilham entre slots. Primeira sessão em cada slot exige re-auth nos sites usados. Ganho: zero risco de corromper Chrome user-data por escrita concorrente; sintoma "Playwright inacessível em quase todas as sessões" elimina.
 

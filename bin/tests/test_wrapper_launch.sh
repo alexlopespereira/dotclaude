@@ -115,6 +115,27 @@ if bash -n "$WRAPPER" 2>/dev/null; then _pass; else _fail "AC5a bash -n falhou e
 run Linux unset >/dev/null 2>&1
 assert_dir "$HOME_DIR/.claude/chrome-profile-tslot" "AC5b profile per-slot resolvido/criado"
 
+# ── AC6: slot ocupado por sessão viva → fallback efêmero, NÃO mata a conexão ───
+# Regressão do bug "playwright não funciona em 2 sessões ao mesmo tempo": o lock
+# per-slot fazia exit 99 → MCP "Connection closed". Agora a 2ª sessão cai para
+# um profile efêmero -pid<N> e segue (rc=0), permitindo browser em paralelo.
+rm -f "$NPX_LOG"
+rm -rf "$HOME_DIR/.claude"
+mkdir -p "$HOME_DIR/.claude/chrome-profile-tslot/.lock"
+sleep 60 & LIVE_PID=$!
+printf '%s\n' "$LIVE_PID" > "$HOME_DIR/.claude/chrome-profile-tslot/.lock/pid"
+env -i HOME="$HOME_DIR" PATH="$STUB_DIR:/usr/bin:/bin:/usr/sbin:/sbin" \
+  CLAUDE_SLOT_NAME=tslot NPX_LOG="$NPX_LOG" WRAPPER_OS=Linux \
+  bash "$WRAPPER" >/dev/null 2>"$TMP/ac6.err"; rc=$?
+kill "$LIVE_PID" 2>/dev/null
+assert_rc "$rc" 0 "AC6a slot ocupado não mata conexão (rc=0, não 99)"
+assert_has "$NPX_LOG" "--user-data-dir" "AC6b npx foi invocado no fallback"
+if grep -qE "chrome-profile-tslot-pid[0-9]+$" "$NPX_LOG"; then _pass
+else _fail "AC6c argv deve usar profile efêmero -pid<N>, não o slot ocupado:
+$(cat "$NPX_LOG")"; fi
+if grep -qi "profile efêmero" "$TMP/ac6.err"; then _pass
+else _fail "AC6d aviso de fallback emitido no stderr"; fi
+
 # ── Resultado ─────────────────────────────────────────────────────────────────
 echo "test_wrapper_launch.sh: $PASS passed, $FAIL failed"
 if [ "$FAIL" -gt 0 ]; then

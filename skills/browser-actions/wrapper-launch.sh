@@ -14,9 +14,15 @@
 #   2. basename($PWD) se bate <repo>-<N> (pool Boris)
 #   3. "default" (repos diretos, worktrees, etc.)
 #
-# Robustez: lock ainda existe per-profile pra cobrir múltiplas Claude Code
-# sessions no MESMO slot (raro, mas possível). Trap limpa em SIGINT/TERM/HUP.
-# SIGKILL deixa órfão — acquire_lock detecta via kill -0 no PID gravado.
+# Robustez: lock existe per-profile pra serializar acesso ao MESMO profile.
+# Quando 2+ Claude Code sessions resolvem o MESMO slot (comum: várias sessões
+# no mesmo checkout, ex. systemd auto-start + sessão manual em etl-crm-1),
+# a 2ª NÃO falha — cai para um profile efêmero exclusivo da sessão
+# (chrome-profile-<slot>-pid<PID>), removido no exit. Custo: sem cookies
+# herdados nessa 2ª sessão; ganho: playwright funciona em paralelo, sem
+# "Connection closed". O caso comum (1 sessão/slot) mantém o profile persistente.
+# Trap limpa em SIGINT/TERM/HUP. SIGKILL deixa órfão — acquire_lock detecta
+# via kill -0 no PID gravado.
 #
 # Invocado pelo MCP em ~/.claude.json (escopo user):
 #   playwright -> /Users/dev/.claude/skills/browser-actions/wrapper-launch.sh
@@ -36,41 +42,60 @@ if [ -z "$SLOT" ]; then
   fi
 fi
 
-PROFILE_DIR="$HOME/.claude/chrome-profile-${SLOT}"
+PROFILE_BASE="$HOME/.claude/chrome-profile-${SLOT}"
+PROFILE_DIR="$PROFILE_BASE"
 LOCK_DIR="$PROFILE_DIR/.lock"
 PID_FILE="$LOCK_DIR/pid"
 mkdir -p "$PROFILE_DIR"
 
+# acquire_lock <lock_dir> — 0 = adquirido (cria o dir), 1 = dono vivo segurando.
+# Órfãos (PID morto) são limpos e o lock readquirido (best-effort, race-prone).
 acquire_lock() {
-  if mkdir "$LOCK_DIR" 2>/dev/null; then
+  local lock_dir="$1" pid_file="$1/pid" old_pid=""
+  if mkdir "$lock_dir" 2>/dev/null; then
     return 0
   fi
 
   # Lock existe — verificar se é órfão.
-  local old_pid=""
-  [ -f "$PID_FILE" ] && old_pid=$(cat "$PID_FILE" 2>/dev/null || true)
+  [ -f "$pid_file" ] && old_pid=$(cat "$pid_file" 2>/dev/null || true)
 
   if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
     return 1  # dono vivo, lock válido
   fi
 
   # Órfão — limpar e tentar de novo (race-prone, mas best-effort).
-  rm -rf "$LOCK_DIR" 2>/dev/null || true
-  mkdir "$LOCK_DIR" 2>/dev/null || return 1
+  rm -rf "$lock_dir" 2>/dev/null || true
+  mkdir "$lock_dir" 2>/dev/null || return 1
   return 0
 }
 
-if ! acquire_lock; then
-  echo "ERRO: outra Claude Code session já está usando o profile do slot '$SLOT'." >&2
-  echo "      profile: $PROFILE_DIR" >&2
-  echo "      lock:    $LOCK_DIR" >&2
-  echo "Aguarde aquela sessão terminar, ou rode reset.sh se for lock órfão." >&2
-  exit 99
+EPHEMERAL=0
+if ! acquire_lock "$LOCK_DIR"; then
+  # Slot já em uso por outra sessão viva. Em vez de matar a conexão MCP
+  # (deixava a 2ª sessão sem playwright — causa do "não funciona ao mesmo
+  # tempo"), cai para um profile efêmero exclusivo desta sessão. $$ é único
+  # entre processos vivos, então o lock dele sempre é adquirível.
+  EPHEMERAL=1
+  PROFILE_DIR="${PROFILE_BASE}-pid$$"
+  LOCK_DIR="$PROFILE_DIR/.lock"
+  PID_FILE="$LOCK_DIR/pid"
+  mkdir -p "$PROFILE_DIR"
+  if ! acquire_lock "$LOCK_DIR"; then
+    # PID reuse improvável (mesmo slot + mesmo PID de um órfão): força.
+    rm -rf "$LOCK_DIR" 2>/dev/null || true
+    mkdir -p "$LOCK_DIR"
+  fi
+  echo "AVISO: slot '$SLOT' já em uso por outra sessão; usando profile efêmero" >&2
+  echo "       $PROFILE_DIR (sem cookies herdados, removido ao sair)." >&2
 fi
 
 echo $$ > "$PID_FILE"
 
-cleanup() { rm -rf "$LOCK_DIR" 2>/dev/null || true; }
+cleanup() {
+  rm -rf "$LOCK_DIR" 2>/dev/null || true
+  # Profile efêmero é descartável: remove inteiro pra não acumular lixo.
+  if [ "$EPHEMERAL" = "1" ]; then rm -rf "$PROFILE_DIR" 2>/dev/null || true; fi
+}
 trap cleanup EXIT INT TERM HUP
 
 # Seam de OS pra testabilidade: default $(uname), override via WRAPPER_OS.
