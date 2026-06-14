@@ -18,6 +18,7 @@
 - [ ] argumentos via `$ARGUMENTS` ou `$1`/`$2` com `argument-hint` definido
 - [ ] inline bash (`!\`git status\``) usado para pré-computar contexto e evitar round-trip do modelo (padrão Boris Cherny `/commit-push-pr`)
 - [ ] executado 1x em sessão real e produz o output esperado sem follow-up manual
+- [ ] **deprecação** de command segue formato canônico: header `> **DEPRECATED** — sunset <YYYY-MM-DD>; use /<substituto>` na 1ª linha do corpo E prefixo `DEPRECATED:` na `description` do frontmatter; sunset futura na data do commit + substituto verificado (`test -f`); mudança coberta por teste grep versionado em `bin/tests/` (origem: reflect --learn PR #65, US-06)
 
 ### 2. Skill nova
 - [ ] estrutura é uma **pasta** (não só arquivo) — mesmo que vazia inicialmente, prevê `examples/`, `references/` (padrão Anthropic Skills)
@@ -43,6 +44,8 @@
 - [ ] commitado em `.claude/settings.json` (projeto) ou `~/.claude/settings.json` (user) — nunca em `.local.json` se for compartilhável
 - [ ] hook de evento não-bloqueante (`SessionStart`, `Notification`) é **best-effort**: nunca usa `exit 2`; falha interna vira log + exit 0 (origem: reflect --learn PR #49)
 - [ ] operação de rede dentro de hook tem timeout explícito + `GIT_TERMINAL_PROMPT=0`; efeito colateral remoto/mutante (auto-pull/push/install) é **opt-in explícito** via env ou marcador (origem: reflect --learn PR #49)
+- [ ] hook **bloqueante** (PreToolUse que nega) é **fail-closed**: `set -u` + `trap 'exit 2' ERR` + checagem explícita de dependências (`command -v jq`/`git`…) com stderr acionável — dep ausente ou erro interno → `exit 2`, nunca `exit 1`/`0` silencioso (contrato PreToolUse: só `exit 2` bloqueia; `set -e` sozinho é insuficiente — sai com `1`). Origem: code-review P0 do PR #65
+- [ ] hook bloqueante tem teste em `bin/tests/test_<hook>.sh` escrito ANTES (TDD vermelho) cobrindo: bloqueio (→ `exit 2`), caminho limpo (→ `exit 0`) e dependência ausente (→ `exit 2` + stderr) — dep injetável via seam (`<PREFIX>_JQ`) prova o fail-closed sem desinstalar nada
 
 **Referências consultadas:**
 - Anthropic Claude Code docs — Slash Commands, Hooks reference, Skills (code.claude.com/docs)
@@ -347,6 +350,8 @@ Origem: ciclo `/full-cycle` vm-provisioning (PRs #52/#53, 2026-06-10) + reflect 
 - [ ] testes em `bin/tests/test_<script>.sh` com stubs + call-log, escritos ANTES (TDD): asserts de argv exato, ORDEM das chamadas e ausência de chamadas proibidas — **capture-proof**: todo assert de ausência tem um assert positivo co-presente provando que o stub rodou (origem: reflect --learn PR #52)
 - [ ] idempotente: 2ª execução converge pro mesmo estado (mutação condicionada a cmp/check prévio) — provado por teste
 - [ ] binário de user-install resolvido com fallback explícito (`command -v` → `~/.local/bin/<bin>`) — shell ssh não-login tem PATH básico; rc=127 não pode ser interpretado como estado de configuração
+- [ ] **rename/move** de script faz varredura repo-wide por referências ao nome antigo (`grep -rn 'nome-antigo' --include='*.sh' --include='*.md'` + cópias instaladas em `~/.claude/`) com zero-órfãos provado; stub de deprecação (se houver) testado: repassa argv (`"$@"`) via exec, aviso em stderr, exit code do novo propagado (origem: reflect --learn PR #65, US-05)
+- [ ] **refactor de extração** (mover constantes/funções p/ lib comum via `source`) prova equivalência — teste before/after com stubs + call-log (argv idêntico) OU diff byte-a-byte do output em dry-run; "sem mudança de comportamento" nunca é claim sem evidência; `source` falha alto se a lib não existir (`[ -f "$LIB" ] || { echo …; exit 1; }`, path relativo a `$(dirname "$0")`). Origem: reflect --learn PR #65, US-10
 
 ### 21. Script com fase remota/privilegiada (SSH/sudo)
 - [ ] separação de privilégio binária: fase default roda sem sudo e RELATA pendências da fase privilegiada; fase `--root` tem guard de OS/usuário que aborta antes de qualquer mutação
@@ -362,6 +367,28 @@ Origem: reflect --learn PR #52 (US-01 — unit systemd capturada das VMs).
 - [ ] fontes múltiplas (ex.: 2 VMs) comparadas entre si — divergência aborta em vez de escolher uma arbitrariamente
 - [ ] `README.md` no diretório documenta origem (host:path), comando de captura e consumidor do artefato
 - [ ] scan de segredos no conteúdo capturado antes do commit (padrões do Princípio 7)
+
+---
+
+## Categoria 10 — Infra do harness/repo (config remota via API, CI/CD, docs-only)
+
+Origem: reflect `--learn` do PR #65 — a US-01 (branch protection via `gh api`) sofreu retrabalho (commit "validador versionado") por falta de read-back; o code-review pegou um P0 de fail-closed; e a curadoria de docs deixou refs órfãs e budget de CLAUDE.md estourado. Nenhuma categoria anterior cobria mutação de estado remoto, workflow CI/release, nem mudança docs-only verificável.
+
+**DoD base (todas as tarefas desta categoria):**
+- [ ] mutação de estado remoto via API (`gh api -X PUT`, `gcloud`, `aws`, `netlify api`) é verificada por **read-back**: `GET` do mesmo recurso assertando os campos configurados — `exit 0` do PUT/POST **não** prova estado
+- [ ] identificador acoplado a config remota (nome de required check, secret, env, branch) validado contra a **fonte real** (`grep` no YAML do job/manifesto) ANTES de aplicar — mismatch silencioso é catastrófico (check que nunca reporta bloqueia merges p/ sempre)
+- [ ] **revert path executável** documentado: comando exato (ex.: `gh api -X DELETE …`), testado em dry-run ou sandbox — não apenas citado em prosa
+
+### 23. Workflow CI/CD (lint, release, schedule)
+- [ ] job de lint declara **severity explícita** (ex.: `--severity=warning`) e versão pinada do linter (tag de action ou apt version) — default upstream não pode mudar o gate silenciosamente
+- [ ] todo `# shellcheck disable=SCnnnn` (ou supressão equivalente) carrega justificativa adjacente; exclusão de escopo do lint é documentada em comentário no próprio YAML
+- [ ] lógica de versionamento/release extraída para script testável em `bin/` + `bin/tests/` — cobre idempotência (re-run no mesmo commit não duplica tag/release), colisão no mesmo dia (sufixo `-N`, incl. N≥2) e virada de mês/ano; git stubado, sem rede
+- [ ] job novo é **required check** em PR (`pull_request` + `push` na main) — provado por um PR com violação proposital que falha o job antes do merge
+
+### 24. Mudança docs-only (README/CLAUDE.md/docs)
+- [ ] cada claim estrutural do doc (parágrafo, bloco, nota) tem spec **grep-verificável** (arquivo alvo + padrão esperado) — não "revisão visual"
+- [ ] toda referência cruzada introduzida (ADR, plano, skill, outro doc) é validada por existência do alvo (`test -f`) — referenciar doc órfão perpetua o orfanato
+- [ ] comportamento negativo documentado é assertável por comando (ex.: `git check-ignore <path>` retorna ≠ 0 p/ "não-ignorado"); edição em `CLAUDE.md` re-verifica budget (`wc -w` ≤ ~2.5k) com o número no commit body, não só a intenção
 
 ---
 
@@ -391,5 +418,7 @@ Origem: reflect --learn PR #52 (US-01 — unit systemd capturada das VMs).
 | 20 | Parsing input não-estruturado | 8 | ✅ | ✅ |
 | 21 | Script bash remoto/sudo | 9 | ✅ | ✅ |
 | 22 | Artefato capturado verbatim | 9 | ✅ | ✅ |
+| 23 | Workflow CI/CD (lint/release) | 10 | ✅ | ✅ |
+| 24 | Mudança docs-only | 10 | ✅ | ✅ |
 
-**Total de critérios:** ~157 (9 DoDs-base + 21 variações; Categoria 9 cobre scripts bash utilitários só com a base quando não há fase remota).
+**Total de critérios:** ~178 (10 DoDs-base + 23 variações; Categoria 9 cobre scripts bash utilitários só com a base quando não há fase remota; Categoria 10 cobre infra do harness/repo — origem reflect --learn PR #65).

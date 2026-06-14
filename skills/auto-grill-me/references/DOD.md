@@ -35,6 +35,10 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 | script bash utilitário, `bin/*.sh`, seam env var, stub call-log | 9 | base |
 | provisioning de VM, fase `--root`, sudo/ssh -t, scp de fonte | 9 | 21 |
 | captura verbatim de host remoto, unit/config de VM versionada | 9 | 22 |
+| mutação remota via API (`gh api`, `gcloud`, `aws`, `netlify api`), branch protection, secret remoto | 10 | base |
+| workflow CI/CD, `.github/workflows/*.yml`, lint job, release/tag, CalVer, schedule | 10 | 23 |
+| mudança docs-only, README/CLAUDE.md/WORKFLOW, ref cruzada, budget de tokens | 10 | 24 |
+| deprecação de slash command, header DEPRECATED, sunset | 1 | 1 |
 
 **Mapping não-cobertos pelo índice:** aplicar apenas o `DoD-base` da categoria mais próxima + marcar critérios derivados com `[INFERÊNCIA]`. **Não inventar critérios sem marker.**
 
@@ -54,6 +58,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b3] argumentos via `$ARGUMENTS` ou `$1`/`$2` com `argument-hint` definido
 - [ ] [b4] inline bash (`!\`git status\``) usado para pré-computar contexto e evitar round-trip do modelo
 - [ ] [b5] executado 1x em sessão real e produz o output esperado sem follow-up manual
+- [ ] [b6] **deprecação** de command segue formato canônico: header `> **DEPRECATED** — sunset <YYYY-MM-DD>; use /<substituto>` na 1ª linha do corpo E prefixo `DEPRECATED:` na `description` do frontmatter; sunset futura na data do commit + substituto verificado (`test -f`); mudança coberta por teste grep versionado em `bin/tests/`
 
 ### Tarefa 2 — Skill nova
 - [ ] [b1] estrutura é uma **pasta** (não só arquivo) — mesmo que vazia inicialmente, prevê `examples/`, `references/`
@@ -79,6 +84,8 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b7] commitado em `.claude/settings.json` (projeto) ou `~/.claude/settings.json` (user) — nunca em `.local.json` se compartilhável
 - [ ] [b8] hook de evento não-bloqueante (`SessionStart`, `Notification`) é **best-effort**: nunca usa `exit 2`; falha interna vira log + exit 0
 - [ ] [b9] operação de rede dentro de hook tem timeout explícito + `GIT_TERMINAL_PROMPT=0`; efeito remoto/mutante (auto-pull/push/install) é **opt-in explícito** via env ou marcador
+- [ ] [b10] hook **bloqueante** (PreToolUse que nega) é **fail-closed**: `set -u` + `trap 'exit 2' ERR` + checagem explícita de dependências (`command -v jq`/`git`…) com stderr acionável — dep ausente ou erro interno → `exit 2`, nunca `exit 1`/`0` silencioso (contrato PreToolUse: só `exit 2` bloqueia; `set -e` sozinho é insuficiente — sai com `1`)
+- [ ] [b11] hook bloqueante tem teste em `bin/tests/test_<hook>.sh` escrito ANTES (TDD vermelho) cobrindo: bloqueio (→ `exit 2`), caminho limpo (→ `exit 0`) e dependência ausente (→ `exit 2` + stderr) — dep injetável via seam (`<PREFIX>_JQ`) prova o fail-closed sem desinstalar nada
 
 ---
 
@@ -312,6 +319,8 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b6] testes em `bin/tests/test_<script>.sh` com stubs + call-log, escritos ANTES (TDD): asserts de argv exato, ORDEM das chamadas e ausência de chamadas proibidas — **capture-proof**: assert de ausência exige assert positivo co-presente provando que o stub rodou
 - [ ] [b7] idempotente: 2ª execução converge pro mesmo estado (mutação condicionada a cmp/check prévio) — provado por teste
 - [ ] [b8] binário de user-install resolvido com fallback explícito (`command -v` → `~/.local/bin/<bin>`) — shell ssh não-login tem PATH básico; rc=127 não pode ser interpretado como estado de configuração
+- [ ] [b9] **rename/move** de script faz varredura repo-wide por referências ao nome antigo (`grep -rn 'nome-antigo' --include='*.sh' --include='*.md'` + cópias instaladas em `~/.claude/`) com zero-órfãos provado; stub de deprecação (se houver) testado: repassa argv (`"$@"`) via exec, aviso em stderr, exit code do novo propagado
+- [ ] [b10] **refactor de extração** (mover constantes/funções p/ lib comum via `source`) prova equivalência — teste before/after com stubs + call-log (argv idêntico) OU diff byte-a-byte do output em dry-run; "sem mudança de comportamento" nunca é claim sem evidência; `source` falha alto se a lib não existir (`[ -f "$LIB" ] || { echo …; exit 1; }`, path relativo a `$(dirname "$0")`)
 
 ### Tarefa 21 — Script com fase remota/privilegiada (SSH/sudo)
 - [ ] [b1] separação de privilégio binária: fase default roda sem sudo e RELATA pendências da fase privilegiada; fase `--root` tem guard de OS/usuário que aborta antes de qualquer mutação
@@ -326,3 +335,23 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b3] fontes múltiplas (ex.: 2 VMs) comparadas entre si — divergência aborta em vez de escolher uma arbitrariamente
 - [ ] [b4] `README.md` no diretório documenta origem (host:path), comando de captura e consumidor do artefato
 - [ ] [b5] scan de segredos no conteúdo capturado antes do commit (padrões do Princípio 7)
+
+---
+
+## Categoria 10 — Infra do harness/repo (config remota via API, CI/CD, docs-only)
+
+### DoD-base — Categoria 10
+- [ ] [b1] mutação de estado remoto via API (`gh api -X PUT`, `gcloud`, `aws`, `netlify api`) é verificada por **read-back**: `GET` do mesmo recurso assertando os campos configurados — `exit 0` do PUT/POST **não** prova estado
+- [ ] [b2] identificador acoplado a config remota (nome de required check, secret, env, branch) validado contra a **fonte real** (`grep` no YAML do job/manifesto) ANTES de aplicar — mismatch silencioso é catastrófico (check que nunca reporta bloqueia merges p/ sempre)
+- [ ] [b3] **revert path executável** documentado: comando exato (ex.: `gh api -X DELETE …`), testado em dry-run ou sandbox — não apenas citado em prosa
+
+### Tarefa 23 — Workflow CI/CD (lint, release, schedule)
+- [ ] [b1] job de lint declara **severity explícita** (ex.: `--severity=warning`) e versão pinada do linter (tag de action ou apt version) — default upstream não pode mudar o gate silenciosamente
+- [ ] [b2] todo `# shellcheck disable=SCnnnn` (ou supressão equivalente) carrega justificativa adjacente; exclusão de escopo do lint é documentada em comentário no próprio YAML
+- [ ] [b3] lógica de versionamento/release extraída para script testável em `bin/` + `bin/tests/` — cobre idempotência (re-run no mesmo commit não duplica tag/release), colisão no mesmo dia (sufixo `-N`, incl. N≥2) e virada de mês/ano; git stubado, sem rede
+- [ ] [b4] job novo é **required check** em PR (`pull_request` + `push` na main) — provado por um PR com violação proposital que falha o job antes do merge
+
+### Tarefa 24 — Mudança docs-only (README/CLAUDE.md/docs)
+- [ ] [b1] cada claim estrutural do doc (parágrafo, bloco, nota) tem spec **grep-verificável** (arquivo alvo + padrão esperado) — não "revisão visual"
+- [ ] [b2] toda referência cruzada introduzida (ADR, plano, skill, outro doc) é validada por existência do alvo (`test -f`) — referenciar doc órfão perpetua o orfanato
+- [ ] [b3] comportamento negativo documentado é assertável por comando (ex.: `git check-ignore <path>` retorna ≠ 0 p/ "não-ignorado"); edição em `CLAUDE.md` re-verifica budget (`wc -w` ≤ ~2.5k) com o número no commit body, não só a intenção
