@@ -62,6 +62,8 @@ Arquivo `prd.json` na raiz do repositório com este formato:
 
 8. **Gere o DAG (`dependsOn` / `touchesFiles`) quando o PRD será rodado em paralelo.** O dispatcher paralelo (`/ralph-adversarial --parallel`) co-despacha stories em slots distintos do pool; esses dois campos opcionais dizem ao dispatcher o que pode rodar junto e o que precisa serializar. Veja a seção "Campos de DAG paralelo" abaixo. Ambos são **opcionais e aditivos** — um prd.json sem eles continua válido e a validação jq da Fase 4 do `/full-cycle` passa normalmente (campos ausentes = sem restrição extra; o dispatcher trata cada story como independente).
 
+9. **Declare `dodIds` por US.** Array dos dod_ids (`tarefa-N` / `cat-N-base`) que a US implementa — os mesmos dos marcadores `<!-- dod-use: <id> -->` na seção "## Artefatos a produzir" do plano correspondentes àquela US. Campo **opcional e aditivo**: quando presente, a auditoria `/reflect --learn` (`bin/reflect-learn-bundle.sh`) filtra os DoD bullets e specs do bundle só pela categoria/tarefa da US (ids prefixados `tarefa-8/b1` — sem colisão `b1..bN` entre categorias); quando ausente, o bundle degrada para a biblioteca DoD inteira e emite o finding `bundle_unfiltered` (auditoria não-confiável). Ex.: uma US que endurece um hook → `"dodIds": ["tarefa-8", "cat-1-base"]`.
+
 ## Campos de DAG paralelo: `dependsOn` e `touchesFiles`
 
 Estes campos são lidos pelo dispatcher em `skills/ralph-adversarial/lib/dispatch.sh`. **Ambos são opcionais.** A semântica do default ausente é deliberada: **ausência ≡ sem restrição** (a story é despachável sem esperar ninguém e sem reservar arquivos). Preencha-os apenas quando o PRD for executado em modo paralelo e a story tiver, de fato, pré-requisito ou risco de colisão de arquivos.

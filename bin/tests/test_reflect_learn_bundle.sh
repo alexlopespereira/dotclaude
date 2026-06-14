@@ -290,6 +290,52 @@ assert_contains "$(cat "$MODEL_LOG")" "--model claude-opus-4-8" "US06-AC3e --mod
 RC=$?
 if [ "$RC" -ne 0 ]; then _pass; else _fail "US06-AC3f --model sem valor → exit != 0 (rc=$RC)"; fi
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Filtragem por dodIds (fix do bundle: auditar só a categoria da US)
+# ═══════════════════════════════════════════════════════════════════════════
+# DOD com DOIS blocos; specs de DOIS dod_ids; só tarefa-99 é relevante à US.
+cat > "$TMP/dod2.md" <<'EOF'
+## Categoria 1 — Fixture
+
+### Tarefa 99 — Relevante
+- [ ] [b1] bullet alpha da tarefa 99
+- [ ] [b2] bullet beta da tarefa 99
+
+### Tarefa 98 — Irrelevante
+- [ ] [b1] bullet de outra tarefa que NÃO deve entrar
+- [ ] [b2] outro bullet alheio
+EOF
+cat > "$TMP/specs2.md" <<'EOF'
+### Tarefa 99 — Relevante
+- [ ] spec-1 (tarefa-99-spec-1): spec da US auditada
+### Tarefa 98 — Irrelevante
+- [ ] spec-1 (tarefa-98-spec-1): spec de OUTRA tarefa, não deve entrar
+EOF
+cat > "$TMP/prd-filt.json" <<'EOF'
+{ "userStories": [
+  { "id": "US-FILT", "title": "Com dodIds", "description": "x",
+    "dodIds": ["tarefa-99"], "acceptanceCriteria": ["a"], "passes": true },
+  { "id": "US-NOFILT", "title": "Sem dodIds", "description": "y",
+    "acceptanceCriteria": ["a"], "passes": true } ] }
+EOF
+
+# Caso A — US COM dodIds: bundle só com bullets/specs de tarefa-99, ids prefixados
+BUN_A="$(BUNDLE_PRD_PATH="$TMP/prd-filt.json" BUNDLE_DOD_PATH="$TMP/dod2.md" \
+  BUNDLE_SPECS_PATH="$TMP/specs2.md" BUNDLE_TEST_GLOB_ROOT="$TMP" \
+  BUNDLE_COMMITS_OVERRIDE="x" "$TARGET" 999 US-FILT 2>/dev/null)"
+echo "$BUN_A" > "$TMP/bun_a.json"
+assert_jq_eq "$TMP/bun_a.json" '[.dod_bullets[].id] | sort | join(",")' "tarefa-99/b1,tarefa-99/b2" "FILT-A bullets só de tarefa-99, ids prefixados"
+assert_jq_eq "$TMP/bun_a.json" '[.specs[].id] | join(",")' "tarefa-99-spec-1" "FILT-A specs só de tarefa-99"
+assert_jq_eq "$TMP/bun_a.json" '[.findings[] | select(.type=="bundle_unfiltered")] | length' "0" "FILT-A sem finding bundle_unfiltered (filtrou ok)"
+
+# Caso B — US SEM dodIds: degrada (biblioteca inteira) + finding honesto
+BUN_B="$(BUNDLE_PRD_PATH="$TMP/prd-filt.json" BUNDLE_DOD_PATH="$TMP/dod2.md" \
+  BUNDLE_SPECS_PATH="$TMP/specs2.md" BUNDLE_TEST_GLOB_ROOT="$TMP" \
+  BUNDLE_COMMITS_OVERRIDE="x" "$TARGET" 999 US-NOFILT 2>/dev/null)"
+echo "$BUN_B" > "$TMP/bun_b.json"
+assert_jq_eq "$TMP/bun_b.json" '[.findings[] | select(.type=="bundle_unfiltered")] | length' "1" "FILT-B US sem dodIds → finding bundle_unfiltered"
+assert_jq_eq "$TMP/bun_b.json" '[.dod_bullets[].id] | length' "4" "FILT-B sem dodIds inclui todos os bullets (degrada honesto)"
+
 # ─── Summary ───────────────────────────────────────────────────────────────
 TOTAL=$((PASS + FAIL))
 echo ""

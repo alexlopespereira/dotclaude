@@ -85,19 +85,54 @@ US_JSON="$(jq -c --arg id "$US_ID" '.userStories[]? | select(.id==$id)' "$PRD_PA
 
 US_DESC="$(jq -r '.description // ""' <<<"$US_JSON")"
 US_TITLE="$(jq -r '.title // ""' <<<"$US_JSON")"
+# dodIds: lista de dod_ids (tarefa-N / cat-N-base) que a US implementa. Quando
+# presente, o bundle filtra bullets E specs por esses ids (prefixando o bullet
+# id com o dod_id pai → elimina a colisão b1..bN entre categorias). Ausente →
+# degrada para a biblioteca inteira + finding `bundle_unfiltered` (honesto: não
+# finge que filtrou). A skill prd emite o campo ao converter o plano.
+DOD_IDS_JSON="$(jq -c '(.dodIds // []) | map(select(type=="string" and . != ""))' <<<"$US_JSON")"
+DOD_IDS_N="$(jq 'length' <<<"$DOD_IDS_JSON")"
 
 # ─── 2) DoD bullets [bN] do DOD.md (best-effort) ──────────────────────────
+# Com dodIds: extrai só os bullets dos blocos selecionados, id prefixado
+# (`tarefa-8/b1`). Sem dodIds: lista plana da biblioteca inteira (degradado).
 DOD_BULLETS_JSON='[]'
 if [[ -f "$DOD_PATH" ]]; then
-  DOD_BULLETS_JSON="$(
-    grep -E '^- \[ \] \[b[0-9]+\] ' "$DOD_PATH" 2>/dev/null \
-      | sed -E 's/^- \[ \] \[(b[0-9]+)\] (.*)$/\1\t\2/' \
-      | jq -R -s 'split("\n")
-                  | map(select(length > 0)
-                         | split("\t")
-                         | {id: .[0], text: .[1]})' \
-      || echo '[]'
-  )"
+  if [[ "$DOD_IDS_N" -gt 0 ]]; then
+    # awk delimita blocos por heading (mesma regra de dod_bullets_sha) e emite
+    # `<dod_id>\t<bN>\t<texto>` por bullet; o jq filtra pelos ids desejados.
+    DOD_BULLETS_JSON="$(
+      awk '
+        function flush() { cur_id="" }
+        /^## Categoria [0-9]+ — / { split($0,p," "); cat=p[3]; flush(); next }
+        /^### DoD-base — Categoria [0-9]+/ { cur_id="cat-" cat "-base"; next }
+        /^### Tarefa [0-9]+ — / { match($0,/Tarefa [0-9]+/); split(substr($0,RSTART,RLENGTH),t," "); cur_id="tarefa-" t[2]; next }
+        /^### / { flush(); next }
+        /^- \[ \] \[b[0-9]+\] / {
+          if (cur_id=="") next
+          line=$0; sub(/^- \[ \] \[/,"",line); bid=line; sub(/\].*/,"",bid)
+          txt=line; sub(/^b[0-9]+\] /,"",txt)
+          printf "%s\t%s\t%s\n", cur_id, bid, txt
+        }
+      ' "$DOD_PATH" 2>/dev/null \
+        | jq -R -s --argjson ids "$DOD_IDS_JSON" '
+            split("\n") | map(select(length>0) | split("\t")
+              | {dod_id: .[0], bid: .[1], text: .[2]})
+            | map(select(.dod_id as $d | $ids | index($d)))
+            | map({id: (.dod_id + "/" + .bid), text: .text})' \
+        || echo '[]'
+    )"
+  else
+    DOD_BULLETS_JSON="$(
+      grep -E '^- \[ \] \[b[0-9]+\] ' "$DOD_PATH" 2>/dev/null \
+        | sed -E 's/^- \[ \] \[(b[0-9]+)\] (.*)$/\1\t\2/' \
+        | jq -R -s 'split("\n")
+                    | map(select(length > 0)
+                           | split("\t")
+                           | {id: .[0], text: .[1]})' \
+        || echo '[]'
+    )"
+  fi
 fi
 
 # ─── 3) Specs (tarefa-X-spec-N[-A] OU cat-N-base-spec-N[-A]) do TEST-PATTERNS.md (best-effort) ─────
@@ -148,17 +183,21 @@ if [[ -n "$MARKERS_RAW" ]]; then
   )"
 fi
 
-# Constrói specs[] com test_files derivados dos markers.
+# Constrói specs[] com test_files derivados dos markers. Com dodIds, descarta
+# specs cujo dod_id (prefixo antes de `-spec-`) não está na lista da US.
 SPECS_JSON='[]'
 if [[ -n "$SPECS_RAW" ]]; then
   SPECS_JSON="$(
     printf '%s\n' "$SPECS_RAW" \
-      | jq -R -s --argjson markers "$MARKERS_MAP_JSON" '
+      | jq -R -s --argjson markers "$MARKERS_MAP_JSON" --argjson ids "$DOD_IDS_JSON" '
           split("\n")
           | map(select(length > 0))
           | map(split("\t") | {id: .[0],
                                 text: .[1],
                                 test_files: ($markers[.[0]] // [])})
+          | if ($ids | length) > 0
+            then map(select(.id | sub("-spec-.*$";"") as $d | $ids | index($d)))
+            else . end
         '
   )"
 fi
@@ -168,6 +207,11 @@ FINDINGS_JSON="$(
   jq -c '[ .[] | select(.test_files | length == 0)
                 | {type:"tdd_gap_marker_missing", spec_id:.id} ]' <<<"$SPECS_JSON"
 )"
+# US sem dodIds → o bundle não pôde filtrar por categoria: avisa o auditor de
+# que dod_bullets/specs são a biblioteca inteira (auditoria não-confiável).
+if [[ "$DOD_IDS_N" -eq 0 ]]; then
+  FINDINGS_JSON="$(jq -c '. + [{type:"bundle_unfiltered", detail:"US sem campo dodIds no prd.json — dod_bullets e specs são a biblioteca inteira, não a categoria da US. Auditoria de compliance não-confiável. Declare dodIds (ex.: [\"tarefa-8\"]) na US para filtrar."}]' <<<"$FINDINGS_JSON")"
+fi
 
 # ─── 6) Commits resumo via gh pr view ─────────────────────────────────────
 COMMITS_SUMMARY=""

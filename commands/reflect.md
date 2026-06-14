@@ -256,6 +256,8 @@ Consome a chain rastreável `US → DoD bullet → spec TDD → teste implementa
 
 > **Gotcha (AC5 — RESSALVA ALTA #3):** `bin/reflect-learn-bundle.sh` grava `raw-llm-output.txt` SEMPRE (sucesso ou falha), e o parser jq é fail-graceful — se a LLM não emite JSON válido, `proposal.json` carrega finding `llm_output_unparseable` apontando pro raw. Smoke test em `bin/tests/test_reflect_learn_bundle.sh`.
 
+> **Filtragem por `dodIds` (fix do bundle):** o bundle é montado **por US**, mas DoD/specs são definidos por categoria/tarefa. Para a auditoria ser confiável, cada US do `prd.json` deve declarar `dodIds: ["tarefa-N", ...]` (a skill `prd` emite — vide `skills/prd/SKILL.md` regra 9). Com `dodIds`, o bundle inclui **só** os bullets dos blocos selecionados (id prefixado `tarefa-8/b1`, sem colisão `b1..bN`) e **só** as specs cujo dod_id está na lista. **Sem `dodIds`**, o bundle degrada para a biblioteca DoD inteira + todas as specs e emite o finding `bundle_unfiltered` — sinal explícito de que a auditoria daquela US não é confiável (não confunda os `tdd_gap_marker_missing` resultantes com gaps reais: podem ser specs de outra tarefa). Coberto por `test_reflect_learn_bundle.sh` (casos `FILT-A`/`FILT-B`).
+
 **Sub-step 1 — GC de proposals antigos (AC10):**
 
 ```bash
