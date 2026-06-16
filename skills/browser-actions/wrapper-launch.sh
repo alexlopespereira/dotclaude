@@ -142,6 +142,26 @@ if [ "$WRAPPER_OS" = "Linux" ] && [ -z "${DISPLAY:-}" ]; then
   EXTRA_FLAGS+=(--headless)
 fi
 
+# Janela headed via X11 forwarding (VM → XQuartz no Mac) abre tomando a tela
+# inteira do desktop — Chromium herda o tamanho do root X ou restaura o estado
+# "maximizado" salvo no profile. Forçamos a geometria via os switches
+# --window-size/--window-position do Chromium, passados por --config
+# (browser.launchOptions.args). VERIFICADO empiricamente (2026-06-16): só
+# --viewport-size encolhe a PÁGINA mas NÃO a janela quando há maximized salvo;
+# --window-size sobrescreve o restore. Só no Linux com DISPLAY (cenário X11
+# forward) — macOS local (Darwin) fica intacto. Override por máquina:
+#   CLAUDE_BROWSER_WINDOW_SIZE (default "1280,820")  — largura,altura px
+#   CLAUDE_BROWSER_WINDOW_POS  (default "80,60")      — x,y px
+if [ "$WRAPPER_OS" = "Linux" ] && [ -n "${DISPLAY:-}" ]; then
+  WIN_SIZE="${CLAUDE_BROWSER_WINDOW_SIZE:-1280,820}"
+  WIN_POS="${CLAUDE_BROWSER_WINDOW_POS:-80,60}"
+  WIN_CONFIG="$PROFILE_DIR/.x11-window.json"
+  cat > "$WIN_CONFIG" <<JSON
+{ "browser": { "launchOptions": { "args": ["--window-position=${WIN_POS}", "--window-size=${WIN_SIZE}"] } } }
+JSON
+  EXTRA_FLAGS+=(--config "$WIN_CONFIG")
+fi
+
 # Não usa exec — wrapper precisa continuar vivo pra trap rodar e limpar lock.
 # Sinais propagam ao filho automaticamente (mesmo grupo de processo).
 # Expansão guardada (${arr[@]+...}) pra não disparar "unbound variable" sob
