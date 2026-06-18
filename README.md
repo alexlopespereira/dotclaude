@@ -873,7 +873,7 @@ Story: US-01 - Add idempotency key to charge endpoint
 
 ```
 dotclaude/
-├── CLAUDE.md                          # Global protocol (14 principles: ReAct + Feynman + guardrails)
+├── CLAUDE.md                          # Global protocol (15 principles: ReAct + Feynman + guardrails)
 ├── WORKFLOW.md                        # Integrated workflow guide
 ├── CONTEXT.md                         # Domain glossary + consolidated decisions
 ├── README.md
