@@ -1,0 +1,7 @@
+{
+  "all": true,
+  "reporter": ["lcovonly", "text-summary"],
+  "check-coverage": false,
+  "include": ["**/*.liquid.js", "harness/**"],
+  "exclude": ["**/*.test.*", "**/*.spec.*", "coverage/**", "node_modules/**"]
+}

@@ -4,6 +4,19 @@
 
 ---
 
+## Critério cross-cutting — Cobertura por ciclo (Objetivo do ciclo #1)
+
+Origem: plano `.claude/plans/2026-06-19T13-10-55Z-objetivo-cobertura-por-ciclo.md`. Soma-se ao DoD da categoria — **não** o substitui. É o operacional do **Objetivo do ciclo** emitido por todo plano (skill `react-feynman`).
+
+Aplicável a **toda categoria instrumentável** — qualquer tarefa cujo artefato é código executável com toolchain de cobertura (Python `coverage.py`, JS/TS `c8`, bash `bashcov`, Liquid `liquid.js`+`c8`): Categorias 1 (hooks), 4, 5, 6, 7, 9 e 10 (workflow/release). Categorias puramente não-instrumentáveis (docs-only, LaTeX/PDF) estão **isentas** e declaram a isenção no commit.
+
+- [ ] toda unidade/branch introduzida pelo diff é exercitada por teste — provado por `coverage-gate.sh --gate` no CI (patch coverage 100% via `diff-cover --fail-under=100` + ratchet do total via `.coverage-baseline.json`)
+- [ ] `coverage-gate.sh --report` (advisory) emite o bloco `COVERAGE_DIFF` em `progress.txt`; o reviewer Codex o lê como evidência (dimensão **COVERAGE** em `skills/ralph-adversarial/CODE_REVIEW.md`)
+- [ ] pragma novo (`no cover`/`c8 ignore`/`:nocov:`) carrega justificativa adjacente no próprio diff — pragma sem justificativa é finding P1 no review
+- [ ] toolchain provisionada por `/coverage-init` (`commands/coverage-init.md`); categoria não-instrumentável declara a isenção em vez de burlar o gate
+
+---
+
 ## Categoria 1 — Claude Code internals (slash commands, skills, hooks, princípios globais)
 
 **DoD base (todas as tarefas desta categoria):**

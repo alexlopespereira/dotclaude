@@ -49,6 +49,13 @@ Se você usou o NOME de um padrão/conceito mas não explicou o MECANISMO por ba
 ### Contexto e Objetivo
 [O que estamos resolvendo e por quê — máximo 3 parágrafos]
 
+### Objetivo do ciclo
+Todo plano declara o(s) **Objetivo do ciclo** — metas transversais que **toda fatia** deve satisfazer, independentes da feature em si.
+
+- **Objetivo #1 — Cobertura 100%:** cada fatia entrega cobertura de patch 100% (linhas + branches instrumentáveis) nas unidades que introduz. O detalhamento por fatia vive no **Contrato de cobertura por fatia** (ver "Próxima Fatia").
+
+> Esta lista é **extensível por design**: um **Objetivo #2** futuro (ex.: orçamento de performance, acessibilidade, segurança) entra como **novo item numerado** — `Objetivo #2 — …` — **sem redesenho** da estrutura do plano. Basta acrescentar a linha aqui e o contrato análogo na fatia; nada do que já existe muda.
+
 ### Ciclo ReAct
 [Thought/Action/Observation iterados — quantos forem necessários]
 
@@ -66,6 +73,12 @@ Se você usou o NOME de um padrão/conceito mas não explicou o MECANISMO por ba
 
 ### Próxima Fatia
 [O menor incremento implementável que entrega valor]
+
+**Contrato de cobertura por fatia** (Objetivo #1): liste as **unidades/branches introduzidos** por esta fatia e os **testes que os exercitam**, em pares unidade→teste. Toda linha/branch instrumentável nova rastreia para ao menos um teste; pragma de exclusão (`no cover`) exige justificativa adjacente. Quando houver **Objetivo #2** declarado, acrescente uma coluna/contrato análogo aqui — a tabela é a mesma forma para qualquer objetivo transversal.
+
+| Unidade/branch introduzido | Teste que o exercita |
+|----------------------------|----------------------|
+|                            |                      |
 
 ### Custos recorrentes
 Sempre presente; "Nenhum." se o plano não envolve SaaS pago.

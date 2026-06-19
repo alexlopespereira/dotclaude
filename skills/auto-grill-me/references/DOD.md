@@ -6,6 +6,19 @@ Convenção: `- [ ]` = critério binário verificável. DoD-base aplica-se a **t
 
 ---
 
+## Critério cross-cutting — Cobertura por ciclo (Objetivo do ciclo #1)
+
+Soma-se ao DoD da categoria — operacional do **Objetivo do ciclo** emitido por todo plano (`react-feynman`). Fonte canônica: `dotclaude/docs/definition_of_done.md`.
+
+Aplicável a **toda categoria instrumentável** (código executável com toolchain de cobertura: Python `coverage.py`, JS/TS `c8`, bash `bashcov`, Liquid `liquid.js`+`c8` — Categorias 1 hooks, 4, 5, 6, 7, 9, 10 workflow). Categoria puramente não-instrumentável (docs-only, LaTeX/PDF) é **isenta** e declara a isenção no commit.
+
+- [ ] [cov1] toda unidade/branch introduzida pelo diff é exercitada por teste — provado por `coverage-gate.sh --gate` no CI (patch 100% + ratchet do total)
+- [ ] [cov2] `coverage-gate.sh --report` emite o bloco `COVERAGE_DIFF` (advisory); Codex o lê como evidência (dimensão COVERAGE em `CODE_REVIEW.md`)
+- [ ] [cov3] pragma novo (`no cover`) carrega justificativa adjacente no diff — sem justificativa = finding P1
+- [ ] [cov4] toolchain provisionada por `/coverage-init`; categoria não-instrumentável declara a isenção
+
+---
+
 ## Índice de mapping (trigger phrases → categoria/tarefa)
 
 Use este índice para escolher um **candidato** de mapping ao descobrir um artefato. Depois rode a meta-classificação via rubrica (G3/G6) sobre o candidato. Se score > 60 ou trigger ambíguo, pergunte ao usuário.

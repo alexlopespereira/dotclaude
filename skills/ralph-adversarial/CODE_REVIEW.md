@@ -32,6 +32,15 @@ Só reporte se TODOS forem verdadeiros:
     antes de avaliar ausência. Rejeitar `|| true` em chains que disparam
     o caminho testado. Aceitar (a) HTTP 2xx assertado, (b) positive marker
     co-presente, ou (c) side-effect observable em backing store.
+- **COVERAGE**: o diff introduz unidade/branch sem teste que a exercite?
+  O Codex recebe o bloco `COVERAGE_DIFF` do relatório de `coverage-gate.sh
+  --report` (modo advisory do loop) como **evidência** do diff-coverage — mas o
+  **veredicto segue binário**, sem bloqueio numérico in-loop (o gate numérico
+  `--fail-under=100` + ratchet vive no CI, fora deste review). Use o número só
+  para localizar a unidade descoberta e apontar a linha.
+  Regra grep-verificável: **pragma novo (no cover) sem justificativa adjacente = finding P1**.
+  Pragma pré-existente fora do diff não conta; `# pragma: no cover` / `c8
+  ignore` / `:nocov:` com comentário de justificativa na linha adjacente passa.
 
 ### Severidade
 - **P0** — bloqueia merge. Bug, vuln, data-loss, build quebrado, AC não
@@ -67,4 +76,5 @@ Só reporte se TODOS forem verdadeiros:
 - Qualquer AC verdict = fail OU missing     → BLOCK
 - Qualquer finding P0                        → BLOCK
 - AC sem teste OU finding P1                 → REQUEST_CHANGES
+- Pragma de coverage novo sem justificativa  → finding P1 (REQUEST_CHANGES)
 - Só P2/P3                                   → MERGE com comentários

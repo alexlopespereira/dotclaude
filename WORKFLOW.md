@@ -9,6 +9,7 @@
 | `/full-cycle [problema]` | Planejamento + auto-revisão em sequência |
 | `/adversarial-research [tema]` | Deep research com 3 provedores |
 | `/prd-convert [plano]` | Converte plano aprovado em `prd.json` |
+| `/coverage-init` | Provisiona toolchain + config + baseline + template CI de cobertura por linguagem (enforcement do **Objetivo do ciclo** #1) |
 | `/ralph-adversarial [--parallel\|--parallel=N] [max_iter]` | Loop de implementação com revisão Codex |
 | `/commit-push-pr ["msg"]` | Branch efêmera + commit + push + PR |
 | `/ship ["msg"]` | Auto-pipeline de entrega: testes pré-merge (**loop 3x auto-fix**) → PR → auto-merge (ou force-merge soft em repo não-protegido) → deploy (se `.claude/ship.json` configura) → e2e pós-merge contra URL real (**loop 3x hotfix por iteração**) |
@@ -41,6 +42,8 @@
 4. Implementar a Próxima Fatia
 
 Ou use `/full-cycle [problema]` para executar as duas fases em sequência.
+
+**Objetivo do ciclo (metas transversais).** Todo plano declara um ou mais **Objetivo do ciclo** — metas que **toda fatia** satisfaz, independentes da feature. O #1 é **cobertura 100% do código que a fatia introduz**: `react-feynman` emite a seção no plano, a skill `prd` converte em AC de cobertura por user story, `coverage-gate.sh --report` alimenta o reviewer Codex (dimensão COVERAGE, advisory; veredicto binário) e `coverage-gate.sh --gate` é o required check no CI. Rode `/coverage-init` 1x no projeto-alvo para provisionar a toolchain. A estrutura aceita um Objetivo #2 futuro sem redesenho.
 
 ## Ralph Adversarial — modo paralelo (Fase 2)
 

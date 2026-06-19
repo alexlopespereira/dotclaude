@@ -280,6 +280,8 @@ A plan's acceptance criteria are only as good as the tests that prove them. dotc
 - **`/reflect`** is post-merge supervision that classifies how well the DoD applied to a merged PR. Modes: `--baseline` (immediate compliance), `--retro` (full retrospective after D+7), `--on-failure` (audit at a stop gate), `--learn` (an LLM consumes the per-story TDD-chain bundle and proposes DoD / TEST-PATTERNS improvements). `/full-cycle` runs it as Phase 9.
 - **Cross-machine telemetry** — DoD/test-spec usage is logged per-machine to `~/.claude/telemetry/*.jsonl`. A Stop hook (`hooks/sync-telemetry-log.sh`) copies each machine's log into the repo's `telemetry/` and stages it, so the next commit carries it — git is the transport/backup across machines (plan M8 / Adv #1). `bin/lib/usage-fold.sh` folds the logs for `/reflect --learn`, reading **only** the local `~/.claude/telemetry/` and never the repo copy. That is why `telemetry/` is versioned on purpose and *not* gitignored.
 
+- **Objetivo do ciclo — coverage by cycle** — every plan now emits an **Objetivo do ciclo**: cross-cutting goals every slice must satisfy, regardless of the feature. The first one is **100% coverage of the code each slice introduces**. The chain: `react-feynman` makes the plan declare it; the `prd` skill turns it into a per-story coverage AC; `coverage-gate.sh --report` feeds the diff-coverage number to the Codex reviewer (the **COVERAGE** dimension in `CODE_REVIEW.md`, advisory — verdict stays binary); `coverage-gate.sh --gate` enforces patch-100% + a ratchet on the total in CI; and `/coverage-init` provisions the per-language toolchain. It's structured to accept a second Objetivo later without redesign. A cross-cutting coverage criterion lives in `docs/definition_of_done.md`, applicable to every instrumentable category.
+
 > **Why it matters:** "negative-branch" criteria — the cases a feature must *reject* — are the ones agents quietly skip. Materialising DoDs into specs, threading IDs through the chain, and reflecting after merge keeps the suite from going vacuous.
 
 ### Bonus: The `/ship` Delivery Pipeline
@@ -372,6 +374,7 @@ After installation, these slash commands are available in any Claude Code projec
 | `/ship` | Delivery | Pre-merge tests → PR → auto-merge → deploy → post-merge E2E against the real URL |
 | `/reflect` | Review / Quality | Post-merge Definition-of-Done supervision (`--baseline` / `--retro` / `--on-failure` / `--learn`) |
 | `/test-spec` | Testing | Generates Gherkin-lite test specs from DoDs (TDD bake-in) |
+| `/coverage-init` | Testing | Provisions the per-language coverage toolchain + config + baseline + CI template (the **Objetivo do ciclo** #1 enforcement) |
 | `/e2e` | Testing | Generates or runs Playwright E2E tests for a flow |
 | `/diagnose` | Debugging | Disciplined 6-phase diagnosis loop (feedback loop → reproduce → fix → regression) |
 | `/techdebt` | Code quality | Analyses diff for tech debt, produces P0/P1/P2 cleanup plan |

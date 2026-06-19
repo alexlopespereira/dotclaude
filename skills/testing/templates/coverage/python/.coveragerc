@@ -1,0 +1,11 @@
+# coverage.py config — branch coverage ON.
+# Matches `coverage run --branch` used by coverage-gate.sh; emit lcov via
+# `coverage lcov`. Thresholds are NOT enforced here — coverage-gate.sh --gate
+# (diff-cover --fail-under=100 + ratchet) is the authority.
+[run]
+branch = True
+
+[report]
+show_missing = True
+# `# pragma: no cover` requires an adjacent justification (Codex COVERAGE
+# dimension, US-05); coverage-gate.sh --gate has a conservative backstop.

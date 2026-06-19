@@ -686,6 +686,28 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
 
     echo "  Commit: $LAST_MSG"
 
+    # ── Fase B0: coverage advisory (US-01 R2) — best-effort, NEVER blocks ──
+    # Escreve um bloco COVERAGE_DIFF em progress.txt que o reviewer lê
+    # (build_codex_review_prompt manda "Leia progress.txt"). Fecha o órfão:
+    # coverage-gate.sh --report não tinha call site. Fail-safe total — qualquer
+    # erro é engolido (|| true) e --report sempre sai 0; o veredicto binário do
+    # loop fica intocado (R2: advisory, sem cirurgia em parse-verdict).
+    # Opt-out: RALPH_COVERAGE_REPORT=0. Lang: RALPH_COVERAGE_LANG ou auto-detect.
+    COV_GATE="$SCRIPT_DIR/lib/coverage-gate.sh"
+    if [ "${RALPH_COVERAGE_REPORT:-1}" = "1" ] && [ -x "$COV_GATE" ]; then
+        cov_lang="${RALPH_COVERAGE_LANG:-}"
+        if [ -z "$cov_lang" ]; then
+            if   ls ./*.py >/dev/null 2>&1 || [ -f pyproject.toml ] || [ -f setup.py ]; then cov_lang=python
+            elif [ -f package.json ]; then cov_lang=js
+            elif ls ./*.sh >/dev/null 2>&1 || ls bin/*.sh >/dev/null 2>&1; then cov_lang=bash
+            fi
+        fi
+        if [ -n "$cov_lang" ]; then
+            echo "[B0] coverage advisory (--report --lang $cov_lang)..."
+            "$COV_GATE" --report --lang "$cov_lang" --progress-file progress.txt >/dev/null 2>&1 || true
+        fi
+    fi
+
     # ── Fase B: Revisão adversária (Codex ou fallback) ──────
 
     if [ "$SKIP_REVIEWER" = "true" ]; then
