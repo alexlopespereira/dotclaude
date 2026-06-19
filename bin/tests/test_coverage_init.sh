@@ -105,6 +105,28 @@ assert_no_file "$TARGET/.c8rc.json" "(AC2-py) NÃO copia config de outra lang"
 # que o init de fato rodou neste target.
 assert_file "$TARGET/scripts/ci/coverage-gate.sh" "(P0-2) vendora coverage-gate.sh em scripts/ci/"
 if [ -x "$TARGET/scripts/ci/coverage-gate.sh" ]; then _pass; else _fail "(P0-2) gate vendorado é executável"; fi
+# V2: o CI gerado é parametrizado pela linguagem DETECTADA (python), não bash.
+CI=$(cat "$TARGET/.github/workflows/coverage-ci.yml" 2>/dev/null)
+assert_contains "$CI" "--lang python" "(V2) CI gerado usa --lang python (linguagem detectada)"
+assert_not_contains "$CI" "__LANG__"  "(V2) placeholder __LANG__ totalmente substituído"
+# o gate ATIVO (linha não-comentada) roda --lang python, não bash. Comentários
+# do template podem citar '--lang bash' (doc) — só a invocação ativa importa.
+GATE_RUN=$(printf '%s\n' "$CI" | grep 'coverage-gate.sh --gate' | grep -vE '^[[:space:]]*#')
+assert_contains "$GATE_RUN" "--lang python" "(V2) invocação ativa do gate roda --lang python"
+assert_not_contains "$GATE_RUN" "bash" "(V2) invocação ativa NÃO é bash num projeto Python"
+teardown
+
+# ═══════════════════════════════════════════════════════════════════════════
+# V1 — projeto com [tool.coverage] no pyproject: NÃO criar .coveragerc (shadow)
+# ═══════════════════════════════════════════════════════════════════════════
+make_fixture py 5
+printf '[tool.coverage.run]\nsource = ["app"]\n' > "$TARGET/pyproject.toml"
+OUT=$(run_init); RC=$?
+assert_rc "$RC" 0 "(V1) rc=0"
+assert_no_file "$TARGET/.coveragerc" "(V1) NÃO cria .coveragerc (evita shadow do pyproject)"
+assert_contains "$OUT" "evita shadow" "(V1) reporta que pulou .coveragerc"
+# co-presente: o gate vendorado prova que o init rodou até o fim (não abortou)
+assert_file "$TARGET/scripts/ci/coverage-gate.sh" "(V1) init rodou completo (gate vendorado presente)"
 teardown
 
 # ═══════════════════════════════════════════════════════════════════════════

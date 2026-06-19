@@ -93,10 +93,11 @@ else _pass; fi
 # ═══════════════════════════════════════════════════════════════════════════
 assert_match "$BODY" "runs-on:[[:space:]]*ubuntu-latest" "(AC3) job roda em ubuntu-latest"
 assert_not_contains "$BODY" "macos-latest" "(AC3) bash NÃO roda em macOS (kcov frágil)"
-# extrai o bloco do job de bash e confirma que SEU runner é ubuntu-latest
-BASH_JOB=$(awk '/^  bash-coverage:/{p=1} p&&/^  [a-z].*:$/&&!/^  bash-coverage:/{exit} p' "$YML")
-assert_contains "$BASH_JOB" "ubuntu-latest" "(AC3) o job bash-coverage especifica ubuntu-latest"
-assert_contains "$BASH_JOB" "--lang bash"    "(AC3) o job bash-coverage roda --lang bash"
+# extrai o bloco do job (parametrizado: coverage-gate) e confirma SEU runner
+JOB=$(awk '/^  coverage-gate:/{p=1} p&&/^  [a-z].*:$/&&!/^  coverage-gate:/{exit} p' "$YML")
+assert_contains "$JOB" "ubuntu-latest"   "(AC3) o job coverage-gate especifica ubuntu-latest"
+assert_contains "$JOB" "--lang __LANG__" "(V2) gate parametrizado por __LANG__ (não --lang bash fixo)"
+assert_contains "$JOB" "bashcov"         "(AC3) arm bash do case instala bashcov (cobertura bash em Linux)"
 
 # ═══════════════════════════════════════════════════════════════════════════
 # AC4 — required de verdade: passo do gate sem continue-on-error + violação doc.
@@ -116,8 +117,8 @@ assert_contains "$BODY" "fail-under=100" "(AC4) cita a autoridade fail-under=100
 #   ficaria esperando um check que nunca roda → merges travados pra sempre).
 # ═══════════════════════════════════════════════════════════════════════════
 # nome real do job de bash (linha `name:` dentro do job)
-JOB_NAME=$(printf '%s\n' "$BASH_JOB" | sed -n 's/^[[:space:]]*name:[[:space:]]*//p' | head -1)
-assert_match "$JOB_NAME" "." "(AC5) job bash-coverage tem name: explícito"
+JOB_NAME=$(printf '%s\n' "$JOB" | sed -n 's/^[[:space:]]*name:[[:space:]]*//p' | head -1)
+assert_match "$JOB_NAME" "." "(AC5) job coverage-gate tem name: explícito"
 # identificador documentado no comentário REQUIRED-CHECK
 DOC_NAME=$(grep -E '^#[[:space:]]*REQUIRED-CHECK:' "$YML" | sed -n 's/^#[[:space:]]*REQUIRED-CHECK:[[:space:]]*//p' | head -1)
 assert_match "$DOC_NAME" "." "(AC5) comentário REQUIRED-CHECK documenta o identificador"

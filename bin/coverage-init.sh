@@ -113,6 +113,18 @@ probe_kcov() {
     fi
 }
 
+# ── V1: o projeto já configura cobertura? (criar .coveragerc o sombrearia) ───
+# .coveragerc tem PRECEDÊNCIA sobre [tool.coverage] do pyproject; criá-lo
+# descartaria silenciosamente o `source=`/omit do projeto. O gate força --branch
+# via flag CLI, então pular o arquivo é seguro.
+python_has_cov_config() {
+    local t="$1"
+    grep -q '\[tool\.coverage' "$t/pyproject.toml" 2>/dev/null && return 0
+    grep -q '\[coverage:run\]' "$t/setup.cfg"     2>/dev/null && return 0
+    grep -q '\[coverage:run\]' "$t/tox.ini"       2>/dev/null && return 0
+    return 1
+}
+
 # ── arg parse ───────────────────────────────────────────────────────────────
 TARGET="$PWD"
 LANG_OVERRIDE=""
@@ -142,18 +154,24 @@ else
 fi
 echo "coverage-init: target=$TARGET lang=$DETECTED"
 
-# ── 2. copia o template de config (idempotente: não clobber) ────────────────
-read -r tpl_sub dest_name <<EOF
+# ── 2. copia o template de config (idempotente: não clobber; V1: não sombreia) ─
+if [ "$DETECTED" = "python" ] && python_has_cov_config "$TARGET"; then
+    # V1: projeto já configura cobertura (pyproject/setup.cfg/tox.ini) → criar
+    # .coveragerc teria precedência e sombrearia (ex.: source=). NÃO criar.
+    echo "  config: projeto já tem [tool.coverage]/[coverage:run] — .coveragerc NÃO criado (evita shadow)"
+else
+    read -r tpl_sub dest_name <<EOF
 $(template_for "$DETECTED")
 EOF
-SRC="$TEMPLATES_DIR/$tpl_sub"
-DEST="$TARGET/$dest_name"
-[ -f "$SRC" ] || { echo "ERROR: template ausente: $SRC" >&2; exit 1; }
-if [ -f "$DEST" ]; then
-    echo "  config: $dest_name já existe — preservado (idempotente)"
-else
-    cp "$SRC" "$DEST"
-    echo "  config: copiado $tpl_sub → $dest_name"
+    SRC="$TEMPLATES_DIR/$tpl_sub"
+    DEST="$TARGET/$dest_name"
+    [ -f "$SRC" ] || { echo "ERROR: template ausente: $SRC" >&2; exit 1; }
+    if [ -f "$DEST" ]; then
+        echo "  config: $dest_name já existe — preservado (idempotente)"
+    else
+        cp "$SRC" "$DEST"
+        echo "  config: copiado $tpl_sub → $dest_name"
+    fi
 fi
 
 # ── 3. probe de kcov + nota de cobertura de bash (AC7) ──────────────────────
@@ -214,8 +232,10 @@ if [ -f "$CI_SRC" ]; then
     if [ -f "$CI_DEST" ]; then
         echo "  ci: coverage-ci.yml já existe — preservado (idempotente)"
     else
-        cp "$CI_SRC" "$CI_DEST"
-        echo "  ci: copiado coverage-ci.yml → .github/workflows/"
+        # V2: parametriza o job pela linguagem DETECTADA (template usa __LANG__).
+        # Antes copiava verbatim → job `--lang bash` rodava num projeto Python.
+        sed "s/__LANG__/$DETECTED/g" "$CI_SRC" > "$CI_DEST"
+        echo "  ci: gerado coverage-ci.yml (--lang $DETECTED) → .github/workflows/"
     fi
 else
     echo "  ci: template coverage-ci.yml ausente (US-03 ainda não entregue) — pulado"

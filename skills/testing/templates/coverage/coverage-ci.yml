@@ -6,19 +6,23 @@
 #   (.coverage-baseline.json) + backstop de pragma novo sem justificativa. Job
 #   vermelho ⇒ merge barrado quando marcado como required check (ver §REQUIRED).
 #
-#   Instalado por /coverage-init (copiado para .github/workflows/coverage-ci.yml).
-#   Este template vem com o job de BASH ativo (caso dotclaude); os jobs de
-#   Python/JS/Liquid vêm comentados — descomente o da linguagem do seu projeto e
-#   ajuste `--lang`.
+#   PARAMETRIZADO por linguagem: o placeholder __LANG__ é substituído por
+#   /coverage-init pela linguagem DETECTADA do projeto (V2-fix: antes o template
+#   vinha com `--lang bash` fixo e rodava cobertura de bash num projeto Python).
+#   Um único job; o passo de install cobre todas as linguagens via `case`.
 #
-# REQUIRED-CHECK: coverage-gate (bash)
-#   ↑ Este literal É o identificador do required check (== `name:` do job abaixo).
-#   ANTES de marcar required, valide que ele bate com a fonte real:
-#       grep -E 'name: coverage-gate \(bash\)' .github/workflows/coverage-ci.yml
+#   Instalado por /coverage-init em .github/workflows/coverage-ci.yml.
+#   O script coverage-gate.sh é VENDORADO por /coverage-init em scripts/ci/
+#   (o path interno skills/... do dotclaude não existe no projeto-alvo, P0-2).
+#
+# REQUIRED-CHECK: coverage-gate (__LANG__)
+#   ↑ Este literal É o identificador do required check (== `name:` do job abaixo,
+#   após a substituição de __LANG__). ANTES de marcar required, valide a fonte:
+#       grep -E 'name: coverage-gate \(' .github/workflows/coverage-ci.yml
 #   Marcar um check-fantasma (nome que nunca roda) trava merges PARA SEMPRE.
 #   Marcar como required (uma vez, após o 1º run verde):
 #       gh api -X PUT "repos/{owner}/{repo}/branches/main/protection/required_status_checks" \
-#         -F 'strict=true' -f 'checks[][context]=coverage-gate (bash)'
+#         -F 'strict=true' -f 'checks[][context]=coverage-gate (__LANG__)'
 #   ↑ strict é BOOLEAN: use -F/--field (conversão tipada → JSON true). Com -f
 #     (raw-field) viraria a string "true" e a API rejeita/ignora silenciosamente.
 #     O context é string ⇒ -f. (gh: `-F` magic-types true/false/number/null.)
@@ -26,31 +30,24 @@
 # REVERT (path executável — AC6)
 #   Remover SÓ este check dos required:
 #       gh api -X DELETE "repos/{owner}/{repo}/branches/main/protection/required_status_checks/contexts" \
-#         -f 'contexts[]=coverage-gate (bash)'
+#         -f 'contexts[]=coverage-gate (__LANG__)'
 #   Remover a branch protection rule inteira da main (revert total):
 #       gh api -X DELETE "repos/{owner}/{repo}/branches/main/protection"
 #   Dry-run (não toca a API; confirma que a forma do comando é válida):
 #       gh api --help
 #
 # VIOLATION-TEST (prova de que é required de verdade — AC4)
-#   Para confirmar que um PR com linha nova SEM teste é barrado antes do merge:
-#     1. num branch de teste, adicione uma função/linha nova em código instrumentado
-#        e NÃO escreva teste que a exercite;
-#     2. abra o PR → o job coverage-gate (bash) fica vermelho porque
-#        diff-cover --fail-under=100 reprova o patch (<100% do diff coberto);
-#     3. com o check marcado required, o botão de merge fica bloqueado.
-#   Reverta o branch de teste. (Não há `continue-on-error` no passo do gate — se
-#   houvesse, o check viraria advisory e a violação passaria silenciosa.)
+#   Num branch de teste, adicione uma linha nova em código instrumentado SEM teste
+#   que a exercite e abra o PR → o job fica vermelho (diff-cover --fail-under=100
+#   reprova o patch <100%) e, com o check required, o merge fica bloqueado. Não há
+#   `continue-on-error` no passo do gate — senão viraria advisory e a violação
+#   passaria silenciosa.
 #
 # [SUPOSIÇÃO] bash-no-CI (AC7) — RESULTADO REGISTRADO
-#   coverage-gate.sh --lang bash usa bashcov (gem Ruby; line-only, branch=n/a) e
-#   só cai em kcov como fallback. No runner Linux (ubuntu-latest) ambos estão
-#   disponíveis: bashcov via `gem install bashcov` e kcov via `apt-get install
-#   kcov` (universe). Em macOS o kcov é frágil — por isso a cobertura de bash roda
-#   AQUI, em ubuntu-latest dedicado, NÃO no runner macOS da suíte (tests.yml).
-#   Status: a disponibilidade no runner é CONFIRMADA empiricamente pelo 1º run
-#   verde deste job; se a instalação falhar, o gate degrada para bashcov line-only
-#   (coverage-gate.sh BASH_TOOL=auto já trata isso) — nunca reporta 0% falso.
+#   Para --lang bash, coverage-gate.sh usa bashcov (gem Ruby; LINE-only, branch=n/a)
+#   e cai em kcov só como fallback. Em ubuntu-latest ambos instalam; kcov é frágil
+#   em macOS — por isso a cobertura roda AQUI, em ubuntu-latest, não no runner macOS.
+#   Se a instalação falhar, o gate degrada para bashcov line-only — nunca 0% falso.
 
 name: coverage-gate
 
@@ -62,9 +59,8 @@ permissions:
   contents: read
 
 jobs:
-  # ── Cobertura de BASH — runner Linux dedicado (kcov frágil em macOS) ────────
-  bash-coverage:
-    name: coverage-gate (bash)
+  coverage-gate:
+    name: coverage-gate (__LANG__)
     runs-on: ubuntu-latest          # AC3: NÃO macOS — bashcov/kcov estáveis aqui
     timeout-minutes: 15
     steps:
@@ -74,57 +70,32 @@ jobs:
       - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
           python-version: '3.12'
-      # Toolchain PINADA — default upstream não muda o gate silenciosamente (AC2).
-      - name: Instalar tooling de cobertura (pinado)
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af  # v4.1.0
+        with:
+          node-version: '20'
+      # Toolchain PINADA por linguagem — default upstream não muda o gate (AC2).
+      # npm usa --ignore-scripts (P13b); gem pina via -v (forma nome:versao inválida).
+      - name: Instalar tooling de cobertura (pinado, por linguagem)
         run: |
           pip install 'diff-cover==9.2.4'
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ruby kcov
-          # RubyGems pina com -v, UM gem por chamada (forma `nome:versao` é inválida,
-          # P0-3). Deps antes do bashcov.
-          gem install --no-document simplecov -v 0.22.0
-          gem install --no-document simplecov-lcov -v 0.8.0
-          gem install --no-document bashcov -v 3.1.2
+          case "__LANG__" in
+            python)
+              pip install 'coverage==7.6.10'
+              ;;
+            js|ts|liquid)
+              npm install -g c8@10.1.3 --ignore-scripts
+              ;;
+            bash)
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends ruby kcov
+              gem install --no-document simplecov -v 0.22.0
+              gem install --no-document simplecov-lcov -v 0.8.0
+              gem install --no-document bashcov -v 3.1.2
+              ;;
+          esac
       # ÚNICA autoridade de bloqueio. Sem continue-on-error ⇒ job vermelho barra o merge.
-      # Script vendorado por /coverage-init em scripts/ci/ do projeto-alvo (P0-2):
-      # o path skills/... só existe no dotclaude, quebraria (exit 127) em consumers.
-      - name: coverage-gate --gate (bash)
+      # Script VENDORADO por /coverage-init em scripts/ci/ (P0-2).
+      - name: coverage-gate --gate (__LANG__)
         run: |
           chmod +x scripts/ci/coverage-gate.sh
-          scripts/ci/coverage-gate.sh --gate --lang bash --base origin/main
-
-  # ── Outras linguagens (descomente a do seu projeto e ajuste --lang) ─────────
-  #
-  # python-coverage:
-  #   name: coverage-gate (python)
-  #   runs-on: ubuntu-latest
-  #   timeout-minutes: 15
-  #   steps:
-  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-  #       with:
-  #         fetch-depth: 0
-  #     - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
-  #       with:
-  #         python-version: '3.12'
-  #     - name: Instalar tooling de cobertura (pinado)
-  #       run: pip install 'coverage==7.6.10' 'diff-cover==9.2.4'
-  #     - name: coverage-gate --gate (python)
-  #       run: scripts/ci/coverage-gate.sh --gate --lang python --base origin/main
-  #
-  # js-coverage:
-  #   name: coverage-gate (js)
-  #   runs-on: ubuntu-latest
-  #   timeout-minutes: 15
-  #   steps:
-  #     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-  #       with:
-  #         fetch-depth: 0
-  #     - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af  # v4.1.0
-  #       with:
-  #         node-version: '20'
-  #     - name: Instalar tooling de cobertura (pinado)
-  #       run: |
-  #         npm install -g c8@10.1.3 --ignore-scripts   # c8>=9 (lcov via V8); pinado (AC2) + --ignore-scripts (P13)
-  #         pip install 'diff-cover==9.2.4'
-  #     - name: coverage-gate --gate (js)   # use --lang liquid p/ projetos Liquid
-  #       run: scripts/ci/coverage-gate.sh --gate --lang js --base origin/main
+          scripts/ci/coverage-gate.sh --gate --lang __LANG__ --base origin/main
