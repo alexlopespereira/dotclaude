@@ -18,8 +18,19 @@ CLAUDE_DIR="${SYNC_CLAUDE_HOME:-$HOME/.claude}"
 LOCAL_BIN="${SYNC_LOCAL_BIN:-$HOME/.local/bin}"
 
 FILES=(
-    "CLAUDE.md"
     "WORKFLOW.md"
+)
+
+# Arquivos versionados no repo sob um nome e instalados em ~/.claude/ sob OUTRO.
+# Formato "repo_src:claude_dst". CLAUDE.global.md é a fonte-da-verdade do CLAUDE.md
+# GLOBAL (~/.claude/CLAUDE.md, carregado em TODA sessão). No repo ele vive sob esse
+# nome para que o CLAUDE.md de raiz do repo seja um STUB pequeno: ao trabalhar NO
+# próprio dotclaude, Claude Code carrega o CLAUDE.md global E o de projeto — se
+# fossem idênticos (eram), dobravam ~6k tokens de baseline em cada sessão (cache
+# frio cobrado por iteração nos loops Ralph/full-cycle). install renomeia src→dst;
+# backup faz dst→src; o stub repo/CLAUDE.md nunca é instalado nem sobrescrito.
+RENAMED_FILES=(
+    "CLAUDE.global.md:CLAUDE.md"
 )
 
 # telemetry/ é deliberadamente AUSENTE daqui: install propaga só source
@@ -91,6 +102,20 @@ detect_stale_backup() {
             stale_files+=("$rel")
         fi
     done < <(find "$CLAUDE_DIR" -type f \( -name "*.md" -o -name "*.sh" -o -name "*.json" \) 2>/dev/null)
+
+    # Renomeados: backup escreve home/$dst → repo/$src. STALE se o home bate com
+    # versão histórica (sob nome novo OU antigo) — propagá-lo regrediria o $src.
+    local rsrc rdst cf hc
+    for entry in "${RENAMED_FILES[@]}"; do
+        rsrc="${entry%%:*}"; rdst="${entry##*:}"; cf="$CLAUDE_DIR/$rdst"
+        [ -f "$cf" ] && [ -f "$REPO_DIR/$rsrc" ] || continue
+        cmp -s "$cf" "$REPO_DIR/$rsrc" && continue
+        hc=$(git -C "$REPO_DIR" hash-object "$cf" 2>/dev/null || true)
+        [ -z "$hc" ] && continue
+        if hash_in_history "$rsrc" "$hc" || hash_in_history "$rdst" "$hc"; then
+            stale_files+=("$rdst (→ $rsrc)")
+        fi
+    done
 
     if [ ${#stale_files[@]} -gt 0 ]; then
         echo "" >&2
@@ -269,6 +294,23 @@ sync_to_claude() {
                 done <<< "$diff_out"
             fi
         done
+        # Renomeados: home/$dst vs repo/$src. Edit local ⇒ bloqueia; mas se o
+        # conteúdo do home bate com QUALQUER versão histórica — sob o nome novo
+        # ($src) OU o antigo ($dst, pré-rename) — é STALE e o upgrade é seguro
+        # (sem isso o 1º install pós-rename abortaria em toda Vna ainda na versão
+        # antiga, matando o elo pull→install).
+        for entry in "${RENAMED_FILES[@]}"; do
+            local rsrc="${entry%%:*}" rdst="${entry##*:}" rh
+            [ -f "$REPO_DIR/$rsrc" ] && [ -f "$CLAUDE_DIR/$rdst" ] || continue
+            diff -q "$REPO_DIR/$rsrc" "$CLAUDE_DIR/$rdst" >/dev/null 2>&1 && continue
+            rh=$(git -C "$REPO_DIR" hash-object "$CLAUDE_DIR/$rdst" 2>/dev/null || true)
+            if [ -n "$rh" ] && { hash_in_history "$rsrc" "$rh" || hash_in_history "$rdst" "$rh"; }; then
+                : # versão histórica (stale) → upgrade seguro, não bloqueia
+            else
+                echo "ERRO: $rdst difere em ~/.claude/ (edit local não-commitado)." >&2
+                blocked=1
+            fi
+        done
         if [ "$blocked" -eq 1 ]; then
             echo "" >&2
             echo "Use './sync.sh backup' para preservar edits, OU './sync.sh install --force' para sobrescrever (rollback)." >&2
@@ -280,16 +322,26 @@ sync_to_claude() {
     # do repo, alerta ANTES de sobrescrever. Útil sobretudo em --force (o guard de
     # abort acima é pulado) e como heads-up de que a config em uso estava
     # dessincronizada. cmp -s é silencioso; nunca aborta o install (só echo em stderr).
-    if [ -f "$REPO_DIR/CLAUDE.md" ] && [ -f "$CLAUDE_DIR/CLAUDE.md" ] \
-       && ! cmp -s "$REPO_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"; then
-        echo "  ⚠ ~/.claude/CLAUDE.md divergia do repo — install vai sobrescrever com a versão do repo." >&2
-    fi
+    for entry in "${RENAMED_FILES[@]}"; do
+        local wsrc="${entry%%:*}" wdst="${entry##*:}"
+        if [ -f "$REPO_DIR/$wsrc" ] && [ -f "$CLAUDE_DIR/$wdst" ] \
+           && ! cmp -s "$REPO_DIR/$wsrc" "$CLAUDE_DIR/$wdst"; then
+            echo "  ⚠ ~/.claude/$wdst divergia do repo ($wsrc) — install vai sobrescrever com a versão do repo." >&2
+        fi
+    done
 
     echo "=== Instalando: repo → ~/.claude/ ==="
     for f in "${FILES[@]}"; do
         if [ -f "$REPO_DIR/$f" ]; then
             cp "$REPO_DIR/$f" "$CLAUDE_DIR/$f"
             echo "  ✓ $f"
+        fi
+    done
+    for entry in "${RENAMED_FILES[@]}"; do
+        local isrc="${entry%%:*}" idst="${entry##*:}"
+        if [ -f "$REPO_DIR/$isrc" ]; then
+            cp "$REPO_DIR/$isrc" "$CLAUDE_DIR/$idst"
+            echo "  ✓ $isrc → $idst"
         fi
     done
     for d in "${DIRS[@]}"; do
@@ -328,6 +380,13 @@ sync_to_repo() {
         if [ -f "$CLAUDE_DIR/$f" ]; then
             cp "$CLAUDE_DIR/$f" "$REPO_DIR/$f"
             echo "  ✓ $f"
+        fi
+    done
+    for entry in "${RENAMED_FILES[@]}"; do
+        local bsrc="${entry%%:*}" bdst="${entry##*:}"
+        if [ -f "$CLAUDE_DIR/$bdst" ]; then
+            cp "$CLAUDE_DIR/$bdst" "$REPO_DIR/$bsrc"
+            echo "  ✓ $bdst → $bsrc"
         fi
     done
     for d in "${DIRS[@]}"; do
@@ -393,6 +452,18 @@ show_status() {
         elif [ -f "$CLAUDE_DIR/$f" ]; then
             echo "  - $f (só em ~/.claude/)"
             has_diff=true
+        fi
+    done
+    for entry in "${RENAMED_FILES[@]}"; do
+        local ssrc="${entry%%:*}" sdst="${entry##*:}"
+        if [ -f "$REPO_DIR/$ssrc" ] && [ -f "$CLAUDE_DIR/$sdst" ]; then
+            if ! diff -q "$REPO_DIR/$ssrc" "$CLAUDE_DIR/$sdst" > /dev/null 2>&1; then
+                echo "  ≠ $ssrc → $sdst (diferente)"; has_diff=true
+            else
+                echo "  = $ssrc → $sdst (igual)"
+            fi
+        elif [ -f "$REPO_DIR/$ssrc" ]; then
+            echo "  + $ssrc → $sdst (só no repo)"; has_diff=true
         fi
     done
     for d in "${DIRS[@]}"; do

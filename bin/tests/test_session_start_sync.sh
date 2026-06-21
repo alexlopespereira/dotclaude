@@ -58,7 +58,7 @@ mkrepo() {
   mkdir -p "$repo/commands" "$repo/hooks"
   cp "$SYNC_SRC" "$repo/sync.sh"; chmod +x "$repo/sync.sh"
   cp "$HOOK" "$repo/hooks/session-start-sync.sh"
-  printf 'NEW-CLAUDE\n'   > "$repo/CLAUDE.md"
+  printf 'NEW-CLAUDE\n'   > "$repo/CLAUDE.global.md"   # fonte global → ~/.claude/CLAUDE.md
   printf 'NEW-WORKFLOW\n' > "$repo/WORKFLOW.md"
   printf 'newcmd\n'       > "$repo/commands/newcmd.md"
   git -C "$repo" init -q
@@ -208,7 +208,7 @@ mkrepo_remote() {
   mkdir -p "$seed/commands" "$seed/hooks"
   cp "$SYNC_SRC" "$seed/sync.sh"; chmod +x "$seed/sync.sh"
   cp "$HOOK" "$seed/hooks/session-start-sync.sh"
-  printf 'PRE-PULL\n'    > "$seed/CLAUDE.md"
+  printf 'PRE-PULL\n'    > "$seed/CLAUDE.global.md"
   printf 'NEW-WORKFLOW\n' > "$seed/WORKFLOW.md"
   printf 'newcmd\n'      > "$seed/commands/newcmd.md"
   git -C "$seed" init -q
@@ -228,7 +228,7 @@ mkrepo_remote() {
 # Avança o bare 1 commit (CLAUDE.md → POST-PULL), deixando repo atrás.
 advance_remote() {
   local seed="$1/seed"
-  printf 'POST-PULL\n' > "$seed/CLAUDE.md"
+  printf 'POST-PULL\n' > "$seed/CLAUDE.global.md"
   git -C "$seed" add -A
   git -C "$seed" commit -q -m c2
   git -C "$seed" push -q origin main
@@ -339,7 +339,7 @@ REPOU="$TMP/u/repo"; HOMEU="$TMP/u/home"
 mkrepo "$REPOU"; mkclaude "$HOMEU"
 SYNC_CLAUDE_HOME="$HOMEU" bash "$REPOU/sync.sh" install >/dev/null 2>&1
 printf 'newcmd-v2\n' > "$REPOU/commands/newcmd.md"
-printf 'CLAUDE-v2\n' > "$REPOU/CLAUDE.md"
+printf 'CLAUDE-v2\n' > "$REPOU/CLAUDE.global.md"
 git -C "$REPOU" add -A
 git -C "$REPOU" commit -q -m v2
 out=$(SYNC_CLAUDE_HOME="$HOMEU" bash "$REPOU/sync.sh" install 2>&1); rcu=$?

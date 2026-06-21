@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # repo root = .../dotclaude ; skill em skills/verify-before-handoff/bin
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-CLAUDE_MD="$REPO_ROOT/CLAUDE.md"
+CLAUDE_MD="$REPO_ROOT/CLAUDE.global.md"   # fonte global versionada (instalada como ~/.claude/CLAUDE.md)
 
 FAIL=0
 fail() { echo "FAIL: $*" >&2; FAIL=1; }
@@ -62,8 +62,10 @@ grep -qiE 'evidência empírica|evidencia empirica' <<<"$P14" \
 #  Prova estrutural: CLAUDE.md está na lista de artefatos propagados pelo sync.sh.
 SYNC="$REPO_ROOT/sync.sh"
 [[ -f "$SYNC" ]] || fail "AC6: sync.sh ausente em $SYNC"
-grep -qE '"CLAUDE\.md"' "$SYNC" \
-  || fail "AC6: CLAUDE.md não consta na lista de propagação do sync.sh install"
+# A fonte global vive em CLAUDE.global.md e é instalada (renomeada) como
+# ~/.claude/CLAUDE.md — prova estrutural: o mapa de rename consta no sync.sh.
+grep -qE '"CLAUDE\.global\.md:CLAUDE\.md"' "$SYNC" \
+  || fail "AC6: mapa de propagação CLAUDE.global.md→CLAUDE.md ausente no sync.sh install"
 
 if (( FAIL )); then
   echo "test-principle-14.sh: FAIL" >&2

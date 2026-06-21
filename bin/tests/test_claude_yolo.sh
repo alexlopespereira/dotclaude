@@ -25,7 +25,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 YOLO="$REPO_ROOT/bin/claude-yolo"
 SYNC="$REPO_ROOT/sync.sh"
 CMD_MD="$REPO_ROOT/commands/commit-push-pr-push.md"
-CLAUDE_MD="$REPO_ROOT/CLAUDE.md"
+CLAUDE_MD="$REPO_ROOT/CLAUDE.global.md"   # conteúdo dos Princípios (fonte global)
 
 PASS=0; FAIL=0; FAILED=""
 _fail() { FAIL=$((FAIL+1)); FAILED="${FAILED}
