@@ -247,6 +247,19 @@ register_verify_handoff_hook() {
     fi
 }
 
+# Registra o UserPromptSubmit hook keyword-context-loader (eficiência de contexto).
+# Injeta docs de referência SOB DEMANDA quando uma keyword casa no prompt; opt-in
+# por projeto via $CWD/.claude/context-triggers.tsv (no-op sem o mapa). Matcher
+# vazio (todo prompt) + timeout 5000ms — o short-circuit sem-mapa mantém custo ~0.
+register_keyword_loader_hook() {
+    if _register_hook "UserPromptSubmit" "hooks/keyword-context-loader.sh" \
+            "$CLAUDE_DIR/hooks/keyword-context-loader.sh" "" "5000"; then
+        echo "  ✓ UserPromptSubmit hook (keyword-context-loader) registrado em settings.json"
+    else
+        echo "  ⚠ settings.json: registro do keyword-context-loader hook pulado (JSON inválido / python3 ausente)" >&2
+    fi
+}
+
 sync_to_claude() {
     local force=0
     [ "${1:-}" = "--force" ] && force=1
@@ -356,6 +369,7 @@ sync_to_claude() {
     register_adr_warn_hook
     register_session_start_hook
     register_verify_handoff_hook
+    register_keyword_loader_hook
     # claude-yolo: symlink de atalho em ~/.local/bin → cópia instalada em
     # ~/.claude/bin. ln -sf é idempotente (sobrescreve link existente sem erro).
     # Seam SYNC_LOCAL_BIN aponta o destino p/ sandbox nos testes.
