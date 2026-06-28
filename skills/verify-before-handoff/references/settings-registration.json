@@ -1,5 +1,6 @@
 {
   "_doc": "Snippet de REFERÊNCIA do registro do hook verify-before-handoff-guard.sh sob hooks.PostToolUse em ~/.claude/settings.json. REGISTRADO AUTOMATICAMENTE por `sync.sh install` (register_verify_handoff_hook) — US-02 reverteu a decisão MACHINE-LOCAL/mescla-manual (Finding #4), que falhou empiricamente em 2 de 3 máquinas. O command real usa $CLAUDE_DIR (portável /Users macOS ↔ /home VMs); o path absoluto abaixo é só ilustrativo. O matcher é específico (Bash + tools MCP), NUNCA vazio; o script faz a classificação fina. timeout=5000ms (DoD Cat1/T8-b4,b6).",
+  "_doc_matcher_form": "REGRA DE FORMA DO MATCHER (Claude Code >=2.1.195): para casar múltiplos tools use SEMPRE alternância regex com pipe ('Bash|mcp__.*'), NUNCA vírgula ('Bash,PowerShell') — matchers vírgula-separados deixavam de disparar silenciosamente (corrigido em 2.1.191) e não são a forma suportada. Identificadores hifenizados passaram a exigir match EXATO (não mais substring) em 2.1.195 — evite depender de substring de nomes com hífen. Vale para todo matcher de hook no repo (este snippet, skills/testing/templates/settings.hooks.json, e qualquer registro futuro via sync.sh).",
   "matcher": "Bash|mcp__.*",
   "hooks": [
     {
