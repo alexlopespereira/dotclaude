@@ -170,37 +170,53 @@ PR_FLAGS=("--title" "$TITLE" "--body" "$BODY" "--base" "$DEFAULT" "--head" "$BRA
 PR_URL=$(gh pr create "${PR_FLAGS[@]}" 2>&1 | tail -1)
 echo "✓ PR aberto: $PR_URL"
 
-# Auto-merge resiliente: detecta se base está protegida.
-#   - Protegida → --auto (aguarda checks/reviews, caminho original).
-#   - Não-protegida → soft merge direto (gh pr merge sem --auto): mergeia agora.
+# Merge resiliente e à prova de `set -e`.
+#   A estratégia é decidida pelo setting `allow_auto_merge` do repo — NÃO por um
+#   probe de classic branch protection (que não detecta org-rulesets nem required
+#   status checks, e fazia o script tentar um merge imediato com checks ainda
+#   pendentes → mergeStateStatus BLOCKED → gh recusa):
+#     allow_auto_merge=true  → `--auto`: o GitHub mergeia quando os checks passarem.
+#     allow_auto_merge=false → aguarda os checks ficarem verdes e mergeia direto.
+#   Toda chamada `gh pr merge` é blindada (`… && MERGE_RC=0 || MERGE_RC=$?`), pois
+#   sob `set -e` uma atribuição `VAR=$(cmd)` cujo cmd retorna ≠0 aborta o script
+#   ANTES de capturar o RC — era o bug que matava o script sem diagnóstico.
+#   O PR já foi criado com sucesso; pendência/falha de CI nunca faz o script sair ≠0.
 # Em DRAFT: gh impede merge — pular silenciosamente.
 if [ "$AUTO_MERGE" = "true" ] && [ "$DRAFT" != "true" ]; then
   REPO_FULL=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || echo "")
-  BASE_PROTECTED=0
-  if [ -n "$REPO_FULL" ] && gh api "repos/$REPO_FULL/branches/$DEFAULT/protection" --silent 2>/dev/null; then
-    BASE_PROTECTED=1
-  fi
+  ALLOW_AUTO=$(gh api "repos/$REPO_FULL" --jq .allow_auto_merge 2>/dev/null || echo "false")
 
-  if [ "$BASE_PROTECTED" -eq 1 ]; then
-    MERGE_OUT=$(gh pr merge "$BRANCH_NAME" --auto "--$MERGE_METHOD" --delete-branch 2>&1)
-    MERGE_RC=$?
+  if [ "$ALLOW_AUTO" = "true" ]; then
+    MERGE_OUT=$(gh pr merge "$BRANCH_NAME" --auto "--$MERGE_METHOD" --delete-branch 2>&1) && MERGE_RC=0 || MERGE_RC=$?
     if [ "$MERGE_RC" -eq 0 ]; then
-      echo "✓ Auto-merge ($MERGE_METHOD) habilitado — aguarda CI/reviews."
+      echo "✓ Auto-merge ($MERGE_METHOD) armado — mergeia quando o CI passar."
     else
       echo "AVISO: --auto rejeitado. Mensagem do gh:"
       echo "$MERGE_OUT" | sed 's/^/    /'
       echo "       Force-merge com: /force-merge $BRANCH_NAME"
     fi
   else
-    echo "→ Base '$DEFAULT' sem branch protection — mergeando direto (soft)."
-    MERGE_OUT=$(gh pr merge "$BRANCH_NAME" "--$MERGE_METHOD" --delete-branch 2>&1)
-    MERGE_RC=$?
-    if [ "$MERGE_RC" -eq 0 ]; then
-      echo "✓ PR mergeado ($MERGE_METHOD, branch remota deletada)."
+    echo "→ Repo sem auto-merge; aguardando checks p/ merge direto (timeout 180s)."
+    DEADLINE=$(( $(date +%s) + 180 ))
+    CHECKS=""
+    while :; do
+      CHECKS=$(gh pr checks "$BRANCH_NAME" 2>/dev/null || echo "")
+      echo "$CHECKS" | grep -qiE 'pending|queued|in progress' || break
+      if [ "$(date +%s)" -ge "$DEADLINE" ]; then echo "AVISO: timeout aguardando checks."; break; fi
+      sleep 6
+    done
+    if echo "$CHECKS" | grep -qiE '\bfail'; then
+      echo "AVISO: há checks com falha — não vou mergear. Veja: gh pr checks $BRANCH_NAME"
+      echo "       Force-merge (após avaliar) com: /force-merge $BRANCH_NAME"
     else
-      echo "ERRO: merge soft falhou. Mensagem do gh:"
-      echo "$MERGE_OUT" | sed 's/^/    /'
-      echo "       Tente: /force-merge $BRANCH_NAME"
+      MERGE_OUT=$(gh pr merge "$BRANCH_NAME" "--$MERGE_METHOD" --delete-branch 2>&1) && MERGE_RC=0 || MERGE_RC=$?
+      if [ "$MERGE_RC" -eq 0 ]; then
+        echo "✓ PR mergeado ($MERGE_METHOD, branch remota deletada)."
+      else
+        echo "AVISO: merge direto falhou. Mensagem do gh:"
+        echo "$MERGE_OUT" | sed 's/^/    /'
+        echo "       Tente: /force-merge $BRANCH_NAME"
+      fi
     fi
   fi
 fi
