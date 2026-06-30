@@ -6,7 +6,7 @@
 
 ## Critério cross-cutting — Cobertura por ciclo (Objetivo do ciclo #1)
 
-Origem: plano `.claude/plans/2026-06-19T13-10-55Z-objetivo-cobertura-por-ciclo.md`. Soma-se ao DoD da categoria — **não** o substitui. É o operacional do **Objetivo do ciclo** emitido por todo plano (skill `react-feynman`).
+Origem: Objetivo do ciclo #1 (cobertura por ciclo), 2026-06-19. Soma-se ao DoD da categoria — **não** o substitui. É o operacional do **Objetivo do ciclo** emitido por todo plano (skill `react-feynman`).
 
 Aplicável a **toda categoria instrumentável** — qualquer tarefa cujo artefato é código executável com toolchain de cobertura (Python `coverage.py`, JS/TS `c8`, bash `bashcov`, Liquid `liquid.js`+`c8`): Categorias 1 (hooks), 4, 5, 6, 7, 9 e 10 (workflow/release). Categorias puramente não-instrumentáveis (docs-only, LaTeX/PDF) estão **isentas** e declaram a isenção no commit.
 

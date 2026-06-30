@@ -67,10 +67,12 @@ assert_present "$DOD_LEAN" "coverage-gate.sh --gate" \
   "AC3 referencia o gate (lean)"
 
 # ─── AC4 — toda ref cruzada nova validada por existência do alvo (test -f)
+# Nota: o "Objetivo do ciclo #1" é citado como proveniência (data/ciclo), no
+# padrão das demais "Origem:" do DoD — não como ref a arquivo. Por isso não há
+# assert ao plano-fonte: planos vivem em .claude/plans/ (gitignored, efêmeros).
 assert_file "$REPO_ROOT/commands/coverage-init.md"                       "AC4 /coverage-init"
 assert_file "$REPO_ROOT/skills/ralph-adversarial/lib/coverage-gate.sh"   "AC4 coverage-gate.sh"
 assert_file "$REPO_ROOT/skills/react-feynman/SKILL.md"                   "AC4 skill do Objetivo do ciclo"
-assert_file "$REPO_ROOT/.claude/plans/2026-06-19T13-10-55Z-objetivo-cobertura-por-ciclo.md" "AC4 plano-fonte"
 
 # ─── AC6 — README e WORKFLOW listam /coverage-init e o 'Objetivo do ciclo'
 assert_present "$README"   "/coverage-init"     "AC6 README lista /coverage-init"
