@@ -224,6 +224,20 @@ register_adr_warn_hook() {
     fi
 }
 
+# Registra o Stop hook autonomy-guard (backstop determinístico do P15 / R1).
+# Detecta turno-pergunta auto-aprovável no fim do turno; advisory por default
+# (só audita em ~/.claude/cache/autonomy/audit.jsonl), block é opt-in por VM
+# (marcador .vm-profile + arquivo de modo). Matcher Stop vazio (Stop ignora
+# matcher; mesmo grupo dos Stop hooks) + timeout 5000ms (pattern adr-warn).
+register_autonomy_guard_hook() {
+    if _register_hook "Stop" "hooks/autonomy-guard.sh" \
+            "$CLAUDE_DIR/hooks/autonomy-guard.sh" "" "5000"; then
+        echo "  ✓ Stop hook (autonomy-guard) registrado em settings.json"
+    else
+        echo "  ⚠ settings.json: registro do autonomy-guard hook pulado (JSON inválido / python3 ausente)" >&2
+    fi
+}
+
 # Registra o SessionStart hook híbrido (auto-install gated; Adv #6 / M8 parte 2).
 register_session_start_hook() {
     if _register_hook "SessionStart" "hooks/session-start-sync.sh" "$CLAUDE_DIR/hooks/session-start-sync.sh"; then
@@ -367,6 +381,7 @@ sync_to_claude() {
     register_dod_usage_hook
     register_stop_hook
     register_adr_warn_hook
+    register_autonomy_guard_hook
     register_session_start_hook
     register_verify_handoff_hook
     register_keyword_loader_hook

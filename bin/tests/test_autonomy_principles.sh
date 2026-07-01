@@ -59,6 +59,15 @@ assert_present "$GLOBAL_MD" "empacotar + sync é parte da tarefa" \
 assert_present "$GLOBAL_MD" "recomendação redigida = próximo passo" \
   "P15 âncora (iii) 'recomendação redigida = próximo passo'"
 
+# ─── P15 termina citando o backstop autonomy-guard.sh (US-03 AC4) ───────────
+assert_present "$GLOBAL_MD" '(Backstop determinístico: hook `autonomy-guard.sh`.)' \
+  "P15 âncora backstop autonomy-guard.sh"
+P15_LINE="$(grep -E '^15\. ' "$GLOBAL_MD" || true)"
+case "$P15_LINE" in
+  *'(Backstop determinístico: hook `autonomy-guard.sh`.)') _pass ;;
+  *) _fail "P15 TERMINA com o backstop :: fim da linha 15 não cita autonomy-guard.sh" ;;
+esac
+
 # ─── Teto de tamanho: proxy folgado do DoD b3 (US-02 AC2) ────────────────────
 WORDS=$(wc -w < "$GLOBAL_MD" | tr -d ' ')
 if [ "$WORDS" -le 1500 ]; then _pass
