@@ -11,6 +11,7 @@ set -uo pipefail
 #   AM_VM_MORNING    wrapper que abre as sessões VM (default vm-morning.sh)
 #   AM_REFLECT_RETRO drenador de retros vencidas (default bin/reflect-retro-due.sh)
 #   AM_BACKLOG_DISPATCH dispatcher de backlog entre repos (default bin/backlog-dispatch.sh)
+#   AM_SECRETS_EXPIRY inventário de expiração de credenciais (default bin/secrets-expiry.sh)
 #   AM_INTERRUPCOES  gerador do relatório de interrupções (default bin/interrupcoes-report.sh)
 #   AM_AUTONOMY_CACHE dir do stamp/output do relatório semanal (default ~/.claude/cache/autonomy)
 #   AM_SKIP_WAIT     1 = pula a espera por iTerm/Dock (testes não dependem da UI)
@@ -69,6 +70,23 @@ mkdir -p "$(dirname "$LOG")"
     bash "$BACKLOG_DISPATCH" --max 2 || true
   else
     echo "→ backlog-dispatch.sh ausente/não-executável em $BACKLOG_DISPATCH — pulado."
+  fi
+
+  # Aviso proativo de credenciais vencendo (US-02 do plano R9): imprime no log
+  # da manhã as entradas do inventário vencidas/vencendo em ≤14d. Non-blocking:
+  # `due` sai 1 quando HÁ vencimento (esperado) e 3 com inventário corrompido —
+  # nenhum derruba o auto-morning, mas rc=3 é falha persistente que precisa de
+  # reparo e ganha ALERTA próprio (code-review R9: colapsar 1 e 3 num `|| true`
+  # deixava o pipeline de aviso morto indefinidamente sem sinal acionável).
+  SECRETS_EXPIRY="${AM_SECRETS_EXPIRY:-$HOME/Projects/dotclaude/bin/secrets-expiry.sh}"
+  if [ -x "$SECRETS_EXPIRY" ]; then
+    echo "→ credenciais vencendo (≤14d): $SECRETS_EXPIRY due --days 14"
+    se_rc=0; bash "$SECRETS_EXPIRY" due --days 14 || se_rc=$?
+    if [ "$se_rc" -eq 3 ]; then
+      echo "ALERTA: inventário de secrets corrompido — repare ~/.claude/cache/secrets/expiry.jsonl (avisos de expiração MORTOS até lá)"
+    fi
+  else
+    echo "→ secrets-expiry.sh ausente/não-executável em $SECRETS_EXPIRY — pulado."
   fi
 
   # Relatório semanal de interrupções (R6 da análise de autonomia, 2026-07-01):

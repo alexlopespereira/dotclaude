@@ -68,8 +68,22 @@ criados sob demanda quando um projeto estoura quota pela 2ª vez.
 - **Preflight do Codex no Ralph** → já existe em `ralph-adversarial.sh` (probe `codex login
   status` com perl-alarm); este script usa o mesmo probe/idioma para o catálogo geral.
 
+## Advisory de expiração (R9)
+
+Após os probes, o script consulta o **inventário do `secrets-expiry.sh`** (flag
+`--expiry-file`, default `~/.claude/cache/secrets/expiry.jsonl`) delegando ao
+`secrets-expiry.sh due --days 14 --json` — fonte única da semântica. Contrato:
+
+- **Texto:** linhas `⚠ expira: <key> em Nd` (ou `⚠ vencida: <key> há Nd`) após
+  as linhas de probe. **Nunca viram pendência** — exit codes inalterados.
+- **`--json`:** campo `expiring` (array de `{key_name, days_left}` — mesmo nome
+  de campo do `due --json`).
+- **Inventário corrompido nunca é silencioso:** texto → aviso em stderr;
+  `--json` → campo `expiring_error` (o JSON segue parseável).
+
 ## Referência rápida
 
-- Script: `bin/auth-preflight.sh` (`--tools`, `--refresh`, `--ttl`, `--timeout`, `--json`).
+- Script: `bin/auth-preflight.sh` (`--tools`, `--refresh`, `--ttl`, `--timeout`, `--json`, `--expiry-file`).
 - Cache: `~/.claude/cache/auth-preflight/status.tsv` (só OK, com epoch).
+- Inventário de expiração: `bin/secrets-expiry.sh` (add/list/due/remove).
 - Testes: `bin/tests/test_auth_preflight.sh`.

@@ -101,7 +101,7 @@ detect_stale_backup() {
         if hash_in_history "$rel" "$hash_claude"; then
             stale_files+=("$rel")
         fi
-    done < <(find "$CLAUDE_DIR" -type f \( -name "*.md" -o -name "*.sh" -o -name "*.json" \) 2>/dev/null)
+    done < <(find "$CLAUDE_DIR" -type f \( -name "*.md" -o -name "*.sh" -o -name "*.json" -o -name "*.mjs" \) 2>/dev/null)
 
     # Renomeados: backup escreve home/$dst → repo/$src. STALE se o home bate com
     # versão histórica (sob nome novo OU antigo) — propagá-lo regrediria o $src.

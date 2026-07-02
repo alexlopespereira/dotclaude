@@ -12,6 +12,10 @@
 #
 # Estratégia: seams de env apontam para stubs que logam num call-log. Pattern de
 # test_auto_morning_reflect_wiring.sh.
+#
+# Cobre também US-02 do ciclo r9-secrets-lifecycle (seção ao final): step
+# non-blocking de aviso de credenciais vencendo via seam AM_SECRETS_EXPIRY
+# (secrets-expiry.sh due --days 14), entre BACKLOG_DISPATCH e INTERRUPCOES.
 
 set -u
 
@@ -79,6 +83,7 @@ run_am() { # backlog_stub
   AM_BACKLOG_DISPATCH="$1" \
   AM_INTERRUPCOES="$TMP/ir-nao-existe.sh" \
   AM_AUTONOMY_CACHE="$TMP/autonomy-default" \
+  AM_SECRETS_EXPIRY="$TMP/se-nao-existe.sh" \
     bash "$AM"
 }
 
@@ -161,7 +166,8 @@ chmod +x "$IR_FAIL"
 run_am_ir() { # ir_stub autonomy_cache
   AM_SKIP_WAIT=1 AM_LOG="$TMP/auto-morning.log" AM_VM_MORNING="$VM_STUB" \
   AM_REFLECT_RETRO="$REFLECT_STUB" AM_BACKLOG_DISPATCH="$BACKLOG_OK" \
-  AM_INTERRUPCOES="$1" AM_AUTONOMY_CACHE="$2" bash "$AM"
+  AM_INTERRUPCOES="$1" AM_AUTONOMY_CACHE="$2" \
+  AM_SECRETS_EXPIRY="$TMP/se-nao-existe.sh" bash "$AM"
 }
 
 # R6a — sem stamp: relatório roda com --since 7 e --out; stamp criado; exit 0.
@@ -191,6 +197,78 @@ run_am_ir "$IR_FAIL" "$ACACHE2"; rc=$?
 assert_rc "$rc" 0 "R6d: relatório falho não derruba o auto-morning"
 assert_grep "$(cat "$CALLLOG")" "IR_RAN_FAIL" "R6d: relatório falho foi de fato invocado"
 [ ! -f "$ACACHE2/last-weekly-report" ] && _pass || _fail "R6d: falha não grava stamp (re-tenta amanhã)"
+
+# ═══ US-02 (r9-secrets-lifecycle): aviso proativo de credenciais vencendo ═══
+# Step non-blocking entre BACKLOG_DISPATCH e INTERRUPCOES, seam AM_SECRETS_EXPIRY:
+# roda `secrets-expiry.sh due --days 14` e imprime vencimentos no log da manhã.
+
+# SE_OK: loga argv + timestamp e emite uma linha de vencimento (como o due real).
+SE_OK="$TMP/se-ok.sh"
+cat > "$SE_OK" <<EOF
+#!/usr/bin/env bash
+printf '%s SE_RAN %s\n' "\$(date +%s%N)" "\$*" >> "$CALLLOG"
+printf 'token-x\tprov\t2026-07-10\t8d\n'
+exit 1
+EOF
+chmod +x "$SE_OK"
+# SE_FAIL: loga e sai 3 (inventário corrompido — pior caso do secrets-expiry).
+SE_FAIL="$TMP/se-fail.sh"
+cat > "$SE_FAIL" <<EOF
+#!/usr/bin/env bash
+printf '%s SE_RAN_FAIL %s\n' "\$(date +%s%N)" "\$*" >> "$CALLLOG"
+exit 3
+EOF
+chmod +x "$SE_FAIL"
+
+run_am_se() { # se_stub [ir_stub autonomy_cache]
+  : > "$CALLLOG"
+  AM_SKIP_WAIT=1 AM_LOG="$TMP/auto-morning.log" AM_VM_MORNING="$VM_STUB" \
+  AM_REFLECT_RETRO="$REFLECT_STUB" AM_BACKLOG_DISPATCH="$BACKLOG_OK" \
+  AM_INTERRUPCOES="${2:-$TMP/ir-nao-existe.sh}" \
+  AM_AUTONOMY_CACHE="${3:-$TMP/autonomy-default}" \
+  AM_SECRETS_EXPIRY="$1" bash "$AM"
+}
+
+# ── AC1: stub roda com 'due' e '--days 14' no argv; exit 1 do due (há vencidas)
+# não derruba o auto-morning; vencimentos aparecem no log da manhã ────────────
+run_am_se "$SE_OK"; rc=$?
+LOG_OUT="$(cat "$TMP/auto-morning.log")"
+assert_rc "$rc" 0 "US-02/AC1: due com vencimento (exit 1) → auto-morning ainda sai 0"
+assert_grep "$(cat "$CALLLOG")" "SE_RAN due --days 14" "US-02/AC1: call-log confirma 'due --days 14' no argv"
+assert_grep "$LOG_OUT" "token-x" "US-02/AC1: vencimento impresso no log da manhã"
+assert_grep "$LOG_OUT" "credenciais vencendo" "US-02/AC1: anúncio do step aparece no log"
+BL_TS="$(grep 'BACKLOG_RAN' "$CALLLOG" | head -1 | awk '{print $1}')"
+SE_TS="$(grep 'SE_RAN' "$CALLLOG" | head -1 | awk '{print $1}')"
+assert_lt "$BL_TS" "$SE_TS" "US-02: step de expiry roda APÓS o backlog (ordem no call-log)"
+
+# stub que falha duro (exit 3, inventário corrompido) também é non-blocking,
+# mas rc=3 ganha ALERTA próprio (code-review R9: colapsar 1 e 3 deixava o
+# pipeline de aviso morto sem sinal acionável); rc=1 (há due) NÃO alerta
+run_am_se "$SE_FAIL"; rc=$?
+assert_rc "$rc" 0 "US-02/AC1: expiry exit 3 → auto-morning ainda sai 0 (non-blocking)"
+assert_grep "$(cat "$CALLLOG")" "SE_RAN_FAIL" "US-02/AC1: stub falho foi de fato invocado"
+assert_grep "$(cat "$TMP/auto-morning.log")" "concluído" "US-02/AC1: auto-morning chega ao fim com expiry falho"
+assert_grep "$(cat "$TMP/auto-morning.log")" "ALERTA: inventário de secrets corrompido" \
+  "US-02/RF: rc=3 imprime ALERTA de corrupção (distinto de 'há vencimento')"
+: > "$TMP/auto-morning.log"   # log acumula entre runs — zera pro assert negativo
+run_am_se "$SE_OK"
+assert_nogrep "$(cat "$TMP/auto-morning.log")" "ALERTA: inventário" \
+  "US-02/RF: rc=1 (há due) NÃO gera ALERTA de corrupção"
+
+# ordem vs INTERRUPCOES: expiry roda ANTES do relatório semanal
+ACACHE_SE="$TMP/autonomy-se"; mkdir -p "$ACACHE_SE"
+run_am_se "$SE_OK" "$IR_STUB" "$ACACHE_SE"
+SE_TS="$(grep 'SE_RAN' "$CALLLOG" | head -1 | awk '{print $1}')"
+IR_TS="$(grep 'IR_RAN' "$CALLLOG" | head -1 | awk '{print $1}')"
+assert_lt "$SE_TS" "$IR_TS" "US-02: step de expiry roda ANTES do relatório de interrupções"
+
+# ── AC2: seam apontando para inexistente → pula com mensagem, exit 0,
+# e NENHUMA invocação no call-log (capture-proof, par com o positivo do AC1) ──
+run_am_se "$TMP/se-nao-existe.sh"; rc=$?
+LOG_OUT="$(cat "$TMP/auto-morning.log")"
+assert_rc "$rc" 0 "US-02/AC2: expiry ausente → auto-morning sai 0"
+assert_grep "$LOG_OUT" "secrets-expiry.sh ausente/não-executável" "US-02/AC2: mensagem de pulo no log"
+assert_nogrep "$(cat "$CALLLOG")" "SE_RAN" "US-02/AC2: call-log sem SE_RAN (step de fato pulado)"
 
 echo "─────────────────────────────────────────"
 echo "PASS: $PASS   FAIL: $FAIL"

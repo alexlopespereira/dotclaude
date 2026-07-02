@@ -1,6 +1,6 @@
 ---
 name: browser-secrets
-description: Provisiona credenciais via browser proativamente — escreve no .env e verifica antes de reportar. Quando usar: criar token, gerar API key, provisionar secret, fazer setup ferramenta web, ou falha 401/403 / env var ausente mid-task. O que faz: checa se já existe, captura sem vazar no transcript, escreve no .env (guarda .gitignore), verifica com live probe, reporta mascarado; free/low-risk proativo, Zona 3/custo/destrutivo mantém confirm gate. Delega browser a browser-actions.
+description: Provisiona credenciais via browser proativamente — escreve no .env e verifica antes de reportar. Quando usar: criar token, gerar API key, provisionar secret, fazer setup ferramenta web, falha 401/403 / env var ausente mid-task, renovar credencial expirada, ou rotacionar secret por higiene. O que faz: checa se já existe, captura sem vazar no transcript, escreve no .env (guarda .gitignore), verifica com live probe, reporta mascarado, registra no inventário de expiração; renovação/rotação com probe OK antes de revogar a antiga; free/low-risk proativo, Zona 3/custo/destrutivo mantém confirm gate. Delega browser a browser-actions.
 ---
 
 # browser-secrets — operacional
@@ -87,6 +87,21 @@ ordem de preferência:
 A captura nunca ecoa o segredo cru: escreve direto no `.env`, e o `browser_evaluate` retorna
 apenas confirmação mascarada (ver abaixo) — nunca o valor cru no tool-output persistido.
 
+**Caminho de captura fora do transcript:** `bin/secret-capture.sh` (dotclaude) empacota as
+camadas 1–2 num wrapper que captura via driver Playwright local (ou drop file com
+`--from-drop`), escreve no `.env` com guarda de `.gitignore` e chmod 600, roda probe opcional e
+emite **só o tail mascarado no stdout** — o valor cru nunca passa pelo transcript nem por argv.
+Prefira-o à captura manual via `browser_evaluate` quando o wrapper cobre o caso.
+
+Duas restrições do wrapper (deliberadas):
+
+- **Zona 3:** `--url` em domínio sensível da blocklist da `browser-actions` é **bloqueado
+  (exit 7)** — o driver navega o Chrome autenticado fora do alcance do hook MCP. Confirme com o
+  humano e re-rode com `--allow-sensitive` (override auditado em stderr).
+- **Lock do perfil:** se o MCP Playwright está vivo no mesmo slot, o driver **aborta (exit 4)**
+  em vez de cair num profile efêmero — captura precisa dos cookies autenticados do perfil real.
+  Feche o MCP do slot (ou use `--slot` de um perfil livre e logado) antes de capturar.
+
 ## Confirmação MASCARADA no chat (Princípio 7)
 
 A confirmação no chat **sempre** mascara o segredo: mostra só os **últimos 4 chars** com o
@@ -127,6 +142,49 @@ está logado:
 As exceções (a)–(e) do Princípio 11 e a blocklist de Zona 3 do Princípio 12 **continuam
 valendo** — esta skill não as relaxa; só autoriza proatividade no caso free/low-risk.
 
+## Renovação reativa autônoma (tiered)
+
+Credencial que **falha mid-task (401/403) ou está expirada** (aviso do inventário via
+`auth-preflight`/auto-morning, ou recusa do provedor) **não devolve a tarefa pro usuário**:
+Claude renova ele mesmo, pela **escada do Princípio 12** (CLI > MCP > API > Playwright MCP), e
+retoma a tarefa original do ponto onde falhou. A regra é
+**renovar e reportar mascarado, não devolver a tarefa**.
+
+O tiering vem do campo `tier` do inventário (`bin/secrets-expiry.sh list`); sem entrada no
+inventário, infira pelo domínio (na dúvida, trate como paid):
+
+| Tier | Comportamento na renovação |
+|------|---------------------------|
+| **free-low** | Renova **sem perguntar** — cria a nova, escreve no `.env`, verifica com probe, reporta mascarado depois. |
+| **paid / zona3 / produção** | **confirma 1×** antes de renovar (gates P11 b–e + blocklist Zona 3); confirmado, segue autônomo até o report. |
+
+Renovação **não é** rotação: renovar responde a uma falha/expiração; rotação é higiene
+planejada (seção seguinte). A ordem de troca, porém, é a mesma ordem canônica da rotação —
+nunca revogue a antiga antes da nova provar que funciona.
+
+## Rotação (higiene)
+
+Ordem canônica (criar nova → probe OK → revogar antiga → propagar → registrar) — cada passo
+só depois do anterior confirmado; a âncora é **probe OK antes de revogar a antiga**:
+
+1. **Criar a credencial nova** — fluxo normal de provisionamento desta skill (check-exists não
+   se aplica: rotação cria de propósito uma segunda credencial coexistindo com a antiga).
+2. **Probe da nova** — live probe do catálogo `references/probe-endpoints.md`.
+3. **SÓ ENTÃO revogar a antiga** — usando o link de revogação do mesmo catálogo
+   (`references/probe-endpoints.md`). Probe falhou → **não revoga**; a antiga continua válida
+   enquanto se corrige a nova.
+4. **Propagar aos consumers** — o campo `consumers` do inventário dirige a propagação: cada
+   consumer listado (`.env`s de outros checkouts, keyrings de VMs, CI secrets) recebe o valor
+   novo **antes** de a rotação contar como concluída. Consumer inacessível no momento →
+   reporta como pendência explícita, não silencia.
+5. **Registrar** — upsert via `bin/secrets-expiry.sh add` com a nova `--expires-at` (ver
+   Registro no inventário, abaixo).
+
+> **Incidente-fonte (rastreável):** o auto-pull da VM1 ficou quebrado **~1 semana** porque um
+> PAT foi revogado sem propagar o valor novo ao keyring da VM — consumer não mapeado, quebra
+> silenciosa só descoberta ao investigar o sync. A ordem canônica e a propagação dirigida por
+> `consumers` existem por causa disso.
+
 ## Report + audit log
 
 ### Report no chat (sempre mascarado)
@@ -141,6 +199,15 @@ resultado), **trigger** (qual dos 3 disparou), e **ação-do-usuário** necessá
 O report emite **link de revogação quando conhecido** (catálogo em `references/probe-endpoints.md`);
 se desconhecido, **aponta a página genérica de settings/tokens** da ferramenta. Best-effort, não
 bloqueia.
+
+### Registro no inventário de expiração (obrigatório)
+
+Registrar a credencial no inventário é **passo obrigatório pós-provisão/renovação** — todo
+provisionamento (e toda renovação/rotação) termina com upsert via **`bin/secrets-expiry.sh
+add`** (`--key`, `--provider`, `--expires-at`, `--renewal-method`, `--tier`, `--consumers`).
+Só metadados, **nunca o valor**. É esse registro que alimenta os avisos proativos
+(auto-morning + `auth-preflight`), fornece o `tier` da renovação reativa e o `consumers` da
+propagação na rotação.
 
 ### Audit log append-only
 
@@ -159,8 +226,8 @@ Toda a **mecânica de browser** é delegada a `browser-actions` — esta skill *
   `browser-actions`.
 
 Esta skill foca no **fluxo de credencial** (gatilho → check-exists → captura → `.env` →
-verificação → report); o "como abrir/autenticar/proteger o browser" é responsabilidade da
-`browser-actions`.
+verificação → report → inventário); o "como abrir/autenticar/proteger o browser" é
+responsabilidade da `browser-actions`.
 
 ## Gotchas
 
@@ -176,6 +243,11 @@ verificação → report); o "como abrir/autenticar/proteger o browser" é respo
 - **(c) Scope inference / least-privilege.** Ao criar PAT/token com escopos, infira o **escopo
   mínimo** casado ao need detectado — nem amplo demais (risco), nem estreito demais (probe falha).
   Escopo incerto → pergunta (regra de desambiguação).
+- **(d) Revogação prematura quebra consumers em silêncio.** Revogar a credencial antiga antes
+  do probe OK da nova — ou sem propagar aos `consumers` do inventário — quebra consumidores
+  remotos sem nenhum alarme local. Incidente real: o auto-pull da VM1 ficou quebrado
+  **~1 semana** após rotação de PAT sem propagação ao keyring da VM. A ordem canônica da seção
+  Rotação (probe OK antes de revogar a antiga → propagar → registrar) não é opcional.
 
 ## Referência rápida
 

@@ -19,11 +19,18 @@
 # SAÍDA: tab-separated `tool<TAB>STATUS<TAB>detalhe`; STATUS ∈ OK|DEAD|MISSING|SKIP.
 # Exit: 0 sem pendência; 1 com DEAD/MISSING; 2 uso inválido.
 #
+# ADVISORY DE EXPIRAÇÃO (US-02 do plano R9): credenciais vencendo em ≤14d no
+# inventário do secrets-expiry.sh (--expiry-file) viram linhas '⚠ expira:' após
+# os probes (texto) ou o campo "expiring" (--json). Advisory NUNCA conta como
+# pendência — os exit codes acima ficam inalterados.
+#
 # Probes com teto perl-alarm (SIGALRM → exit 142), mesmo idioma do preflight
 # do Ralph (ralph-adversarial.sh) e do ship.sh. A key do Gemini nunca entra em
 # argv (visível em `ps`): vai por header via `curl -K -` (config no stdin).
 
 set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<'EOF'
@@ -34,7 +41,11 @@ Uso: auth-preflight.sh [opções]
   --ttl SECONDS    validade do cache de OK (default 3600)
   --timeout SECONDS  teto por probe (default 15)
   --refresh        ignora e re-popula o cache
-  --json           saída JSON ({"tools":[...],"pending":N}) em vez de texto
+  --json           saída JSON ({"tools":[...],"pending":N,"expiring":[...]})
+                   em vez de texto
+  --expiry-file F  inventário de expiração do secrets-expiry.sh
+                   (default ~/.claude/cache/secrets/expiry.jsonl); vencendo em
+                   ≤14d vira advisory '⚠ expira:' — nunca pendência
 EOF
 }
 
@@ -44,13 +55,21 @@ TIMEOUT=15
 REFRESH=false
 JSON=false
 TOOLS=""
+EXPIRY_FILE="$HOME/.claude/cache/secrets/expiry.jsonl"
+
+need_val() {  # need_val <flag> <$#> — flag de valor sem valor → uso inválido
+  # (sem a guarda, `shift 2` com $#=1 falha SEM consumir $1 e o while abaixo
+  # nunca termina — finding da review US-02; idioma do secrets-expiry.sh)
+  [ "$2" -ge 2 ] || { echo "faltando valor para $1" >&2; usage >&2; exit 2; }
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --tools)     TOOLS="${2:-}"; shift 2 ;;
-    --cache-dir) CACHE_DIR="${2:-}"; shift 2 ;;
-    --ttl)       TTL="${2:-}"; shift 2 ;;
-    --timeout)   TIMEOUT="${2:-}"; shift 2 ;;
+    --tools)     need_val "$1" $#; TOOLS="$2"; shift 2 ;;
+    --cache-dir) need_val "$1" $#; CACHE_DIR="$2"; shift 2 ;;
+    --ttl)       need_val "$1" $#; TTL="$2"; shift 2 ;;
+    --timeout)   need_val "$1" $#; TIMEOUT="$2"; shift 2 ;;
+    --expiry-file) need_val "$1" $#; EXPIRY_FILE="$2"; shift 2 ;;
     --refresh)   REFRESH=true; shift ;;
     --json)      JSON=true; shift ;;
     -h|--help)   usage; exit 0 ;;
@@ -171,10 +190,41 @@ EOF
 
 printf '%s' "$NEWCACHE" > "$CACHE_FILE"
 
+# ─── Advisory de expiração (US-02 do plano R9) — delega ao `due` ─────────────
+# Fonte ÚNICA da semântica do inventário é secrets-expiry.sh (code-review R9:
+# a cópia inline divergiu no nascimento — `days` vs `days_left`, corrupção
+# silenciosa → []). rc do due: 0 sem due / 1 há due / 3 corrompido. Corrupção
+# nunca é silenciosa (texto: aviso em stderr; --json: campo expiring_error) e
+# nunca derruba o preflight (advisory não é pendência). Entrada já vencida
+# (days_left < 0) rende "vencida há Nd", não "expira em -Nd".
+EXPIRING="[]"; EXPIRY_ERROR=""
+SE_SCRIPT="$SCRIPT_DIR/secrets-expiry.sh"
+if [ -f "$EXPIRY_FILE" ] && [ -f "$SE_SCRIPT" ]; then
+  DUE_RC=0
+  DUE_OUT=$(bash "$SE_SCRIPT" due --days 14 --json --file "$EXPIRY_FILE" 2>/dev/null) || DUE_RC=$?
+  case "$DUE_RC" in
+    0|1) EXPIRING=$(printf '%s' "$DUE_OUT" | jq -c 'map({key_name, days_left})' 2>/dev/null) \
+           || EXPIRING="[]" ;;
+    3)   EXPIRY_ERROR="inventário de secrets ilegível: $EXPIRY_FILE" ;;
+  esac
+fi
+
 if [ "$JSON" = "true" ]; then
-  printf '{"tools":[%s],"pending":%d}\n' "$JSON_ITEMS" "$NPEND"
+  EXP_ERR_JSON=""
+  [ -z "$EXPIRY_ERROR" ] \
+    || EXP_ERR_JSON=$(printf ',"expiring_error":%s' "$(printf '%s' "$EXPIRY_ERROR" | jq -Rc .)")
+  printf '{"tools":[%s],"pending":%d,"expiring":%s%s}\n' \
+    "$JSON_ITEMS" "$NPEND" "$EXPIRING" "$EXP_ERR_JSON"
 else
+  [ -z "$EXPIRY_ERROR" ] || echo "⚠ $EXPIRY_ERROR (advisory suprimido)" >&2
   printf '%s' "$TEXT_OUT"
+  if [ "$EXPIRING" != "[]" ]; then
+    printf '%s' "$EXPIRING" | jq -r '.[] |
+      if .days_left < 0
+      then "⚠ vencida: \(.key_name) há \(-(.days_left))d — renove agora"
+      else "⚠ expira: \(.key_name) em \(.days_left)d — renove proativamente"
+      end'
+  fi
   if [ "$NPEND" -gt 0 ]; then
     printf '→ %d pendência(s) — resolva TUDO num único pedido consolidado: %s\n' \
       "$NPEND" "${PENDING%; }"
