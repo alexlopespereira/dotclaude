@@ -26,6 +26,15 @@ Para cada decisão da árvore de design:
 7. **Logar a decisão** em `decisions.jsonl` (ver §Audit log).
 8. **Se um artefato emergir** ("vamos precisar de um hook", "isso vai virar uma skill"): usar o índice de mapping em [DOD.md](references/DOD.md) para escolher candidato de categoria/tarefa. Rodar meta-classificação via rubrica sobre o mapping (mesmo algoritmo §3–§6 — usar G3/G6 para avaliar confiança no mapping). **Copiar verbatim (bullet-por-bullet)** o `DoD-base` da categoria + a `Tarefa N` específica do DOD.md e adicioná-los à seção "Artefatos a produzir" do plano em formação. `DoD-base` aparece **1× por categoria por plano** (dedupe — por economia de ruído, não por verbatim estrito); cada `Tarefa N` é sempre verbatim integral. **Após cada bloco inserido, emite o marcador `<!-- dod-use: <id> -->`** logo abaixo dele (ver §Contadores de uso e [DOD-MAPPING.md](references/DOD-MAPPING.md)). **A skill NÃO chama `log_event`** — o Stop hook conta a partir do marcador.
 
+## Rubrica na execução (não só no planejamento)
+
+**A rubrica §3–§6 vale também durante a execução** — implementação, debug, entrega — não apenas na entrevista de plano (R4 de `~/analise-interrupcoes/autonomia-recomendacoes.md`: só 40% das perguntas mid-execução eram legítimas; a rubrica existia e era ignorada fora do plano). Diferenças do modo execução:
+
+1. **Mesmos thresholds**: score < 35 → assume silenciosamente; 35–60 → assume + `[SUPOSIÇÃO]`/footnote no report; > 60 → só pergunta se **também** cai num gatilho (a)–(e) do P15 — score alto sem gatilho vira `[SUPOSIÇÃO]` destacada.
+2. **Formato da pergunta legítima**: `AskUserQuestion` estruturada, nunca prosa — opção recomendada em 1º com "(Recommended)".
+3. **Batch obrigatório**: junte até 4 perguntas num turno só; máx. **1 turno de perguntas por fase** (mata o ping-pong "1 ok, 2 ok, 3 ok"). Pergunta que surge depois do turno de perguntas da fase → segura para a próxima fase ou vira `[SUPOSIÇÃO]`.
+4. **Sem audit log**: o `decisions.jsonl` é da entrevista; em execução, o rastro é o próprio report (footnotes/`[SUPOSIÇÃO]`).
+
 ## Stop criterion
 
 Encerrar quando **shared understanding** for alcançado (julgamento do agente, mesmo do `grill-me` original):

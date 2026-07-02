@@ -86,6 +86,25 @@ Validado empiricamente em 2026-05-06: dá **falso positivo** (cookies de trackin
 
 **Auth ausente NUNCA é skip pro próximo nível** (regra do Princípio 12 — "auth ausente nunca é skip"). Sempre pede ao usuário.
 
+## Códigos de verificação (2FA/email) — self-service
+
+Quando um login/ação dispara **código de verificação por email** e o destino é caixa que o
+Claude alcança, o default é **ler o código sozinho** em vez de pedir para o usuário colar
+(R5 de `~/analise-interrupcoes/autonomia-recomendacoes.md` — cada "cola o código aí" era 1
+interrupção evitável):
+
+1. **Gmail MCP conectado** cobrindo a caixa destino → busque a mensagem mais recente do
+   remetente/assunto esperado e extraia o código. Caminho preferido (escada P12: MCP > browser).
+2. **Webmail alcançável no Chrome dedicado** (ex.: `contato@exemplo.com.br`) → abra a caixa
+   no browser (anúncio + auth assistida normais), leia o código da mensagem mais recente.
+3. **Nenhum dos dois** (SMS, authenticator app, caixa pessoal sem acesso) → pausa e pede,
+   como no troubleshooting.
+
+Regras: use o código **imediatamente e só para o fluxo em curso** (é short-lived, não é
+segredo durável — não vai para `.env` nem para o audit log); confira remetente + timestamp
+recente antes de usar (código velho/de outro fluxo = falha silenciosa); **não** tire
+screenshot da mensagem — extraia só o código via snapshot/texto.
+
 ## Cadência do anúncio
 
 Anuncia abertura do browser:
@@ -217,7 +236,7 @@ Lock per-profile (`~/.claude/chrome-profile-<slot>/.lock`) serializa acesso ao m
 | Problema | Sintoma | Resolução |
 |----------|---------|-----------|
 | Captcha (reCAPTCHA, hCaptcha) | Página exibe widget de captcha | **Pausar**, dizer "tem captcha, resolve aí pra mim e me avise". Esperar humano. |
-| 2FA por SMS / authenticator | Após login, página pede código | Idem captcha — pausa + pede. |
+| 2FA por SMS / authenticator | Após login, página pede código | Pausa + pede. **Código por email → self-service primeiro** (ver "Códigos de verificação"). |
 | Sessão expirada | Cookie presente, mas resposta 401/403 ou redirect pra /login | Trigger fluxo de re-auth (anuncia + espera login). |
 | `document.cookie` vazio (ou só com tracking) mesmo logado | Cookies de sessão são `httpOnly`/`SameSite=Strict` | Validado 2026-05-06. Sinais primários: **redirect-pra-login** ou **meta `user-login`** (ver "Protocolo de auth assistida"). `document.cookie` só serve como triagem. |
 | localStorage-only auth (raro) | Sem cookies, auth via JWT em localStorage | Aceitar fricção: pre-check via `browser_evaluate(() => localStorage.getItem('token'))`. |

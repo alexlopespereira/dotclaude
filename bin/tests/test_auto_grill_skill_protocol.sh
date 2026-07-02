@@ -83,6 +83,18 @@ assert_present "$SECTION" 'carrega o sha atual dos bullets' "AC3 evento use carr
 assert_present "$SECTION" 'dod_bullets_sha'                 "AC3 sha vem de dod_bullets_sha (content-based)"
 assert_present "$SECTION" '--sha'                           "AC3 a emissão passa --sha <sha-atual>"
 
+# ─── Parte A2 (R4) — rubrica vale também na execução, não só no planejamento ───
+# Origem: R4 de ~/analise-interrupcoes/autonomia-recomendacoes.md. A rubrica
+# quantitativa (score baixo → assume; médio → assume+footnote; alto → pergunta)
+# existia só no planejamento e era ignorada fora dele; o SKILL.md agora deve
+# declarar a extensão à execução + o formato AskUserQuestion em batch.
+assert_present "$SKILL" 'Rubrica na execução' \
+  "R4 seção 'Rubrica na execução' presente no SKILL.md"
+assert_present "$SKILL" 'AskUserQuestion' \
+  "R4 execução usa AskUserQuestion (formato estruturado)"
+assert_present "$SKILL" '1 turno de perguntas por fase' \
+  "R4 regra de batch 'máx. 1 turno de perguntas por fase'"
+
 # ─── Parte B — o protocolo documentado executa e deriva o esperado ──────────────
 # Sandbox isolado: USAGE_LOG_HOME não polui ~/.claude. Sourcing de usage-fold.sh
 # traz dod_bullets_sha + log_event (sourceia usage-log.sh) + usage_fold.

@@ -32,6 +32,10 @@ agir no nível 4 sem devolver a tarefa pro humano.
 
 ## Gatilhos (3 fontes) + check-exists-first
 
+> **Preflight consolidado:** em tarefa longa multi-serviço, o gatilho 1 (falha mid-task) deve
+> ser antecipado pelo probe único do início de tarefa — skill `auth-preflight`
+> (`bin/auth-preflight.sh`), que agrega todas as renovações num pedido só.
+
 A skill dispara em **qualquer** dos 3 gatilhos:
 
 1. **Falha de auth mid-task (401/403).** Uma chamada autenticada falha no meio de outra tarefa —

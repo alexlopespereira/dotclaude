@@ -59,6 +59,18 @@ assert_present "$GLOBAL_MD" "empacotar + sync é parte da tarefa" \
 assert_present "$GLOBAL_MD" "recomendação redigida = próximo passo" \
   "P15 âncora (iii) 'recomendação redigida = próximo passo'"
 
+# ─── P15 emendado R4: gates residuais → AskUserQuestion em batch ─────────────
+# Origem: R4 de ~/analise-interrupcoes/autonomia-recomendacoes.md — onde a
+# pergunta é legítima (gates a–e), trocar prosa por AskUserQuestion estruturada,
+# em batch (até 4), recomendada em 1º, máx. 1 turno de perguntas por fase; a
+# rubrica do auto-grill-me vale também na execução, não só no planejamento.
+assert_present "$GLOBAL_MD" "AskUserQuestion" \
+  "P15 R4 âncora 'AskUserQuestion' (formato estruturado nos gates legítimos)"
+assert_present "$GLOBAL_MD" "1 turno de perguntas por fase" \
+  "P15 R4 âncora 'máx. 1 turno de perguntas por fase' (batch)"
+assert_present "$GLOBAL_MD" "vale também na execução" \
+  "P15 R4 âncora 'rubrica vale também na execução'"
+
 # ─── P15 termina citando o backstop autonomy-guard.sh (US-03 AC4) ───────────
 assert_present "$GLOBAL_MD" '(Backstop determinístico: hook `autonomy-guard.sh`.)' \
   "P15 âncora backstop autonomy-guard.sh"
