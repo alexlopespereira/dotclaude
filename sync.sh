@@ -274,6 +274,18 @@ register_keyword_loader_hook() {
     fi
 }
 
+# Registra o UserPromptSubmit hook autonomy-miss-tracker (telemetria R6):
+# appenda 1 registro em ~/.claude/cache/autonomy/miss.jsonl quando o prompt é
+# resposta-carimbo ("sim", "prossiga", "opção A"…). Best-effort, stdout vazio.
+register_autonomy_miss_hook() {
+    if _register_hook "UserPromptSubmit" "hooks/autonomy-miss-tracker.sh" \
+            "$CLAUDE_DIR/hooks/autonomy-miss-tracker.sh" "" "5000"; then
+        echo "  ✓ UserPromptSubmit hook (autonomy-miss-tracker) registrado em settings.json"
+    else
+        echo "  ⚠ settings.json: registro do autonomy-miss-tracker hook pulado (JSON inválido / python3 ausente)" >&2
+    fi
+}
+
 sync_to_claude() {
     local force=0
     [ "${1:-}" = "--force" ] && force=1
@@ -385,6 +397,7 @@ sync_to_claude() {
     register_session_start_hook
     register_verify_handoff_hook
     register_keyword_loader_hook
+    register_autonomy_miss_hook
     # claude-yolo: symlink de atalho em ~/.local/bin → cópia instalada em
     # ~/.claude/bin. ln -sf é idempotente (sobrescreve link existente sem erro).
     # Seam SYNC_LOCAL_BIN aponta o destino p/ sandbox nos testes.

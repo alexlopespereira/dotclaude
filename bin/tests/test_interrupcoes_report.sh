@@ -74,6 +74,22 @@ add '{"type":"user","message":{"role":"user","content":"pode"}}'
 add '{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"Subagente: quer que eu continue?"}]},"timestamp":"2099-01-01T10:07:00Z"}'
 add '{"type":"user","isSidechain":true,"message":{"role":"user","content":"sim"}}'
 
+# (i) pergunta -> próximo é wakeup de Monitor (falso positivo do tooling) => NÃO conta
+add '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Rodo o smoke E2E de novo?"}]},"timestamp":"2099-01-01T10:08:00Z"}'
+add '{"type":"user","message":{"role":"user","content":"b8e4a1h8b Monitor event: \"4º run E2E terminou\""}}'
+
+# (j) pergunta -> próximo é task-notification => NÃO conta
+add '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Aguardo o build terminar. Confirma que sigo depois?"}]},"timestamp":"2099-01-01T10:09:00Z"}'
+add '{"type":"user","message":{"role":"user","content":"<task-notification><task-id>abc123</task-id><status>completed</status></task-notification>"}}'
+
+# (k) pergunta -> próximo carrega id de tool_use (toolu_) => NÃO conta
+add '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Aplico o patch nos 3 arquivos?"}]},"timestamp":"2099-01-01T10:10:00Z"}'
+add '{"type":"user","message":{"role":"user","content":"toolu_01AbCdEf resultado avulso do harness"}}'
+
+# (l) pergunta -> usuário redireciona com slash command => CONTA como redirect
+add '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"O contexto está quase cheio. Quer que eu continue mesmo assim?"}]},"timestamp":"2099-01-01T10:11:00Z"}'
+add '{"type":"user","message":{"role":"user","content":"<command-name>/handoff-continue</command-name>\n<command-message>handoff-continue</command-message>"}}'
+
 export PR_TRANSCRIPT_DIR="$WORK"
 
 # ── T1: help + args inválidos ────────────────────────────────────────────────
@@ -84,8 +100,9 @@ bash "$IR" --bogus >/dev/null 2>&1; assert_rc $? 2 "T1 flag desconhecida rc=2"
 
 # ── T2/T3/T4: detecção via json ──────────────────────────────────────────────
 J=$(bash "$IR" --since 9999 --format json 2>/dev/null)
-# devem contar: (a) question, (e) ask_tool, (f) exit_plan, (g) question(deploy) = 4
-assert_count "$J" '"kind"' 4 "T2 total de interrupções = 4"
+# devem contar: (a) question, (e) ask_tool, (f) exit_plan, (g) question(deploy),
+# (l) redirect = 5
+assert_count "$J" '"kind"' 5 "T2 total de interrupções = 5"
 assert_grep "$J" "Quer que eu siga para a parte 2" "T2a question conta"
 assert_nogrep "$J" "Posso prosseguir" "T2b tool_result não conta"
 assert_nogrep "$J" "Deseja que eu comece" "T2c ide_selection não conta"
@@ -108,10 +125,20 @@ OLDPROJ="$WORK/-Users-dev-Projects-old"; mkdir -p "$OLDPROJ"
 cp "$SES" "$OLDPROJ/old.jsonl"
 touch -t 202001010000 "$OLDPROJ/old.jsonl"
 J2=$(bash "$IR" --since 7 --format json 2>/dev/null)
-assert_count "$J2" '"kind"' 4 "T5 mtime corta arquivo antigo (continua 4, não 8)"
+assert_count "$J2" '"kind"' 5 "T5 mtime corta arquivo antigo (continua 5, não 10)"
 
 # ── T6: categorização deploy ─────────────────────────────────────────────────
 assert_grep "$J" "externo/billable/deploy" "T6 deploy categorizado"
+
+# ── T7: falsos positivos do tooling NÃO contam (R7 da análise 2026-07-01) ────
+assert_nogrep "$J" "Rodo o smoke E2E" "T7a Monitor event não conta"
+assert_nogrep "$J" "Confirma que sigo depois" "T7b task-notification não conta"
+assert_nogrep "$J" "Aplico o patch" "T7c toolu_ não conta"
+
+# ── T8: eco de slash command vira kind=redirect (R7) ─────────────────────────
+assert_grep "$J" '"redirect"' "T8a slash echo conta como redirect"
+assert_grep "$J" "/handoff-continue" "T8b user_reply é o comando"
+assert_grep "$M" "## redirect" "T8c md tem categoria própria de redirect"
 
 # ── sumário ──────────────────────────────────────────────────────────────────
 echo "── test_interrupcoes_report: $PASS passaram, $FAIL falharam ──"

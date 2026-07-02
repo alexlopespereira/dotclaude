@@ -77,6 +77,8 @@ run_am() { # backlog_stub
   AM_VM_MORNING="$VM_STUB" \
   AM_REFLECT_RETRO="$REFLECT_STUB" \
   AM_BACKLOG_DISPATCH="$1" \
+  AM_INTERRUPCOES="$TMP/ir-nao-existe.sh" \
+  AM_AUTONOMY_CACHE="$TMP/autonomy-default" \
     bash "$AM"
 }
 
@@ -137,6 +139,58 @@ assert_grep "$MORNING_OUT" "autonomy-guard" \
   "US-01/AC7: linha dedicada menciona autonomy-guard"
 assert_nogrep "$MORNING_OUT" "2099-01-01" \
   "US-01/AC7: promoção com due além de hoje+7d NÃO é exibida"
+
+# ═══ R6: relatório semanal de interrupções no auto-morning (telemetria) ═══
+# Roda 1×/semana via stamp por mtime; non-blocking; --since 7 + --out arquivo.
+
+IR_STUB="$TMP/ir-stub.sh"
+cat > "$IR_STUB" <<EOF
+#!/usr/bin/env bash
+printf '%s IR_RAN %s\n' "\$(date +%s%N)" "\$*" >> "$CALLLOG"
+exit 0
+EOF
+chmod +x "$IR_STUB"
+IR_FAIL="$TMP/ir-fail.sh"
+cat > "$IR_FAIL" <<EOF
+#!/usr/bin/env bash
+printf '%s IR_RAN_FAIL %s\n' "\$(date +%s%N)" "\$*" >> "$CALLLOG"
+exit 1
+EOF
+chmod +x "$IR_FAIL"
+
+run_am_ir() { # ir_stub autonomy_cache
+  AM_SKIP_WAIT=1 AM_LOG="$TMP/auto-morning.log" AM_VM_MORNING="$VM_STUB" \
+  AM_REFLECT_RETRO="$REFLECT_STUB" AM_BACKLOG_DISPATCH="$BACKLOG_OK" \
+  AM_INTERRUPCOES="$1" AM_AUTONOMY_CACHE="$2" bash "$AM"
+}
+
+# R6a — sem stamp: relatório roda com --since 7 e --out; stamp criado; exit 0.
+ACACHE="$TMP/autonomy"; mkdir -p "$ACACHE"; : > "$CALLLOG"
+run_am_ir "$IR_STUB" "$ACACHE"; rc=$?
+assert_rc "$rc" 0 "R6a: auto-morning exit 0 com relatório semanal"
+assert_grep "$(cat "$CALLLOG")" "IR_RAN .*--since 7" "R6a: relatório invocado com --since 7"
+assert_grep "$(cat "$CALLLOG")" "IR_RAN .*--out" "R6a: relatório escreve via --out"
+[ -f "$ACACHE/last-weekly-report" ] && _pass || _fail "R6a: stamp last-weekly-report criado"
+
+# R6b — stamp fresco: NÃO re-roda (contagem no call-log não muda).
+N1="$(grep -c 'IR_RAN ' "$CALLLOG")"
+run_am_ir "$IR_STUB" "$ACACHE"
+N2="$(grep -c 'IR_RAN ' "$CALLLOG")"
+[ "$N1" = "$N2" ] && _pass || _fail "R6b: stamp fresco deveria pular ($N1 → $N2)"
+
+# R6c — stamp velho (>7d): re-roda.
+touch -t 202001010000 "$ACACHE/last-weekly-report"
+run_am_ir "$IR_STUB" "$ACACHE"
+N3="$(grep -c 'IR_RAN ' "$CALLLOG")"
+[ "$N3" -gt "$N2" ] && _pass || _fail "R6c: stamp velho deveria re-rodar ($N2 → $N3)"
+
+# R6d — relatório exit 1: non-blocking (auto-morning exit 0) e stamp NÃO tocado
+# (re-tenta na próxima manhã em vez de silenciar a falha por 1 semana).
+ACACHE2="$TMP/autonomy2"; mkdir -p "$ACACHE2"; : > "$CALLLOG"
+run_am_ir "$IR_FAIL" "$ACACHE2"; rc=$?
+assert_rc "$rc" 0 "R6d: relatório falho não derruba o auto-morning"
+assert_grep "$(cat "$CALLLOG")" "IR_RAN_FAIL" "R6d: relatório falho foi de fato invocado"
+[ ! -f "$ACACHE2/last-weekly-report" ] && _pass || _fail "R6d: falha não grava stamp (re-tenta amanhã)"
 
 echo "─────────────────────────────────────────"
 echo "PASS: $PASS   FAIL: $FAIL"

@@ -15,13 +15,17 @@
 # O QUE CONTA COMO INTERRUPÇÃO (precisão > recall)
 #   Um turno do assistente é interrupção quando, somadas as condições:
 #     (1) o PRÓXIMO evento é um prompt REAL do usuário — não um tool_result, nem
-#         injeção de IDE (<ide_selection>/<ide_opened_file>), nem eco de slash
-#         command, nem caveat de local-command; e
+#         injeção de IDE (<ide_selection>/<ide_opened_file>), nem caveat de
+#         local-command, nem evento do harness (wakeup de Monitor,
+#         task-notification, id toolu_ avulso — falsos positivos, R7); e
 #     (2) o turno terminou pedindo algo, detectado por um destes sinais:
 #           ask_tool  — usou a tool AskUserQuestion (pergunta estruturada);
 #           exit_plan — usou ExitPlanMode (pediu aprovação de plano);
 #           question  — o texto final termina em '?' ou casa padrões de pedido
-#                       ("quer que eu", "posso prosseguir", "ou prefere", ...).
+#                       ("quer que eu", "posso prosseguir", "ou prefere", ...);
+#           redirect  — o turno pediu algo e a resposta foi um eco de slash
+#                       command (/handoff-continue, /full-cycle…): interrupção
+#                       real, mas você redirecionou em vez de responder (R7).
 #   isSidechain true (subagentes) é sempre excluído — não é interação com você.
 #
 #   LIMITE CONHECIDO: prompts de PERMISSÃO do harness (allow/deny de tool) NÃO
@@ -138,6 +142,15 @@ NOISE = ("<ide_selection", "<ide_opened_file", "<command-message", "<command-nam
          "<command-args", "<local-command-stdout", "<local-command-stderr",
          "<user-prompt-submit-hook", "Caveat:", "[Request interrupted")
 
+# Eventos do harness que chegam como mensagem de user mas NÃO são resposta sua:
+# wakeups de Monitor, task-notifications de background e ids de tool_use avulsos
+# (34 falsos positivos no período 2026-06-17→07-01 — R7 da análise de autonomia).
+FALSE_POSITIVE = re.compile(r"toolu_|Monitor event:|<task-notification")
+
+# Eco de slash command como resposta = interrupção REAL, mas de tipo distinto:
+# você redirecionou (/handoff-continue, /full-cycle…) em vez de responder.
+CMD_RE = re.compile(r"<command-name>\s*(/[\w-]+)")
+
 def user_text(c):
     if isinstance(c, str):
         return c
@@ -152,9 +165,15 @@ def is_real_prompt(c):
     t = user_text(c).strip()
     if not t or t.startswith(NOISE):
         return False
+    if FALSE_POSITIVE.search(t):
+        return False
     s = re.sub(r"<(ide_selection|ide_opened_file|system-reminder)[\s\S]*?</\1>", "", t).strip()
     s = re.sub(r"<[^>]+>", "", s).strip()
     return len(s) >= 2
+
+def slash_redirect(c):
+    m = CMD_RE.search(user_text(c))
+    return m.group(1) if m else None
 
 def looks_like_question(txt):
     s = txt.strip()
@@ -223,7 +242,10 @@ for proj_dir in sorted(glob.glob(os.path.join(root, "*"))):
                 if txt.strip() or tools:
                     prev = {"txt": txt, "tools": tools, "ts": ts, "asks": asks}
             elif role == "user":
-                if not prev or not is_real_prompt(c):
+                if not prev:
+                    continue
+                cmd = slash_redirect(c)
+                if not cmd and not is_real_prompt(c):
                     continue
                 kind = None; q = None
                 if prev["asks"]:
@@ -232,6 +254,8 @@ for proj_dir in sorted(glob.glob(os.path.join(root, "*"))):
                     kind = "exit_plan"; q = prev["txt"].strip()[-500:] or "[plano para aprovação]"
                 elif looks_like_question(prev["txt"]):
                     kind = "question"; q = prev["txt"].strip()[-500:]
+                if kind and cmd:
+                    kind = "redirect"
                 if kind:
                     records.append({
                         "machine": machine,
@@ -240,7 +264,7 @@ for proj_dir in sorted(glob.glob(os.path.join(root, "*"))):
                         "ts": prev["ts"] or ts,
                         "kind": kind,
                         "question": q,
-                        "user_reply": user_text(c).strip()[:200],
+                        "user_reply": cmd if cmd else user_text(c).strip()[:200],
                     })
                 last_prompt = user_text(c).strip()
                 prev = None
@@ -297,6 +321,8 @@ with open(os.environ["PR_DATA"], encoding="utf-8") as _fh:
             recs.extend(arr)
 
 def categorize(r):
+    if r["kind"] == "redirect":
+        return "redirect (slash command como resposta)"
     if r["kind"] != "question":
         return "ask_tool/exit_plan"
     s = (r.get("question") or "").lower()
