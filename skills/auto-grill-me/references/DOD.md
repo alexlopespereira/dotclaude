@@ -72,6 +72,7 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b4] inline bash (`!\`git status\``) usado para pré-computar contexto e evitar round-trip do modelo
 - [ ] [b5] executado 1x em sessão real e produz o output esperado sem follow-up manual
 - [ ] [b6] **deprecação** de command segue formato canônico: header `> **DEPRECATED** — sunset <YYYY-MM-DD>; use /<substituto>` na 1ª linha do corpo E prefixo `DEPRECATED:` na `description` do frontmatter; sunset futura na data do commit + substituto verificado (`test -f`); mudança coberta por teste grep versionado em `bin/tests/`
+- [ ] [b7] US cuja mudança em `commands/*.md` é apenas SUBSTITUIR bloco inline por invocação de script existente não herda a categoria de criação de command — specs devem derivar da categoria do artefato primário (script bash → cat-9); aplicar specs de frontmatter/argument-hint a edição pontual de command é mismatch e gera markers órfãos
 
 ### Tarefa 2 — Skill nova
 - [ ] [b1] estrutura é uma **pasta** (não só arquivo) — mesmo que vazia inicialmente, prevê `examples/`, `references/`
@@ -99,6 +100,9 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b9] operação de rede dentro de hook tem timeout explícito + `GIT_TERMINAL_PROMPT=0`; efeito remoto/mutante (auto-pull/push/install) é **opt-in explícito** via env ou marcador
 - [ ] [b10] hook **bloqueante** (PreToolUse que nega) é **fail-closed**: `set -u` + `trap 'exit 2' ERR` + checagem explícita de dependências (`command -v jq`/`git`…) com stderr acionável — dep ausente ou erro interno → `exit 2`, nunca `exit 1`/`0` silencioso (contrato PreToolUse: só `exit 2` bloqueia; `set -e` sozinho é insuficiente — sai com `1`)
 - [ ] [b11] hook bloqueante tem teste em `bin/tests/test_<hook>.sh` escrito ANTES (TDD vermelho) cobrindo: bloqueio (→ `exit 2`), caminho limpo (→ `exit 0`) e dependência ausente (→ `exit 2` + stderr) — dep injetável via seam (`<PREFIX>_JQ`) prova o fail-closed sem desinstalar nada
+- [ ] [b12] mudança em lógica de classificação de hook (allowlist/block/cold) tem teste table-driven cobrindo cada categoria × condição nova (ex.: cost-quota com e sem ask_shape, irreversible-production intacta, ALLOWLIST_TOOLS intacta) — incluindo o caso regressivo que motivou a mudança
+- [ ] [b13] hook que escreve em arquivo compartilhado fora do próprio cache (ex.: append em `~/.claude/cache/reflect/reminders.jsonl`) valida o registro escrito (jq parse do tail) e o consumidor downstream (ex.: `morning.sh`) tem teste provando que entradas de outros kinds não quebram contadores existentes
+- [ ] [b14] limitação deliberada de um guard (caso conhecido que ele não cobre) está documentada no fonte E tem teste que fixa o comportamento aceito, para a limitação não ser "corrigida" acidentalmente nem silenciosamente ampliada
 
 ---
 
@@ -334,6 +338,12 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b8] binário de user-install resolvido com fallback explícito (`command -v` → `~/.local/bin/<bin>`) — shell ssh não-login tem PATH básico; rc=127 não pode ser interpretado como estado de configuração
 - [ ] [b9] **rename/move** de script faz varredura repo-wide por referências ao nome antigo (`grep -rn 'nome-antigo' --include='*.sh' --include='*.md'` + cópias instaladas em `~/.claude/`) com zero-órfãos provado; stub de deprecação (se houver) testado: repassa argv (`"$@"`) via exec, aviso em stderr, exit code do novo propagado
 - [ ] [b10] **refactor de extração** (mover constantes/funções p/ lib comum via `source`) prova equivalência — teste before/after com stubs + call-log (argv idêntico) OU diff byte-a-byte do output em dry-run; "sem mudança de comportamento" nunca é claim sem evidência; `source` falha alto se a lib não existir (`[ -f "$LIB" ] || { echo …; exit 1; }`, path relativo a `$(dirname "$0")`)
+- [ ] [b11] script gate/validador com contrato de saída multi-estado (ex.: 0=clean, 1=triggered, 2=usage/args inválidos) prova CADA código por teste dedicado — incluindo que o token de saída (`GATE_*_CLEAN`/`GATE_*_TRIGGERED`) e o exit code nunca divergem
+- [ ] [b12] mecanismo de override/supressão (marcador, flag, env) é fail-closed provado por teste: override malformado ou sem motivo NÃO suprime (comportamento default dispara), e cada supressão efetiva imprime linha de auditoria citando o quê e o porquê
+- [ ] [b13] extração de lógica embutida em command/skill markdown para `bin/*.sh` prova equivalência semântica caso-a-caso: uma fixture por regra/trigger original (dispara e não-dispara) passando idêntico no antes e no depois — "mesma semântica" de N regras exige N pares de fixtures, não um diff único de output
+- [ ] [b14] exit code de dependência externa que conflita "falha" com "resultado vazio" (ex.: `gh pr checks` sai ≠0 tanto em check falhado quanto em PR sem checks) é desambiguado por sinal adicional (presença de stdout, campo JSON, exit code distinto) antes de propagar — provado por teste com stub cobrindo os dois casos
+- [ ] [b15] wrapper de timeout (`perl -e 'alarm'`, `timeout`) tem os 3 caminhos provados por teste: comando termina antes do teto (exit propagado intacto), teto estoura (exit ≠0 distinguível de falha do comando), e override via env var (`<PREFIX>_TIMEOUT`) efetivamente altera o teto
+- [ ] [b16] escrita de arquivo de estado (cache, marker, `$(git rev-parse --git-dir)/<FILE>`) condicionada a validação do valor — parse sem match → NÃO grava e preserva o estado anterior; provado por teste do caminho no-match assertando ausência de escrita (capture-proof, par com assert positivo do caminho com match)
 
 ### Tarefa 21 — Script com fase remota/privilegiada (SSH/sudo)
 - [ ] [b1] separação de privilégio binária: fase default roda sem sudo e RELATA pendências da fase privilegiada; fase `--root` tem guard de OS/usuário que aborta antes de qualquer mutação
