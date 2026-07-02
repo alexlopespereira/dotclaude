@@ -63,6 +63,16 @@ assert_quota "quota-exhausted" \
 assert_quota "quota-reached" \
     "Your quota has been reached."
 
+# ── Positives: auth morta (Codex inutilizável por auth) ────
+assert_quota "codex-token-expired" \
+    '{"error":{"type":"token_expired"}}'
+assert_quota "refresh-token-reused" \
+    "The refresh token was already used"
+assert_quota "refresh-token-reused-short" \
+    "refresh token already used"
+assert_quota "status-401-unauthorized" \
+    'request https://chatgpt.com/backend-api/codex/responses failed with status 401 Unauthorized: {"detail":"Unauthorized"}'
+
 # ── Negatives ──────────────────────────────────────────────
 assert_no_quota "merge-verdict" \
     "## Verdict: MERGE — everything looks good."
@@ -74,6 +84,14 @@ assert_no_quota "empty-diff" \
     "No changes to review."
 assert_no_quota "codex-exec-failed-generic" \
     '{"verdict":"BLOCK","error":"codex_exec_failed"}'
+
+# ── Negatives: quase-auth que NÃO deve disparar fallback ───
+assert_no_quota "id-1401-unauthorized" \
+    "1401 Unauthorized"
+assert_no_quota "review-prose-token-expired" \
+    "the session token expired handling is missing"
+assert_no_quota "review-line-401" \
+    "Finding P1: src/api.ts:401 returns Unauthorized without body"
 
 echo
 echo "---"

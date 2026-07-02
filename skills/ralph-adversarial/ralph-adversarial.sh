@@ -753,7 +753,7 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
         set -e
 
         if is_codex_quota_error "$REVIEW_RESULT"; then
-            echo "  ⚠  Codex: quota/rate-limit detectado — ativando fallback Claude Sonnet para esta e próximas iterações."
+            echo "  ⚠  Codex: quota/rate-limit ou auth morta detectado — ativando fallback Claude Sonnet para esta e próximas iterações."
             echo "$(date -Iseconds) | CODEX_QUOTA | Fallback Claude Sonnet ativado durante $STORY_ID" >> progress.txt
             CODEX_UNAVAILABLE=true
             REVIEWER="claude-sonnet"
