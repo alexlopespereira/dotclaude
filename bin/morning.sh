@@ -10,9 +10,10 @@
 
 set -euo pipefail
 
-CHECKOUT_BASE="$HOME/Projects/checkouts"
-SYNC_SCRIPT="$HOME/Projects/dotclaude/bin/checkout-sync-all.sh"
-LAUNCH_SCRIPT="$HOME/Projects/dotclaude/bin/checkout-launch.sh"
+# Seams MORNING_* (env, p/ teste — pattern RRD_*/AM_* dos scripts irmãos).
+CHECKOUT_BASE="${MORNING_CHECKOUT_BASE:-$HOME/Projects/checkouts}"
+SYNC_SCRIPT="${MORNING_SYNC_SCRIPT:-$HOME/Projects/dotclaude/bin/checkout-sync-all.sh}"
+LAUNCH_SCRIPT="${MORNING_LAUNCH_SCRIPT:-$HOME/Projects/dotclaude/bin/checkout-launch.sh}"
 [ -x "$SYNC_SCRIPT" ] || SYNC_SCRIPT="$HOME/.claude/bin/checkout-sync-all.sh"
 [ -x "$LAUNCH_SCRIPT" ] || LAUNCH_SCRIPT="$HOME/.claude/bin/checkout-launch.sh"
 
@@ -34,16 +35,36 @@ ls -d "$CHECKOUT_BASE/${REPO}-"* >/dev/null 2>&1 || { echo "ERRO: pool '$REPO' n
 echo "═══ Bom dia. Iniciando rotina para o pool '$REPO' ═══"
 
 # Reflexões pendentes (/reflect — AC10/AC17) — informa baselines aguardando retro.
+# US-01 autonomy-4-melhorias (Falha #1 da Revisão Adversária): o contador só
+# conta kind ausente OU kind=="baseline" — o mesmo filtro de seleção do
+# reflect-retro-due.sh; kinds novos (learn, autonomy-promotion) não inflam a
+# contagem. Entradas kind=="autonomy-promotion" vencidas ou vencendo em <=7d
+# ganham linha dedicada.
 show_reflect_reminders() {
-  local reminders="$HOME/.claude/cache/reflect/reminders.jsonl"
+  local reminders="${MORNING_REMINDERS:-$HOME/.claude/cache/reflect/reminders.jsonl}"
   [ -f "$reminders" ] || return 0
   command -v jq >/dev/null 2>&1 || return 0
-  local now_epoch count oldest_days line created_at created_epoch age
+  local now_epoch count oldest_days line kind created_at created_epoch age
+  local promo_lines="" due note horizon
   now_epoch=$(date -u +%s)
+  # Janela da promoção: due <= hoje+7d (BSD/macOS primeiro; fallback GNU).
+  horizon=$(date -u -v+7d +%Y-%m-%d 2>/dev/null || date -u -d '+7 days' +%Y-%m-%d)
   count=0
   oldest_days=0
   while IFS= read -r line; do
     [ -z "$line" ] && continue
+    kind=$(jq -r '.kind // "baseline"' <<<"$line" 2>/dev/null) || continue
+    if [ "$kind" = "autonomy-promotion" ]; then
+      due=$(jq -r '.retro_due_at // empty' <<<"$line" 2>/dev/null) || continue
+      [ -z "$due" ] && continue
+      due="${due:0:10}"   # formato canônico posicional → compara lexicográfico
+      if [[ ! "$due" > "$horizon" ]]; then
+        note=$(jq -r '.note // empty' <<<"$line" 2>/dev/null)
+        promo_lines="${promo_lines}→ Promoção do autonomy-guard pendente (alvo $due): $note"$'\n'
+      fi
+      continue
+    fi
+    [ "$kind" = "baseline" ] || continue
     created_at=$(jq -r '.created_at // empty' <<<"$line" 2>/dev/null) || continue
     [ -z "$created_at" ] && continue
     # Formato canônico do /reflect: 2026-05-18T03-15-16Z (dashes no time).
@@ -62,6 +83,11 @@ show_reflect_reminders() {
     echo ""
     echo "→ Reflexões pendentes: $count baseline(s) aguardando retro (mais antiga: D+$oldest_days)"
     echo "  Rode /reflect <pr-number> --retro nos PRs com idade ≥ 7 dias."
+  fi
+  if [ -n "$promo_lines" ]; then
+    echo ""
+    printf '%s' "$promo_lines"
+    echo "  Inspecione ~/.claude/cache/autonomy/audit.jsonl antes de promover (README: rollout)."
   fi
 }
 show_reflect_reminders

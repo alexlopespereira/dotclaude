@@ -387,6 +387,52 @@ run_hook gc
 [ -f "$NEW_CNT" ] && _pass || _fail "29d counter recente preservado"
 [ -f "$TMP/audit/.last-gc" ] && _pass || _fail "29e marcador .last-gc criado (GC diário, 1 stat/turno)"
 
+# ═══ US-01 (autonomy-4-melhorias): allowlist cost/credential exige ask_shape ═
+# ask_shape = texto stripado termina em '?' OU padrão hot casa. Só as categorias
+# 'cost-quota' e 'credential-request' são condicionadas; 'irreversible-production'
+# e ALLOWLIST_TOOLS ficam intactas. Fixture 14 (hot 'devo' + custo) é a prova de
+# que gate legítimo segue allowlisted (AC4 — já coberta acima).
+
+# ─── 30. Declarativa com vocabulário de custo/cota, sem '?' e sem hot → cold ─
+# (caso real dos 3 falsos 'cost-quota' do audit de 2026-07-02)
+new_t askcost; u "implementa o detector de quota"
+at "Implementei o detector: a leitura da cota vem do arquivo e o custo por chamada é zero. Suíte verde, commit criado."
+run_hook askcost
+assert_eq "$RC" "0" "30a exit 0"
+assert_eq "$OUT" "" "30b stdout vazio"
+assert_eq "$(audit_lines)" "0" "30c declarativa de custo/cota → cold, ZERO audit"
+
+# ─── 31. Declarativa com vocabulário de credencial, sem forma interrogativa ──
+new_t askcred; u "configura a credencial"
+at "Gravei a chave no .env e a autenticação está configurada; o login do serviço já usa o token salvo."
+run_hook askcred
+assert_eq "$RC" "0" "31a exit 0"
+assert_eq "$(audit_lines)" "0" "31b declarativa de credencial → cold, ZERO audit"
+
+# ─── 32. Custo SEM padrão hot mas terminando em '?' → allowlist mantida ──────
+new_t asksuffix; u "avalia o tier"
+at 'O tier pago custa US$ 20 por mês e dobra a cota. Habilito já?'
+run_hook asksuffix
+assert_eq "$(audit_lines)" "1" "32a ask_shape via sufixo '?' → allowlist audita"
+assert_eq "$(afield '.allowlist_reason')" "cost-quota" "32b reason cost-quota mantida"
+assert_eq "$(afield '.decision')" "null" "32c decision null"
+
+# ─── 33. Hot sem '?' + palavra-tema de custo → allowlist (limitação deliberada)
+new_t askhot; u "habilita o tier"
+at "Quer que eu habilite o tier pago no projeto. Isso muda o custo mensal."
+run_hook askhot
+assert_eq "$(audit_lines)" "1" "33a ask_shape via padrão hot (sem '?') → allowlist audita"
+assert_eq "$(afield '.allowlist_reason')" "cost-quota" "33b reason cost-quota (hot com tema incidental segue imune)"
+grep -qi 'ask_shape' "$HOOK" && _pass || _fail "33c fonte documenta o gating ask_shape"
+
+# ─── 34. Declarativa 'irreversível' sem ask_shape → categoria NÃO gated ──────
+new_t askirrev; u "aplica a migração"
+at "Apliquei a migração de schema; o drop da coluna antiga é irreversível em produção e está documentado no runbook."
+run_hook askirrev
+assert_eq "$(audit_lines)" "1" "34a irreversible-production não condicionada a ask_shape"
+assert_eq "$(afield '.allowlist_reason')" "irreversible-production" "34b reason irreversible-production mantida"
+assert_eq "$(afield '.decision')" "null" "34c decision null"
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 TOTAL=$((PASS + FAIL))
 echo ""

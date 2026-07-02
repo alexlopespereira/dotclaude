@@ -167,8 +167,23 @@ EOF
 PR_FLAGS=("--title" "$TITLE" "--body" "$BODY" "--base" "$DEFAULT" "--head" "$BRANCH_NAME")
 [ "$DRAFT" = "true" ] && PR_FLAGS+=("--draft")
 
+# Invalida QUALQUER CPP_LAST_PR de ciclo anterior ANTES do create: se a
+# extração abaixo falhar, o arquivo fica AUSENTE (pr-watch cai no fallback
+# gh pr view), nunca stale — número velho respondendo MERGED virava falso
+# "CI verde" na Fase 8 (code-review 2026-07-02).
+rm -f "$(git rev-parse --git-dir)/CPP_LAST_PR"
+
 PR_URL=$(gh pr create "${PR_FLAGS[@]}" 2>&1 | tail -1)
 echo "✓ PR aberto: $PR_URL"
+
+# Grava o número do PR em .git/CPP_LAST_PR para o pr-watch.sh (Fase 8 dos
+# /full-cycle*) não depender da branch atual — o auto-merge pode mergear e
+# deletar a branch antes do watch resolver (corrida do PR #86). Extração
+# defensiva: PR_URL captura stderr acima e pode ser uma linha de ERRO do gh,
+# não URL — sem match de /pull/<dígitos> no fim, NÃO grava.
+if [[ "$PR_URL" =~ /pull/([0-9]+)$ ]]; then
+  echo "${BASH_REMATCH[1]}" > "$(git rev-parse --git-dir)/CPP_LAST_PR"
+fi
 
 # Merge resiliente e à prova de `set -e`.
 #   A estratégia é decidida pelo setting `allow_auto_merge` do repo — NÃO por um

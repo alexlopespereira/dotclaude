@@ -85,3 +85,6 @@
 {"v":1,"ts":"2026-06-26T14:22:50Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-20","kind":"use","sha":"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"}
 {"v":1,"ts":"2026-07-01T22:30:42Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-8","kind":"use","sha":"001f2ec17593c1054eb46367d8453ef24a173ce96b7117d91f9a68d44fef8b01"}
 {"v":1,"ts":"2026-07-01T22:30:42Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"cat-1-base","kind":"use","sha":"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"}
+{"v":1,"ts":"2026-07-02T02:05:19Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-8","kind":"use","sha":"001f2ec17593c1054eb46367d8453ef24a173ce96b7117d91f9a68d44fef8b01"}
+{"v":1,"ts":"2026-07-02T02:05:19Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-1","kind":"use","sha":"410adace96917578e45b037f623c82ff2895304d938bb57391c3a4fdfacc27e6"}
+{"v":1,"ts":"2026-07-02T02:05:19Z","machine":"aaaaaaaa-0000-4000-8000-000000000002","dod_id":"tarefa-18","kind":"use","sha":"001f2ec17593c1054eb46367d8453ef24a173ce96b7117d91f9a68d44fef8b01"}

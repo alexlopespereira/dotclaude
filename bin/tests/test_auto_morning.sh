@@ -104,6 +104,40 @@ LOG_OUT="$(cat "$TMP/auto-morning.log")"
 assert_rc "$rc" 0 "AC9c: backlog ausente → auto-morning sai 0"
 assert_grep "$LOG_OUT" "ausente/não-executável|pulado" "AC9c: backlog ausente é logado e pulado"
 
+# ═══ US-01 (autonomy-4-melhorias): bin/morning.sh — contador de reflexões
+# filtrado por kind + linha dedicada de autonomy-promotion vencida/próxima ═══
+# Falha #1 da Revisão Adversária: sem filtro, kinds novos (learn,
+# autonomy-promotion) inflavam o contador de baselines e sugeriam um
+# /reflect --retro inexistente. Seams MORNING_* injetam fixture + stubs.
+
+MORNING="$REPO_ROOT/bin/morning.sh"
+[ -f "$MORNING" ] || { echo "FAIL: $MORNING inexistente" >&2; exit 1; }
+bash -n "$MORNING" || { echo "FAIL: bash -n sujo em $MORNING" >&2; exit 1; }
+
+POOL="$TMP/checkouts"; mkdir -p "$POOL/demo-1"
+NOOP="$TMP/noop.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$NOOP"; chmod +x "$NOOP"
+REMFIX="$TMP/reminders.jsonl"
+cat > "$REMFIX" <<'EOF'
+{"pr":"99","repo":"demo","created_at":"2026-05-18T03-15-16Z","retro_due_at":"2026-05-25T03-15-16Z"}
+{"kind":"learn","pr":"84","repo":"dotclaude","created_at":"2026-06-01T00-00-00Z"}
+{"kind":"autonomy-promotion","repo":"dotclaude","retro_due_at":"2026-07-08T00-00-00Z","note":"promover autonomy-guard a block nas VMs (echo block > ~/.claude/cache/autonomy/mode) após inspecionar audit"}
+{"kind":"autonomy-promotion","repo":"dotclaude","retro_due_at":"2099-01-01T00-00-00Z","note":"promoção futura NÃO exibida"}
+EOF
+
+MORNING_OUT="$(MORNING_CHECKOUT_BASE="$POOL" MORNING_SYNC_SCRIPT="$NOOP" \
+  MORNING_LAUNCH_SCRIPT="$NOOP" MORNING_REMINDERS="$REMFIX" \
+  bash "$MORNING" demo --no-sync 2>&1)"; rc=$?
+assert_rc "$rc" 0 "US-01/AC7: morning.sh exit 0 com fixture mista"
+assert_grep "$MORNING_OUT" "Reflexões pendentes: 1 baseline" \
+  "US-01/AC7: contador mostra 1 (kind==null conta; learn/autonomy-promotion não)"
+assert_grep "$MORNING_OUT" "2026-07-08" \
+  "US-01/AC7: linha dedicada do lembrete de promoção cita a data 2026-07-08"
+assert_grep "$MORNING_OUT" "autonomy-guard" \
+  "US-01/AC7: linha dedicada menciona autonomy-guard"
+assert_nogrep "$MORNING_OUT" "2099-01-01" \
+  "US-01/AC7: promoção com due além de hoje+7d NÃO é exibida"
+
 echo "─────────────────────────────────────────"
 echo "PASS: $PASS   FAIL: $FAIL"
 if [ "$FAIL" -gt 0 ]; then

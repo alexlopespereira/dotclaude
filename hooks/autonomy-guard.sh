@@ -101,6 +101,20 @@ ALLOWLIST_TEXT = (
      r"irrevers[ií]vel|irreversible|n[aã]o pode ser desfeit|cannot be undone"),
 )
 
+# Gating por forma interrogativa (US-01 autonomy-4-melhorias, Decisão #1):
+# estas categorias só allowlistam quando o turno tem FORMA de pergunta —
+# ask_shape = texto stripado termina em '?' OU algum padrão hot casa. Turno
+# declarativo cujo ASSUNTO é custo/credencial ("o custo por chamada é zero",
+# "gravei a chave no .env") vira cold: eram os 3 falsos do audit de 2026-07-02
+# poluindo exatamente o dado que calibra a promoção a block. Nenhum gate
+# legítimo perde proteção: block só dispara em turno hot, e hot implica
+# ask_shape por construção. LIMITAÇÃO DELIBERADA: turno hot com palavra-tema
+# incidental ("Quer que eu rode os testes do detect-quota?") continua
+# allowlisted — só atacável com heurística de proximidade tema↔pergunta, fora
+# de escopo (risco de falso-bloqueio em gate real). 'irreversible-production'
+# e ALLOWLIST_TOOLS NÃO são condicionados a ask_shape.
+ASK_GATED = ("cost-quota", "credential-request")
+
 # Padrões hot derivados do detector calibrado (bin/interrupcoes-report.sh),
 # PT+EN — mudanças lá devem ser espelhadas aqui (code-review 2026-07-01, V6).
 # Exclusões DELIBERADAS da fonte (precisão > recall): '?' final solto e
@@ -183,20 +197,32 @@ def last_assistant_turn(path):
     return "\n".join(texts), tools
 
 
+def hot_match(low):
+    """→ padrão hot que casa (inclui o composto menu-ab) ou None."""
+    for pat in HOT:
+        if re.search(pat, low):
+            return pat
+    if re.search(r"\(a\)", low) and re.search(r"\(b\)", low) and "recomend" in low:
+        return "menu-ab-recomendado"
+    return None
+
+
 def classify(text, tools):
-    """→ ('allowlist', reason) | ('hot', match) | ('cold', None). Allowlist primeiro."""
+    """→ ('allowlist', reason) | ('hot', match) | ('cold', None). Allowlist primeiro;
+    categorias ASK_GATED exigem ask_shape (ver comentário em ASK_GATED)."""
     for t in tools:
         if t in ALLOWLIST_TOOLS:
             return "allowlist", ALLOWLIST_TOOLS[t]
     low = text.lower()
+    hot = hot_match(low)
+    ask_shape = hot is not None or text.strip().endswith("?")
     for reason, pat in ALLOWLIST_TEXT:
         if re.search(pat, low):
+            if reason in ASK_GATED and not ask_shape:
+                continue  # palavra-tema em turno declarativo não é gate
             return "allowlist", reason
-    for pat in HOT:
-        if re.search(pat, low):
-            return "hot", pat
-    if re.search(r"\(a\)", low) and re.search(r"\(b\)", low) and "recomend" in low:
-        return "hot", "menu-ab-recomendado"
+    if hot is not None:
+        return "hot", hot
     return "cold", None
 
 

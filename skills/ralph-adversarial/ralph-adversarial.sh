@@ -399,6 +399,38 @@ if [ "$NEEDS_CODEX" = "true" ]; then
     fi
 fi
 
+# US-04: preflight de auth do Codex — detecta auth morta ANTES do loop, no
+# ponto mais barato. O fallback mid-loop via is_codex_fallback_error permanece
+# como segunda linha de defesa (a auth pode morrer DEPOIS do preflight).
+# Probe seam-injetável: RALPH_CODEX_PROBE_CMD (default `codex login status` —
+# local, lê auth.json, <1s e zero tokens) com teto via perl alarm (SIGALRM →
+# exit 142 ≠0, mesmo idioma de ship.sh:307), default 30s, override
+# RALPH_CODEX_PROBE_TIMEOUT. Auth morta = exit ≠0 OU output casando
+# is_codex_fallback_error (detect-quota.sh, sourced acima) OU timeout.
+# Gate no BINÁRIO (command -v), não em CODEX_UNAVAILABLE: com PRIMARY=codex e
+# REVIEWER=claude, CODEX_UNAVAILABLE nasce true pela escolha do reviewer, mas
+# o primary ainda depende da auth do codex (code-review 2026-07-02). Desfecho
+# por papel: primary=codex + auth morta → ABORT (análogo ao not-installed —
+# não existe fallback do primary); só reviewer precisa → fallback Sonnet.
+if [ "$NEEDS_CODEX" = "true" ] && command -v codex >/dev/null 2>&1; then
+    RALPH_CODEX_PROBE_TIMEOUT="${RALPH_CODEX_PROBE_TIMEOUT:-30}"
+    PROBE_RC=0
+    PROBE_OUT=$(perl -e 'alarm shift; exec @ARGV' "$RALPH_CODEX_PROBE_TIMEOUT" \
+        bash -c "${RALPH_CODEX_PROBE_CMD:-codex login status}" 2>&1) || PROBE_RC=$?
+    if [ "$PROBE_RC" -ne 0 ] || is_codex_fallback_error "$PROBE_OUT"; then
+        if [ "$PRIMARY_AGENT" = "codex" ] && [ -z "${RALPH_AGENT_BIN:-}" ]; then
+            echo "ERRO: PRIMARY_AGENT=codex mas auth do Codex indisponível (preflight, rc=$PROBE_RC)" >&2
+            echo "$(date -Iseconds) | PREFLIGHT_AUTH | - | abort: auth morta com codex como primary" >> progress.txt
+            exit 1
+        fi
+        echo "preflight: auth do Codex indisponível — fallback Claude Sonnet"
+        # Falha #3 da Revisão Adversária: este >> pode CRIAR progress.txt antes
+        # do touch do Setup — formato de linha idêntico ao parsing downstream.
+        echo "$(date -Iseconds) | PREFLIGHT_AUTH | - | fallback Claude Sonnet ativado no preflight" >> progress.txt
+        CODEX_UNAVAILABLE=true
+    fi
+fi
+
 # ─── Setup ──────────────────────────────────────────────────
 
 BRANCH_NAME=$(jq -r '.branchName' prd.json)
