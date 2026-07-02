@@ -40,9 +40,11 @@ Cada iteração do loop:
 9. Se 3 iterações consecutivas falham mesmo após `/diagnose`: escalar ao humano.
 
 ## Fallback de reviewer
-- Detector: `detect-quota.sh::is_codex_quota_error` identifica padrões
-  de quota/rate-limit (HTTP 429, `insufficient_quota`, "exceeded your
-  current quota", etc.).
+- Detector: `detect-quota.sh::is_codex_fallback_error` (alias legado:
+  `is_codex_quota_error`) identifica padrões de quota/rate-limit
+  (HTTP 429, `insufficient_quota`, "exceeded your current quota", etc.)
+  e de auth morta (`token_expired`, refresh token reutilizado,
+  `401 Unauthorized`).
 - Gatilhos: Codex ausente no PATH no início do loop, ou output de uma
   execução contém sinal de quota.
 - Estado: uma vez ativado, `CODEX_UNAVAILABLE=true` persiste pelo resto

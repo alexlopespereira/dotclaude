@@ -1,8 +1,9 @@
 #!/bin/bash
 # detect-quota.sh — detecta Codex inutilizável por causa externa ao código
 # revisado: quota/rate-limit OU auth morta (token expirado/revogado, 401).
+# (O filename preserva o nome histórico; o contrato completo é "fallback".)
 # Uso:
-#   source detect-quota.sh && is_codex_quota_error "$output" && echo "quota"
+#   source detect-quota.sh && is_codex_fallback_error "$output" && echo "fallback"
 #   echo "$output" | bash detect-quota.sh   # exit 0 se quota/auth, 1 caso contrário
 #
 # Retorna exit 0 se a saída parece um erro de quota/rate-limit da OpenAI
@@ -10,7 +11,7 @@
 # cair no fallback Claude Sonnet. Caso contrário retorna exit 1 — tratado
 # como erro genérico de execução do Codex.
 
-is_codex_quota_error() {
+is_codex_fallback_error() {
     local input
     if [ $# -gt 0 ]; then
         input="$*"
@@ -32,13 +33,19 @@ is_codex_quota_error() {
     echo "$input" | grep -qiE '(token_expired|refresh[[:space:]]+token[[:space:]]+(was[[:space:]]+)?already[[:space:]]+used|([^0-9]|^)401[[:space:]]+unauthorized)'
 }
 
+# Alias de compatibilidade — nome antigo, de quando o detector só cobria
+# quota. Consumidores novos devem usar is_codex_fallback_error.
+is_codex_quota_error() {
+    is_codex_fallback_error "$@"
+}
+
 # Execução direta (não-sourced): parseia stdin ou args.
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
-    if is_codex_quota_error "$@"; then
-        echo "QUOTA_ERROR"
+    if is_codex_fallback_error "$@"; then
+        echo "FALLBACK_ERROR"
         exit 0
     else
-        echo "NO_QUOTA_ERROR"
+        echo "NO_FALLBACK_ERROR"
         exit 1
     fi
 fi

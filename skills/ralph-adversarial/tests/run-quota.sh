@@ -1,5 +1,6 @@
 #!/bin/bash
-# Test runner for detect-quota.sh::is_codex_quota_error.
+# Test runner for detect-quota.sh::is_codex_fallback_error (+ alias legado
+# is_codex_quota_error e tokens do modo standalone).
 # Uses inline samples (positives and negatives) instead of fixture files.
 # Exit status = number of failing tests.
 
@@ -17,7 +18,7 @@ failures=()
 
 assert_quota() {
     local name="$1" sample="$2"
-    if is_codex_quota_error "$sample"; then
+    if is_codex_fallback_error "$sample"; then
         printf "  PASS  %-45s → quota detected\n" "$name"
         pass=$((pass + 1))
     else
@@ -29,7 +30,7 @@ assert_quota() {
 
 assert_no_quota() {
     local name="$1" sample="$2"
-    if is_codex_quota_error "$sample"; then
+    if is_codex_fallback_error "$sample"; then
         printf "  FAIL  %-45s false-positive quota\n" "$name"
         fail=$((fail + 1))
         failures+=("$name")
@@ -92,6 +93,36 @@ assert_no_quota "review-prose-token-expired" \
     "the session token expired handling is missing"
 assert_no_quota "review-line-401" \
     "Finding P1: src/api.ts:401 returns Unauthorized without body"
+
+# ── Alias legado: is_codex_quota_error repassa pro detector ─
+if is_codex_quota_error "insufficient_quota" && is_codex_quota_error '{"error":{"type":"token_expired"}}'; then
+    printf "  PASS  %-45s → alias ok\n" "legacy-alias-is_codex_quota_error"
+    pass=$((pass + 1))
+else
+    printf "  FAIL  %-45s alias legado quebrado\n" "legacy-alias-is_codex_quota_error"
+    fail=$((fail + 1))
+    failures+=("legacy-alias-is_codex_quota_error")
+fi
+
+# ── Modo standalone: tokens FALLBACK_ERROR/NO_FALLBACK_ERROR ─
+out=$(echo "rate limit exceeded" | bash "$DETECTOR")
+if [ "$out" = "FALLBACK_ERROR" ]; then
+    printf "  PASS  %-45s → FALLBACK_ERROR\n" "standalone-positive-token"
+    pass=$((pass + 1))
+else
+    printf "  FAIL  %-45s esperado FALLBACK_ERROR, veio '%s'\n" "standalone-positive-token" "$out"
+    fail=$((fail + 1))
+    failures+=("standalone-positive-token")
+fi
+out=$(echo "No changes to review." | bash "$DETECTOR")
+if [ "$out" = "NO_FALLBACK_ERROR" ]; then
+    printf "  PASS  %-45s → NO_FALLBACK_ERROR\n" "standalone-negative-token"
+    pass=$((pass + 1))
+else
+    printf "  FAIL  %-45s esperado NO_FALLBACK_ERROR, veio '%s'\n" "standalone-negative-token" "$out"
+    fail=$((fail + 1))
+    failures+=("standalone-negative-token")
+fi
 
 echo
 echo "---"
