@@ -1,5 +1,5 @@
 ---
-description: Destila contexto da sessão atual em handoff doc + cria ponteiro pending + lazy-installa hook SessionStart. Trigger phrases — "handoff-continue", "continuar com contexto limpo", "retomar pós-clear". Imprime handoff completo no chat e pede ao usuário rodar /clear manualmente. NÃO invoca /clear. Após o /clear o handoff entra como contexto SILENCIOSO (invisível) e NÃO inicia o trabalho sozinho — digite "continuar" pra retomar.
+description: Destila contexto da sessão atual em handoff doc + cria ponteiro pending + verifica hook SessionStart. Trigger phrases — "handoff-continue", "continuar com contexto limpo", "retomar pós-clear". Imprime handoff completo no chat e pede ao usuário rodar /clear manualmente. NÃO invoca /clear. Após o /clear o handoff entra como contexto SILENCIOSO (invisível) e NÃO inicia o trabalho sozinho — digite "continuar" pra retomar.
 argument-hint: [foco opcional do handoff]
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(pwd), Bash(date:*), Bash(git status:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-parse:*), Bash(gh pr view:*), Bash(jq:*), Bash(test:*), Bash(cat:*), Bash(mkdir:*), Bash(mv:*), Bash(rm:*), Bash(rmdir:*), Bash(wc:*), Bash(ls:*), Bash(echo:*), Bash(printf:*), Bash(chmod:*), Bash(realpath:*), Bash(readlink:*)
 ---
@@ -17,131 +17,50 @@ Foco opcional: $ARGUMENTS
 
 ## O que este comando faz
 
-Destila o estado atual da sessão em um handoff doc estruturado, cria ponteiro `.claude/handoff-pending`, e garante que o hook `SessionStart → handoff-resume.sh` está registrado em `~/.claude/settings.json`. Após o comando, o usuário roda `/clear` manualmente — o hook re-injeta o handoff como `additionalContext` na nova sessão fresca.
-
-**Restrição:** `/clear` é built-in do harness Claude Code. O agente **não tem tool** para dispará-lo. Este comando prepara o terreno — o usuário fecha o ciclo.
+Destila o estado da sessão em um handoff doc, cria ponteiro `.claude/handoff-pending` e verifica que o hook `SessionStart → handoff-resume.sh` está registrado. Após o comando, o usuário roda `/clear` manualmente — o hook re-injeta o handoff como `additionalContext` na sessão fresca. **Restrição:** `/clear` é built-in do harness; o agente **não tem tool** para dispará-lo.
 
 ## Passos
 
-### 0. Garantir diretórios necessários
+### 0. Garantir diretórios
 
-Em cwd "limpo" (sem `.claude/plans/`), o Write do handoff e o `printf > .claude/handoff-pending` falham. Criar diretório de antemão é mandatório:
-
-```bash
-mkdir -p .claude/plans
-```
-
-`mkdir -p` é idempotente — não falha se já existe.
+`mkdir -p .claude/plans` (idempotente; em cwd sem `.claude/plans/` o Write do handoff e o ponteiro falham).
 
 ### 1. Destilar contexto em handoff doc
 
-Componha um arquivo Markdown destilando o estado da sessão atual. Use o contexto pré-computado acima + memória da sessão (decisões, arquivos tocados, próximos passos).
+Escreva (Write) `.claude/plans/<TS>-handoff.md` (`<TS>` = timestamp pré-computado). Destilação, não cópia da sessão. **Seções obrigatórias (todas):**
 
-**Caminho:** `.claude/plans/<TS>-handoff.md` onde `<TS>` é o `timestamp UTC` pré-computado acima.
-
-**Seções obrigatórias (todas devem aparecer):**
-
-- **Objetivo** — 1-2 frases sobre o que esta sessão está tentando alcançar. Se `$ARGUMENTS` veio preenchido, use como ênfase.
-- **Estado / progresso até agora** — bullets do que foi feito (arquivos editados, decisões fechadas, achados). Cite paths reais quando aplicável.
-- **Próximo passo concreto** — UMA ação acionável (não "investigar X" — algo como "implementar `foo()` em `src/foo.ts` cobrindo AC3"). Se a sessão está concluída, escreva `Próximo passo: nenhum — trabalho DONE.`
-- **Arquivos relevantes** — lista de paths críticos para a retomada (ler primeiro). Marque com 📌 se for ponto de partida obrigatório.
-- **Decisões fechadas** — bullets de o-que-foi-decidido e por-quê (rationale curto). Inclui trade-offs já avaliados que NÃO devem ser re-discutidos.
-- **Status** — `WIP` (trabalho em andamento) **ou** `DONE` (concluído; comando ainda pode ser usado pra documentar fim).
-
-Escreva o arquivo via Write tool. Conteúdo deve ser destilação (não cópia da sessão).
+- **Objetivo** — 1-2 frases; se `$ARGUMENTS` veio, use como ênfase.
+- **Estado / progresso até agora** — bullets do feito (arquivos, decisões, achados; paths reais).
+- **Próximo passo concreto** — UMA ação acionável (não "investigar X"; algo como "implementar `foo()` em `src/foo.ts` cobrindo AC3"). Sessão concluída → `Próximo passo: nenhum — trabalho DONE.`
+- **Arquivos relevantes** — paths críticos para a retomada; 📌 = ponto de partida obrigatório.
+- **Decisões fechadas** — o-que-foi-decidido + rationale curto; trade-offs que NÃO devem ser re-discutidos.
+- **Status** — `WIP` ou `DONE`.
 
 ### 2. Criar ponteiro `.claude/handoff-pending`
-
-Resolva o caminho absoluto do handoff doc e escreva uma única linha sem trailing whitespace em `.claude/handoff-pending`. Padrão:
 
 ```bash
 ABS_HANDOFF="$(realpath .claude/plans/<TS>-handoff.md)"
 printf '%s\n' "$ABS_HANDOFF" > .claude/handoff-pending
 ```
 
-Validação obrigatória: `test -f .claude/handoff-pending && wc -l < .claude/handoff-pending` deve retornar **1** (uma única linha terminada por newline — sem espaços/tabs no fim do path, sem linhas extras).
+Validação obrigatória: `test -f .claude/handoff-pending && wc -l < .claude/handoff-pending` retorna **1** (uma linha com newline, sem whitespace no fim, sem linhas extras).
 
-### 3. Lazy-install do hook em `~/.claude/settings.json`
-
-Verifique se o hook já está registrado:
+### 3. Verificar hook em `~/.claude/settings.json`
 
 ```bash
-HOOK_REGISTERED=$(jq -e '
-  .hooks.SessionStart // []
-  | map(.hooks // [])
-  | flatten
-  | map(select(.command? // "" | endswith("handoff-resume.sh")))
-  | length > 0
-' ~/.claude/settings.json 2>/dev/null && echo yes || echo no)
+jq -e '.hooks.SessionStart // [] | map(.hooks // []) | flatten
+       | map(select(.command? // "" | endswith("handoff-resume.sh"))) | length > 0' \
+  ~/.claude/settings.json >/dev/null 2>&1 && echo registrado || echo ausente
 ```
 
-Se `HOOK_REGISTERED=no`, adicione via `jq` com lock e atomic write:
+- `registrado` → anuncie "Hook já registrado — nada a fazer em settings.json".
+- `ausente` → anuncie "⚠️ Hook handoff-resume.sh não registrado — sem ele o /clear NÃO re-injeta o handoff." e registre-o via skill `update-config` (entry `SessionStart` → command `/Users/dev/.claude/hooks/handoff-resume.sh`, timeout 5000). O doc + ponteiro já estão em disco; registre o hook ANTES de o usuário rodar `/clear`. Se o script `~/.claude/hooks/handoff-resume.sh` não existir, avise que o registro será no-op até `./sync.sh install` do dotclaude instalá-lo — não aborte.
 
-```bash
-LOCKDIR=~/.claude/settings.lock
-TMPFILE=$(mktemp ~/.claude/settings.json.XXXXXX)
-trap 'rmdir "$LOCKDIR" 2>/dev/null; rm -f "$TMPFILE"' EXIT
+### 4. Imprimir handoff completo + instruções literais
 
-# Lock via mkdir (macOS não tem flock; mkdir é atômico nos FS POSIX).
-# Flag explícita: test -d $LOCKDIR só prova "alguém criou", não "fomos nós".
-# Se outro processo possui o lock o dir existe e o teste passaria errado.
-GOT_LOCK=0
-for i in 1 2 3 4 5; do
-  if mkdir "$LOCKDIR" 2>/dev/null; then
-    GOT_LOCK=1
-    break
-  fi
-  sleep 0.5
-done
-test "$GOT_LOCK" = 1 || { echo "ERRO: não consegui lock de settings.json após 5 tentativas (outro processo segura $LOCKDIR) — abortando install do hook"; exit 1; }
-
-# Preserva todos os hooks existentes; adiciona entry SessionStart (cria array se ausente)
-# Falha do jq NÃO pode resultar em $TMPFILE vazio sobrescrevendo settings.json — checar exit.
-jq '
-  .hooks //= {} |
-  .hooks.SessionStart //= [] |
-  .hooks.SessionStart += [{
-    "matcher": "",
-    "hooks": [{
-      "type": "command",
-      "command": "/Users/dev/.claude/hooks/handoff-resume.sh",
-      "timeout": 5000
-    }]
-  }]
-' ~/.claude/settings.json > "$TMPFILE" || {
-  rm -f "$TMPFILE"
-  rmdir "$LOCKDIR"
-  echo "ERRO: jq falhou ao montar settings.json — settings.json original intocado; abortando install."
-  exit 1
-}
-
-# Validação dupla: tmp não-vazio e JSON parseável (jq -e .) antes do swap.
-test -s "$TMPFILE" && jq -e . "$TMPFILE" >/dev/null 2>&1 || {
-  rm -f "$TMPFILE"
-  rmdir "$LOCKDIR"
-  echo "ERRO: tmpfile vazio ou JSON inválido pós-jq — settings.json intocado; abortando install."
-  exit 1
-}
-
-# Atomic swap
-mv "$TMPFILE" ~/.claude/settings.json
-rmdir "$LOCKDIR"
-trap - EXIT
-```
-
-Anuncie no chat se acabou de instalar ("Hook SessionStart → handoff-resume.sh adicionado a ~/.claude/settings.json") ou se já estava lá ("Hook já registrado — nada a fazer em settings.json").
-
-**Importante:** o script `handoff-resume.sh` em si é criado pela US-02 deste mesmo ciclo. Este comando assume que existirá em `/Users/dev/.claude/hooks/handoff-resume.sh` no momento da invocação real. Se ainda não existir, anuncie warning no chat ("⚠️ Hook script não existe ainda em ~/.claude/hooks/handoff-resume.sh — registro feito, mas /clear será no-op até o script estar instalado.") mas **não aborte** — registro em settings.json é idempotente.
-
-### 4. Imprimir handoff completo + instrução literal
-
-Após escrever o handoff doc, imprima o conteúdo completo no chat (preview — usuário valida antes de `/clear`). Formato:
+Imprima o conteúdo integral do doc entre `--- HANDOFF DOC (preview) ---` e `--- FIM DO HANDOFF ---`, seguido de:
 
 ```
---- HANDOFF DOC (preview) ---
-<conteúdo integral do .claude/plans/<TS>-handoff.md>
---- FIM DO HANDOFF ---
-
 Ponteiro criado: .claude/handoff-pending → <ABS_HANDOFF>
 Hook SessionStart: <registrado | já existia>
 
@@ -149,9 +68,7 @@ Para retomar com contexto limpo, rode /clear agora.
 Depois do /clear, digite "continuar" — a sessão NÃO inicia sozinha.
 ```
 
-A frase **literal** "Para retomar com contexto limpo, rode /clear agora." deve aparecer no output (caractere por caractere) — é gatilho visual pro usuário.
-
-**Logo abaixo, imprima também (literal):**
+A frase **literal** "Para retomar com contexto limpo, rode /clear agora." deve aparecer caractere por caractere — é gatilho visual pro usuário. Logo abaixo, imprima também (**obrigatório** — corrige a expectativa de "resume automático"):
 
 ```
 ℹ️ Após o /clear, a sessão abre EM BRANCO — o handoff foi carregado como contexto
@@ -161,26 +78,20 @@ A frase **literal** "Para retomar com contexto limpo, rode /clear agora." deve a
    Claude Code dispara um turno do assistente sozinho.
 ```
 
-Este bloco é obrigatório — corrige a expectativa de "resume automático" (o `additionalContext` do `SessionStart` é injetado silenciosamente e nunca dispara uma resposta; um prompt do usuário é sempre necessário).
-
-### 5. Anunciar caveat `--resume`
-
-Imprima também:
-
 ```
 ⚠️ O hook dispara em /clear ou nova sessão. claude --resume NÃO dispara — use /clear.
    O hook apenas INJETA o handoff como contexto silencioso; ele não inicia o trabalho.
 ```
 
-Esta linha é obrigatória (achado adversário #4 do plano de origem).
+(A linha do `--resume` é obrigatória — achado adversário #4 do plano de origem.)
 
-### 6. NÃO invocar /clear
+### 5. NÃO invocar /clear
 
-Sob nenhuma circunstância chame Bash com `/clear` ou similar. `/clear` é built-in do harness — só o usuário pode disparar manualmente após ler o preview. Não há tool disponível para o agente.
+Sob nenhuma circunstância chame Bash com `/clear` ou similar — só o usuário dispara, após ler o preview.
 
 ## Notas operacionais
 
-- **Race condition:** invocação dupla no mesmo cwd sobrescreve `.claude/handoff-pending` (último-gana — aceito; usuário não invoca 2× sem motivo).
-- **Cwd diferente para /clear:** o hook lê `$CWD/.claude/handoff-pending` — `/clear` precisa rodar no mesmo cwd do `/handoff-continue`. Se mudar de repo entre comando e `/clear`, hook sai inerte (correto, mas usuário pode estranhar).
-- **Cap 10KB:** o hook (US-02) emite warning em stderr se o handoff > 10240 bytes, sem abortar. Mantém destilações concisas.
-- **GC de `.consumed`:** o hook move `.claude/handoff-pending` → `.claude/handoff-pending.consumed.<timestamp>` pós-injeção. Acumula no diretório; limpeza manual quando necessário.
+- **Race condition:** invocação dupla no mesmo cwd sobrescreve `.claude/handoff-pending` (último-ganha — aceito).
+- **Cwd diferente:** o hook lê `$CWD/.claude/handoff-pending` — o `/clear` precisa rodar no mesmo cwd do `/handoff-continue`; em cwd diferente o hook sai inerte.
+- **Cap 10KB:** o hook emite warning em stderr se o handoff > 10240 bytes, sem abortar. Mantém destilações concisas.
+- **GC de `.consumed`:** o hook move o ponteiro para `.claude/handoff-pending.consumed.<timestamp>` pós-injeção; limpeza manual quando necessário.

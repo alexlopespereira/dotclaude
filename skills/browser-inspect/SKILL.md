@@ -66,6 +66,17 @@ Auto-policiamento mental antes de pedir output ao usuário:
 
 A regra vale mesmo se o usuário **pedir** explicitamente pra Claude usar "computer use" — não existe; o caminho correto é Playwright MCP.
 
+## Extração dirigida (P16 — anti-inchaço de contexto)
+
+Snapshots e dumps inteiros são o maior custo de contexto do Playwright MCP (medição 2026-07-03, VM2: 240 kB acumulados de `evaluate`+`snapshot` numa sessão; snapshots únicos de até 37 kB). Regras:
+
+1. **`browser_evaluate` seletivo > `browser_snapshot` inteiro.** Se você sabe O QUE procura (um valor, um estado, uma lista), escreva um `evaluate` que retorne SÓ isso (`document.querySelector(...)`, `.map()` dos campos relevantes) em vez de snapshotar a página.
+2. **Snapshot só para descobrir estrutura desconhecida** — e no máximo 1× por página/estado; depois disso, navegue por seletores já observados.
+3. **`evaluate` que retorna coleção grande:** projete os campos (`{id, status}`) e limite (`.slice(0, 20)`) — nunca devolva objetos DOM inteiros ou arrays sem cap.
+4. **Console/network:** filtre na chamada (`browser_console_messages` só errors; `browser_network_requests` do endpoint específico) em vez de despejar tudo.
+
+O mesmo princípio vale para MCPs de documento (Google Drive, Gmail): busca/trecho dirigido > `read_file_content`/thread inteiro (caso medido: 169 kB de docs inteiros numa sessão).
+
 ## Padrões comuns
 
 ### 4.1 — Ler console (errors/logs)
