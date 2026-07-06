@@ -74,6 +74,8 @@ Snapshots e dumps inteiros são o maior custo de contexto do Playwright MCP (med
 2. **Snapshot só para descobrir estrutura desconhecida** — e no máximo 1× por página/estado; depois disso, navegue por seletores já observados.
 3. **`evaluate` que retorna coleção grande:** projete os campos (`{id, status}`) e limite (`.slice(0, 20)`) — nunca devolva objetos DOM inteiros ou arrays sem cap.
 4. **Console/network:** filtre na chamada (`browser_console_messages` só errors; `browser_network_requests` do endpoint específico) em vez de despejar tudo.
+5. **Verificação de passo é textual, não visual.** Para confirmar que um passo funcionou (um valor mudou, um elemento apareceu, um request saiu), use `browser_evaluate` dirigido — nunca `browser_take_screenshot`. Screenshot **só** quando a decisão seguinte depende de **ver** o layout (alinhamento, sobreposição, cor, quebra visual) — algo que texto/DOM não capturam.
+6. **Screenshot para humano ≠ para agente.** Se capturar um screenshot, salve em arquivo e **não** faça `Read` do PNG de volta a menos que precise inspecioná-lo visualmente. `Read` de PNG no máximo **1-2 por fase**, e **nunca** re-`Read` do mesmo arquivo (o conteúdo não muda). Origem medida (2026-07-06): 45 `Read`s de PNG numa sessão = 8,5M chars de contexto — o maior sorvedouro isolado.
 
 O mesmo princípio vale para MCPs de documento (Google Drive, Gmail): busca/trecho dirigido > `read_file_content`/thread inteiro (caso medido: 169 kB de docs inteiros numa sessão).
 

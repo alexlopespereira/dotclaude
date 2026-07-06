@@ -52,6 +52,9 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 | workflow CI/CD, `.github/workflows/*.yml`, lint job, release/tag, CalVer, schedule | 10 | 23 |
 | mudança docs-only, README/CLAUDE.md/WORKFLOW, ref cruzada, budget de tokens | 10 | 24 |
 | deprecação de slash command, header DEPRECATED, sunset | 1 | 1 |
+| gate de autorização, login OIDC/OAuth/SSO, fail-closed, tag/claim de permissão, auto-link de identidade | 11 | 25 |
+| provisionamento de credencial via browser, OAuth app, token/API key, lib de auth vendorizada | 11 | 26 |
+| rollout com flag de habilitação, migração de schema em produção, job report-only, runbook de operação | 11 | 27 |
 
 **Mapping não-cobertos pelo índice:** aplicar apenas o `DoD-base` da categoria mais próxima + marcar critérios derivados com `[INFERÊNCIA]`. **Não inventar critérios sem marker.**
 
@@ -378,3 +381,33 @@ Use este índice para escolher um **candidato** de mapping ao descobrir um artef
 - [ ] [b1] cada claim estrutural do doc (parágrafo, bloco, nota) tem spec **grep-verificável** (arquivo alvo + padrão esperado) — não "revisão visual"
 - [ ] [b2] toda referência cruzada introduzida (ADR, plano, skill, outro doc) é validada por existência do alvo (`test -f`) — referenciar doc órfão perpetua o orfanato
 - [ ] [b3] comportamento negativo documentado é assertável por comando (ex.: `git check-ignore <path>` retorna ≠ 0 p/ "não-ignorado"); edição em `CLAUDE.md` re-verifica budget (`wc -w` ≤ ~2.5k) com o número no commit body, não só a intenção
+
+---
+
+## Categoria 11 — Gate de autorização / provisionamento de credencial (auth OIDC/OAuth/SSO, probe de credencial, rollout com flag)
+
+Origem: reflect `--learn` do PR #172 (login Shopify OIDC no WikiApp restrito a sócios, 2026-07-06) — a PR herdou `cat-5-base` (deploy GCP), mas o trabalho era **gate de autorização fail-closed + provisionamento de credencial validado por browser**. Os 22 findings decorrem desse mismatch: nenhuma categoria cobria rejeição-como-observable, probe de credencial com evidência reproduzível, nem rollout com flag/schema.
+
+### DoD-base — Categoria 11
+- [ ] [b1] toda probe/spike **bloqueante** (descoberta de credencial, contrato de API externa, redirect_uri) tem verdict **PASS/FAIL** com evidência reproduzível citada por `arquivo:linha` (ex.: `docs/probes-*.md`) + o comando/curl exato — verdict em prosa sem âncora é rejeitado
+- [ ] [b2] premissa técnica externa (contrato de core de terceiro, lib de auth, formato de token) validada por **teste executável** que exercita o artefato real e é citado no commit — nunca por leitura de docs
+- [ ] [b3] todo **desvio de acceptance criterion** registrado com (a) motivo, (b) risco residual assumido, (c) US/tarefa que absorve o follow-up; desvio sem destino = **gate de parada**
+- [ ] [b4] verificação que exige recurso **indisponível aos workers** (browser autenticado per-slot, sessão admin) → a US declara o **executor** (orquestradora vs worker) e por que o handoff automatizado não se aplica, ANTES de `passes:true`
+- [ ] [b5] US de segurança com `specs=[]`/`results={}` = **reprovação automática**: ao declarar "TDD antes", o bundle DEVE conter specs + markers com o caminho dos testes e o comando que os roda
+
+### Tarefa 25 — Gate de autorização fail-closed
+- [ ] [b1] gate provado por **teste de ramo negativo**: sujeito **sem** permissão (sem tag/claim) **e** erro/timeout do serviço de verificação → **NEGAÇÃO**; a rejeição é a observable — o caminho positivo sozinho não prova o gate
+- [ ] [b2] auto-link de identidade só com **guard de e-mail verificado pelo IdP** (`email_authenticated`) provado por teste: tenta linkar conta existente com e-mail **NÃO** verificado e assere **recusa** (defesa contra account takeover)
+- [ ] [b3] critério de parada **binário auditável**: cada cenário tem observable capturado e **arquivado** (screenshot/HTTP/log com timestamp + commit SHA); done = 100% ✅, qualquer ❌ = não entregue
+
+### Tarefa 26 — Provisionamento de credencial / dependência de identidade
+- [ ] [b1] credencial provisionada (OAuth client, token, API key) verificada por **live-probe** (chamada real → 2xx) + gravada **fora do git** (P7, mascarada); expiry/rotação no inventário de segredos
+- [ ] [b2] dependência **vendorizada** (lib OIDC/crypto) com versão/commit **pinado**, origem verificável, sujeita ao cooldown/scan de supply-chain; presença provada por **teste de autoload/registro**, não só arquivos no diff
+
+### Tarefa 27 — Rollout com flag + schema/deploy validado
+- [ ] [b1] flag de habilitação com **default OFF verificado por smoke de ramo negativo** ("produção NÃO expõe o provider" antes do flip) ANTES do caminho positivo
+- [ ] [b2] ligar a flag em produção **gated por evidência de suíte verde no MESMO commit** — flag flip e prova de testes coabitam o bundle
+- [ ] [b3] migração de schema **ensaiada contra cópia do dump ANTES do vivo**, com **idempotência** (2ª passada = zero DDL) e tabela/coluna verificada por **introspection** — não por ausência de erro
+- [ ] [b4] **revert cobre schema/estado**: rollback do schema (down-migration ou snapshot) documentado E testado em staging quando a mudança altera schema/dados
+- [ ] [b5] job agendado **report-only** prova ausência de efeito colateral por ramo negativo ("NÃO escreveu/alterou X") + instalação **idempotente** (2x = mesma unit/crontab)
+- [ ] [b6] **runbook verificado, não só escrito**: rotação de credencial, mudança de config e riscos residuais têm cada passo **executado** (registro) ou marcado **dry-run**

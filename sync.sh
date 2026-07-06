@@ -261,6 +261,25 @@ register_verify_handoff_hook() {
     fi
 }
 
+# Registra o hook context-threshold-notify em Stop E UserPromptSubmit (R1 —
+# ressalva Crítica). O script vinha registrado só no Stop do settings.json do
+# host por edição manual, path hardcoded /Users/dev (inválido nas VMs) e sem
+# propagação reproduzível. Agora o wiring viaja no install: ambos os eventos com
+# command via $CLAUDE_DIR/hooks/... (portável /Users ↔ /home) e timeout 5000ms.
+# Matcher vazio nos dois (Stop ignora matcher; UPS = todo prompt).
+register_context_threshold_hook() {
+    local rc=0
+    _register_hook "Stop" "hooks/context-threshold-notify.py" \
+        "$CLAUDE_DIR/hooks/context-threshold-notify.py" "" "5000" || rc=1
+    _register_hook "UserPromptSubmit" "hooks/context-threshold-notify.py" \
+        "$CLAUDE_DIR/hooks/context-threshold-notify.py" "" "5000" || rc=1
+    if [ "$rc" -eq 0 ]; then
+        echo "  ✓ Stop+UserPromptSubmit hook (context-threshold) registrado em settings.json"
+    else
+        echo "  ⚠ settings.json: registro do context-threshold hook pulado (JSON inválido / python3 ausente)" >&2
+    fi
+}
+
 # Registra o UserPromptSubmit hook keyword-context-loader (eficiência de contexto).
 # Injeta docs de referência SOB DEMANDA quando uma keyword casa no prompt; opt-in
 # por projeto via $CWD/.claude/context-triggers.tsv (no-op sem o mapa). Matcher
@@ -398,6 +417,7 @@ sync_to_claude() {
     register_verify_handoff_hook
     register_keyword_loader_hook
     register_autonomy_miss_hook
+    register_context_threshold_hook
     # claude-yolo: symlink de atalho em ~/.local/bin → cópia instalada em
     # ~/.claude/bin. ln -sf é idempotente (sobrescreve link existente sem erro).
     # Seam SYNC_LOCAL_BIN aponta o destino p/ sandbox nos testes.

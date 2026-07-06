@@ -81,9 +81,14 @@ case "$P15_LINE" in
 esac
 
 # ─── Teto de tamanho: proxy folgado do DoD b3 (US-02 AC2) ────────────────────
+# Bump 1500 → 1560 em 2026-07-06 (ciclo context-budget-gate, US-02): o delta de
+# higiene de contexto do P16 (evaluate>screenshot, janela=unidade de sessão,
+# retomada pós-pausa) é um acréscimo minimal e sancionado pelo plano — a linha
+# P16 é travada em separado por test_context_budget_principles.sh (AC4). O teto
+# segue como proxy folgado do DoD b3, só reajustado ao novo baseline.
 WORDS=$(wc -w < "$GLOBAL_MD" | tr -d ' ')
-if [ "$WORDS" -le 1500 ]; then _pass
-else _fail "teto de tamanho :: CLAUDE.global.md tem $WORDS palavras (> 1500)"; fi
+if [ "$WORDS" -le 1560 ]; then _pass
+else _fail "teto de tamanho :: CLAUDE.global.md tem $WORDS palavras (> 1560)"; fi
 
 # ─── Sumário ─────────────────────────────────────────────────────────────────
 echo "test_autonomy_principles: PASS=$PASS FAIL=$FAIL"

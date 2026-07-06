@@ -415,6 +415,36 @@ Origem: reflect `--learn` do PR #65 — a US-01 (branch protection via `gh api`)
 
 ---
 
+## Categoria 11 — Gate de autorização / provisionamento de credencial (auth OIDC/OAuth/SSO, probe de credencial, rollout com flag)
+
+Origem: reflect `--learn` do PR #172 (login Shopify OIDC no WikiApp restrito a sócios, 2026-07-06) — a PR herdou `cat-5-base` (deploy/observabilidade GCP), mas o trabalho real era **gate de autorização fail-closed + provisionamento de credencial validado por browser autenticado**. Os 22 findings das 4 USes decorrem todos desse mismatch: nenhuma categoria anterior cobria rejeição-como-observable, probe de credencial com evidência reproduzível, nem rollout com flag/schema em produção.
+
+**DoD base (todas as tarefas desta categoria):**
+- [ ] toda probe/spike **bloqueante** (descoberta de credencial, contrato de API externa, redirect_uri) tem verdict **PASS/FAIL** com evidência **reproduzível** citada por `arquivo:linha` (ex.: `docs/probes-*.md`) + o comando/curl exato que a produziu — verdict em prosa ("PASSOU") sem âncora é rejeitado
+- [ ] premissa técnica externa (contrato de core de terceiro, lib de auth, formato de token) validada por **teste executável** que lê/exercita o artefato real e é citado no commit — nunca afirmada por leitura de docs
+- [ ] todo **desvio de acceptance criterion** é registrado com (a) motivo, (b) risco residual assumido, (c) US/tarefa que absorve o follow-up; desvio sem destino explícito é **gate de parada**, não nota de rodapé
+- [ ] verificação que exige recurso **indisponível aos workers** (browser autenticado per-slot, sessão admin) → a US declara explicitamente o **executor** (orquestradora vs worker) e por que o handoff automatizado não se aplica, ANTES de marcar `passes:true`
+- [ ] US de segurança com `specs=[]`/`results={}` no bundle é **reprovação automática**: quando declara "TDD antes da implementação", o bundle DEVE conter os specs + markers com o caminho dos testes e o comando que os roda
+
+### 25. Gate de autorização fail-closed
+- [ ] gate provado por **teste de ramo negativo**: sujeito **sem** permissão (sem tag/claim) **e** resposta de erro/timeout do serviço de verificação → **NEGAÇÃO** de acesso; a rejeição é a observable — o caminho positivo (sujeito autorizado entra) sozinho não prova o gate
+- [ ] vínculo/merge de identidade (auto-link) só ocorre com **guard de e-mail verificado pelo IdP** (`email_authenticated`) provado por teste: spec que tenta linkar conta existente com e-mail **NÃO** verificado e assere **recusa** (defesa contra account takeover)
+- [ ] critério de parada **binário auditável**: cada cenário de aceitação tem observable capturado e **arquivado** (screenshot/HTTP/log com timestamp + commit SHA); done = 100% ✅, qualquer ❌ = não entregue — 'passa' sem evidência anexada é rejeitado
+
+### 26. Provisionamento de credencial / dependência de identidade
+- [ ] credencial provisionada (OAuth client, access token, API key) verificada por **live-probe** (chamada real que retorna 2xx no recurso alvo) + gravada **fora do git** (P7, mascarada no report); expiry/rotação registrada no inventário de segredos
+- [ ] dependência **vendorizada** (lib OIDC/crypto) com versão/commit **pinado** registrado, origem verificável, sujeita ao cooldown/scan de supply-chain; presença provada por **teste de autoload/registro**, não só arquivos no diff
+
+### 27. Rollout com flag + schema/deploy validado
+- [ ] flag de habilitação tem **default OFF verificado por smoke de ramo negativo** (assertion "produção NÃO expõe o provider" antes do flip) ANTES de qualquer avaliação do caminho positivo
+- [ ] ligar a flag em produção é **gated por evidência de suíte verde anexada no MESMO commit** — o flag flip e a prova de testes verdes coabitam o bundle, não em commits separados sem link
+- [ ] migração de schema (`update.php`/migration) **ensaiada contra cópia do dump de produção ANTES do vivo**, com **idempotência** (2ª passada = zero DDL) e a tabela/coluna criada verificada por **introspection** — não por ausência de erro
+- [ ] **revert cobre schema/estado**, não só imagem: rollback do schema (down-migration ou snapshot) documentado E testado em staging quando a mudança altera schema/dados
+- [ ] job agendado **report-only** prova ausência de efeito colateral por ramo negativo (assertion "NÃO escreveu/alterou X no backing store") + instalação **idempotente** (2x = mesma unit/crontab)
+- [ ] **runbook verificado, não só escrito**: rotação de credencial, mudança de config e riscos residuais têm cada passo **executado** (registro do sucesso) ou marcado **dry-run** — 'documentado' sem execução comprovada não conta
+
+---
+
 ## Tabela de cobertura
 
 | # | Tarefa | Categoria | DoD-base aplicado | Variação específica |
@@ -443,5 +473,8 @@ Origem: reflect `--learn` do PR #65 — a US-01 (branch protection via `gh api`)
 | 22 | Artefato capturado verbatim | 9 | ✅ | ✅ |
 | 23 | Workflow CI/CD (lint/release) | 10 | ✅ | ✅ |
 | 24 | Mudança docs-only | 10 | ✅ | ✅ |
+| 25 | Gate de autorização fail-closed | 11 | ✅ | ✅ |
+| 26 | Provisionamento de credencial | 11 | ✅ | ✅ |
+| 27 | Rollout com flag + schema | 11 | ✅ | ✅ |
 
 **Total de critérios:** ~188 (10 DoDs-base + 23 variações; Categoria 9 cobre scripts bash utilitários só com a base quando não há fase remota; Categoria 10 cobre infra do harness/repo — origem reflect --learn PR #65; +10 bullets do reflect --learn PR #87 em Tarefa 8, Tarefa 1 e cat-9-base).
