@@ -21,7 +21,7 @@ is_codex_fallback_error() {
 
     # Padrões observados quando a OpenAI responde com limite atingido.
     # Note: o "429" exige fronteira não-numérica para não casar em "1429".
-    if echo "$input" | grep -qiE '(exceeded[[:space:]]+your[[:space:]]+current[[:space:]]+quota|insufficient[_-]?quota|rate[[:space:]_-]?limit(ed|[_-]?exceeded)?|([^0-9]|^)429([^0-9]|$)|too[[:space:]]+many[[:space:]]+requests|usage[[:space:]_-]?limit|plan[[:space:]]+limit|(monthly|daily|weekly)[[:space:]]+limit|quota[[:space:][:alpha:]]{0,40}(exceeded|reached|exhausted)|(exceeded|reached|exhausted|hit)[[:space:][:alnum:]]{0,30}quota)'; then
+    if echo "$input" | grep -qiE '(exceeded[[:space:]]+your[[:space:]]+current[[:space:]]+quota|insufficient[_-]?quota|rate[[:space:]_-]?limit(ed|[_-]?exceeded)?|([^0-9]|^)429([^0-9]|$)|too[[:space:]]+many[[:space:]]+requests|usage[[:space:]_-]?limit|plan[[:space:]]+limit|(monthly|daily|weekly)[[:space:]]+limit|quota[[:space:][:alpha:]]{0,40}(exceeded|reached|exhausted)|(exceeded|reached|exhausted|hit)[[:space:][:alnum:]]{0,30}quota|out[[:space:]]+of[[:space:]]+credits|(no|insufficient|remaining)[[:space:]]+credits|refill)'; then
         return 0
     fi
 

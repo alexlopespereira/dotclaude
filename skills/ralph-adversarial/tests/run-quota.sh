@@ -63,6 +63,10 @@ assert_quota "quota-exhausted" \
     "OpenAI quota exhausted for this key."
 assert_quota "quota-reached" \
     "Your quota has been reached."
+assert_quota "workspace-out-of-credits" \
+    "ERROR: Your workspace is out of credits. Ask your workspace owner to refill in order to continue."
+assert_quota "out-of-credits-short" \
+    "out of credits"
 
 # ── Positives: auth morta (Codex inutilizável por auth) ────
 assert_quota "codex-token-expired" \
@@ -93,6 +97,8 @@ assert_no_quota "review-prose-token-expired" \
     "the session token expired handling is missing"
 assert_no_quota "review-line-401" \
     "Finding P1: src/api.ts:401 returns Unauthorized without body"
+assert_no_quota "prose-credits-word" \
+    "The function credits the user account with the refund amount."
 
 # ── Alias legado: is_codex_quota_error repassa pro detector ─
 if is_codex_quota_error "insufficient_quota" && is_codex_quota_error '{"error":{"type":"token_expired"}}'; then
