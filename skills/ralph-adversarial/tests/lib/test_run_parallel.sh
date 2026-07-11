@@ -213,15 +213,28 @@ LOGFILE=$(mktemp -t ralph-orchlog.XXXXXX)
 ) >"$LOGFILE" 2>&1 &
 ORCH_PID=$!
 
-# Snapshot at t≈3s — by then all 4 workers should be alive (US-D noop
-# may have already finished + been replaced; US-E hang sleeping; A,B,C,F
-# still in their delays).
-sleep 3
-PEAK=$(awk 'END{print NR}' "$WORKERS_FILE" 2>/dev/null)
-[ -z "$PEAK" ] && PEAK=0
+# Poll for peak concurrency (up to ~10s) instead of a fixed-time snapshot:
+# on slow runners the 4th worker may register after t=3s, and a single
+# snapshot flakes. The 5s story delays + the hang worker keep the peak
+# window open well past dispatch, so a deadline poll is race-free.
+WSNAP=$(mktemp -t ralph-wsnap.XXXXXX)
+PEAK=0
+VALID=0
+i=0
+while [ $i -lt 50 ]; do
+    cp "$WORKERS_FILE" "$WSNAP" 2>/dev/null || : > "$WSNAP"
+    n=$(awk 'END{print NR}' "$WSNAP")
+    if [ "$n" -gt "$PEAK" ]; then
+        PEAK=$n
+        VALID=$(read_workers_file "$WSNAP" | wc -l | tr -d ' ')
+    fi
+    [ "$PEAK" -ge 4 ] && break
+    sleep 0.2
+    i=$((i + 1))
+done
+rm -f "$WSNAP"
 assert_eq "$PEAK" "4" "AC1 4 workers active concurrently in workers.txt"
 
-VALID=$(read_workers_file "$WORKERS_FILE" | wc -l | tr -d ' ')
 assert_eq "$VALID" "$PEAK" "AC1 every workers.txt row is well-formed"
 
 # Now wait for the slow stories to commit and review (they delay 5s each),
