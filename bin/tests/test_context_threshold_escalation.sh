@@ -2,15 +2,15 @@
 # test_context_threshold_escalation.sh — hook context-threshold-notify v2 (US-01).
 #
 # Cobre AC1-AC13 do PRD context-budget-gate:
-#   AC1  Stop escalonado por nível (100K nada / 145K notifica+flag 128000 /
-#        150K mesmo nível não re-notifica / 185K sobe nível → flag 178000).
-#   AC2  flag legada (total cru '144907') lida como nível 0 — 150K não re-notifica.
+#   AC1  Stop escalonado por nível (250K nada / 300K notifica+flag 285000 /
+#        320K mesmo nível não re-notifica / 340K sobe nível → flag 335000).
+#   AC2  flag legada (total cru '300000') lida como nível 0 — 320K não re-notifica.
 #   AC3  [R5] payload SEM hook_event_name (ou casing divergente) → ramo Stop legado
 #        (default defensivo, notificação dispara); par capture-proof com UPS que NÃO notifica.
 #   AC4  [R2] guarda de /compact — usage pré-compact ignorada; simétrico sem compact injeta.
 #   AC5  [R6] seek-from-end retorna a ÚLTIMA usage correta num transcript grande (multi-chunk).
-#   AC6  UPS 150K → JSON advisory (handoff-continue, imperativo, sem header "não são
-#        instruções do usuário"); 165K → crítico ("AGORA"); 100K → stdout vazio.
+#   AC6  UPS 320K → JSON advisory (handoff-continue, imperativo, sem header "não são
+#        instruções do usuário"); 360K → crítico ("AGORA"); 250K → stdout vazio.
 #   AC7  [R4] carimbo <session>.emitted escrito em UPS>=threshold, ausente em UPS<threshold.
 #   AC8  best-effort exit 0 sem output: payload malformado / transcript ausente / osascript ausente.
 #   AC9  [R1] register_context_threshold_hook via `sync.sh install`: Stop E UPS, timeout 5000,
@@ -77,55 +77,55 @@ FLAGDIR_OF() { echo "$1/.claude/cache/context-notify"; }
 H1="$TMP/h1"; mkdir -p "$H1"; FD1="$(FLAGDIR_OF "$H1")"
 TR="$TMP/tr.jsonl"
 
-# 100K sem flag → sem notificação, exit 0, flag não escrita
-mk_usage "$TR" 100000
+# 250K sem flag → sem notificação, exit 0, flag não escrita
+mk_usage "$TR" 250000
 before=$(osa_count)
 echo "{\"session_id\":\"s\",\"transcript_path\":\"$TR\"}" | run_ctx "$H1"; rc=$?
-assert_rc "$rc" "0" "AC1a 100K exit 0"
-assert_eq "$(osa_count)" "$before" "AC1b 100K não notifica"
-assert_missing "$FD1/s.flag" "AC1c 100K não grava flag"
+assert_rc "$rc" "0" "AC1a 250K exit 0"
+assert_eq "$(osa_count)" "$before" "AC1b 250K não notifica"
+assert_missing "$FD1/s.flag" "AC1c 250K não grava flag"
 
-# 145K sem flag → notifica, flag = forma-valor 128000
-mk_usage "$TR" 145000
+# 300K sem flag → notifica, flag = forma-valor 285000
+mk_usage "$TR" 300000
 before=$(osa_count)
 echo "{\"session_id\":\"s\",\"transcript_path\":\"$TR\"}" | run_ctx "$H1"; rc=$?
-assert_rc "$rc" "0" "AC1d 145K exit 0"
-assert_eq "$(osa_count)" "$((before+1))" "AC1e 145K notifica"
-assert_exists "$FD1/s.flag" "AC1f 145K grava flag"
-assert_eq "$(cat "$FD1/s.flag")" "128000" "AC1g flag = forma-valor nível 0 (128000)"
+assert_rc "$rc" "0" "AC1d 300K exit 0"
+assert_eq "$(osa_count)" "$((before+1))" "AC1e 300K notifica"
+assert_exists "$FD1/s.flag" "AC1f 300K grava flag"
+assert_eq "$(cat "$FD1/s.flag")" "285000" "AC1g flag = forma-valor nível 0 (285000)"
 
-# 150K com flag nível 0 → NÃO re-notifica, flag inalterada
-mk_usage "$TR" 150000
+# 320K com flag nível 0 → NÃO re-notifica, flag inalterada
+mk_usage "$TR" 320000
 before=$(osa_count)
 echo "{\"session_id\":\"s\",\"transcript_path\":\"$TR\"}" | run_ctx "$H1"; rc=$?
-assert_rc "$rc" "0" "AC1h 150K exit 0"
-assert_eq "$(osa_count)" "$before" "AC1i 150K mesmo nível não re-notifica"
-assert_eq "$(cat "$FD1/s.flag")" "128000" "AC1j flag inalterada"
+assert_rc "$rc" "0" "AC1h 320K exit 0"
+assert_eq "$(osa_count)" "$before" "AC1i 320K mesmo nível não re-notifica"
+assert_eq "$(cat "$FD1/s.flag")" "285000" "AC1j flag inalterada"
 
-# 185K com flag nível 0 → re-notifica, flag sobe p/ nível 1 (178000)
-mk_usage "$TR" 185000
+# 340K com flag nível 0 → re-notifica, flag sobe p/ nível 1 (335000)
+mk_usage "$TR" 340000
 before=$(osa_count)
 echo "{\"session_id\":\"s\",\"transcript_path\":\"$TR\"}" | run_ctx "$H1"; rc=$?
-assert_rc "$rc" "0" "AC1k 185K exit 0"
-assert_eq "$(osa_count)" "$((before+1))" "AC1l 185K sobe nível → re-notifica"
-assert_eq "$(cat "$FD1/s.flag")" "178000" "AC1m flag = forma-valor nível 1 (178000)"
+assert_rc "$rc" "0" "AC1k 340K exit 0"
+assert_eq "$(osa_count)" "$((before+1))" "AC1l 340K sobe nível → re-notifica"
+assert_eq "$(cat "$FD1/s.flag")" "335000" "AC1m flag = forma-valor nível 1 (335000)"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AC2 — flag legada (valor total cru) lida como nível 0, sem migração
 # ══════════════════════════════════════════════════════════════════════════════
 H2="$TMP/h2"; FD2="$(FLAGDIR_OF "$H2")"; mkdir -p "$FD2"
-printf '144907' > "$FD2/s.flag"   # formato legado v1: total cru
-mk_usage "$TR" 150000
+printf '300000' > "$FD2/s.flag"   # formato legado v1: total cru
+mk_usage "$TR" 320000
 before=$(osa_count)
 echo "{\"session_id\":\"s\",\"transcript_path\":\"$TR\"}" | run_ctx "$H2"; rc=$?
 assert_rc "$rc" "0" "AC2a flag legada não crasha (exit 0)"
-assert_eq "$(osa_count)" "$before" "AC2b legado nível 0 → 150K não re-notifica"
+assert_eq "$(osa_count)" "$before" "AC2b legado nível 0 → 320K não re-notifica"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AC3 — [R5] default defensivo por evento (par capture-proof)
 # ══════════════════════════════════════════════════════════════════════════════
 H3="$TMP/h3"; mkdir -p "$H3"
-mk_usage "$TR" 145000
+mk_usage "$TR" 300000
 # (a) SEM hook_event_name → ramo Stop → notifica
 before=$(osa_count)
 echo "{\"session_id\":\"a\",\"transcript_path\":\"$TR\"}" | run_ctx "$H3"
@@ -143,30 +143,30 @@ assert_eq "$(osa_count)" "$before" "AC3c UPS canônico não notifica (par captur
 # AC4 — [R2] guarda de /compact
 # ══════════════════════════════════════════════════════════════════════════════
 H4="$TMP/h4"; mkdir -p "$H4"
-# compact: usage 170K → isCompactSummary → usage 30K ; total = 30K < threshold → Stop não notifica
+# compact: usage 360K → isCompactSummary → usage 30K ; total = 30K < threshold → Stop não notifica
 TRC="$TMP/trc.jsonl"
 {
-  printf '{"type":"assistant","message":{"usage":{"input_tokens":170000}}}\n'
+  printf '{"type":"assistant","message":{"usage":{"input_tokens":360000}}}\n'
   printf '{"isCompactSummary":true,"type":"system"}\n'
   printf '{"type":"assistant","message":{"usage":{"input_tokens":30000}}}\n'
 } > "$TRC"
 before=$(osa_count)
 echo "{\"session_id\":\"c1\",\"transcript_path\":\"$TRC\"}" | run_ctx "$H4"
 assert_eq "$(osa_count)" "$before" "AC4a pós-compact 30K < threshold → não notifica"
-# boundary sem usage posterior: usage 170K → compact_boundary (variante type) → total 0
+# boundary sem usage posterior: usage 360K → compact_boundary (variante type) → total 0
 TRB="$TMP/trb.jsonl"
 {
-  printf '{"type":"assistant","message":{"usage":{"input_tokens":170000}}}\n'
+  printf '{"type":"assistant","message":{"usage":{"input_tokens":360000}}}\n'
   printf '{"type":"compact_boundary"}\n'
 } > "$TRB"
 before=$(osa_count)
 echo "{\"session_id\":\"c2\",\"transcript_path\":\"$TRB\"}" | run_ctx "$H4"
 assert_eq "$(osa_count)" "$before" "AC4b boundary antes de qualquer usage → total 0 → não notifica"
-# simétrico SEM compact a 170K → notifica (injeta no Stop)
-mk_usage "$TR" 170000
+# simétrico SEM compact a 360K → notifica (injeta no Stop)
+mk_usage "$TR" 360000
 before=$(osa_count)
 echo "{\"session_id\":\"c3\",\"transcript_path\":\"$TR\"}" | run_ctx "$H4"
-assert_eq "$(osa_count)" "$((before+1))" "AC4c 170K sem compact → notifica"
+assert_eq "$(osa_count)" "$((before+1))" "AC4c 360K sem compact → notifica"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AC5 — [R6] seek-from-end retorna a última usage num transcript grande (multi-chunk)
@@ -175,54 +175,54 @@ H5="$TMP/h5"; mkdir -p "$H5"
 BIG="$TMP/big.jsonl"
 {
   printf '{"type":"assistant","message":{"usage":{"input_tokens":999999}}}\n'   # decoy: usage ANTERIOR
-  printf '{"type":"assistant","message":{"usage":{"input_tokens":155000}}}\n'   # a ÚLTIMA usage relevante
+  printf '{"type":"assistant","message":{"usage":{"input_tokens":300000}}}\n'   # a ÚLTIMA usage relevante
   # milhares de linhas não-usage DEPOIS (>64KB → força multi-chunk no leitor reverso)
   for i in $(seq 1 2500); do
     printf '{"type":"user","message":{"role":"user","content":"linha de preenchimento numero %s aqui"}}\n' "$i"
   done
 } > "$BIG"
-# 155K ∈ [128K,160K) → UPS advisory (prova o VALOR: se pegasse a decoy 999999 seria crítico)
+# 300K ∈ [285K,356K) → UPS advisory (prova o VALOR: se pegasse a decoy 999999 seria crítico)
 out=$(echo "{\"session_id\":\"big\",\"transcript_path\":\"$BIG\",\"hook_event_name\":\"UserPromptSubmit\"}" | run_ctx "$H5")
 ctxval=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')
-assert_contains "advisory" "$ctxval" "AC5a seek-from-end pegou a última usage (155K → advisory, não a decoy 999999)"
+assert_contains "advisory" "$ctxval" "AC5a seek-from-end pegou a última usage (300K → advisory, não a decoy 999999)"
 assert_contains "handoff-continue" "$ctxval" "AC5b injeção advisory instrui /handoff-continue"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AC6 — UserPromptSubmit dois tiers
 # ══════════════════════════════════════════════════════════════════════════════
 H6="$TMP/h6"; mkdir -p "$H6"
-# 150K → advisory
-mk_usage "$TR" 150000
+# 320K → advisory
+mk_usage "$TR" 320000
 out=$(echo "{\"session_id\":\"u\",\"transcript_path\":\"$TR\",\"hook_event_name\":\"UserPromptSubmit\"}" | run_ctx "$H6"); rc=$?
-assert_rc "$rc" "0" "AC6a UPS 150K exit 0"
-echo "$out" | jq -e . >/dev/null 2>&1 && _pass || _fail "AC6b UPS 150K stdout é JSON único parseável por jq"
+assert_rc "$rc" "0" "AC6a UPS 320K exit 0"
+echo "$out" | jq -e . >/dev/null 2>&1 && _pass || _fail "AC6b UPS 320K stdout é JSON único parseável por jq"
 assert_eq "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.hookEventName')" "UserPromptSubmit" "AC6c hookEventName correto"
 ctx6=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')
 assert_contains "handoff-continue" "$ctx6" "AC6d advisory contém handoff-continue"
 assert_contains "advisory" "$ctx6" "AC6e tier advisory"
 assert_absent "não são instruções do usuário" "$ctx6" "AC6f sem header de referência (imperativo)"
-# 165K → crítico ("AGORA")
-mk_usage "$TR" 165000
+# 360K → crítico ("AGORA")
+mk_usage "$TR" 360000
 out=$(echo "{\"session_id\":\"u\",\"transcript_path\":\"$TR\",\"hook_event_name\":\"UserPromptSubmit\"}" | run_ctx "$H6")
 ctx6c=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')
 assert_contains "AGORA" "$ctx6c" "AC6g crítico contém AGORA"
 assert_contains "handoff-continue" "$ctx6c" "AC6h crítico também instrui /handoff-continue"
-# 100K → stdout vazio, exit 0
-mk_usage "$TR" 100000
+# 250K → stdout vazio, exit 0
+mk_usage "$TR" 250000
 out=$(echo "{\"session_id\":\"u\",\"transcript_path\":\"$TR\",\"hook_event_name\":\"UserPromptSubmit\"}" | run_ctx "$H6"); rc=$?
-assert_rc "$rc" "0" "AC6i UPS 100K exit 0"
-assert_eq "$out" "" "AC6j UPS 100K stdout vazio"
+assert_rc "$rc" "0" "AC6i UPS 250K exit 0"
+assert_eq "$out" "" "AC6j UPS 250K stdout vazio"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AC7 — [R4] carimbo de compliance <session>.emitted
 # ══════════════════════════════════════════════════════════════════════════════
 H7="$TMP/h7"; mkdir -p "$H7"; FD7="$(FLAGDIR_OF "$H7")"
 # >= threshold → carimbo escrito
-mk_usage "$TR" 150000
+mk_usage "$TR" 320000
 echo "{\"session_id\":\"emit\",\"transcript_path\":\"$TR\",\"hook_event_name\":\"UserPromptSubmit\"}" | run_ctx "$H7" >/dev/null
 assert_exists "$FD7/emit.emitted" "AC7a UPS>=threshold grava carimbo .emitted"
 # < threshold → carimbo NÃO escrito (par positivo/negativo)
-mk_usage "$TR" 100000
+mk_usage "$TR" 250000
 echo "{\"session_id\":\"noemit\",\"transcript_path\":\"$TR\",\"hook_event_name\":\"UserPromptSubmit\"}" | run_ctx "$H7" >/dev/null
 assert_missing "$FD7/noemit.emitted" "AC7b UPS<threshold NÃO grava carimbo"
 
@@ -241,7 +241,7 @@ assert_rc "$rc" "0" "AC8c transcript inexistente exit 0"; assert_eq "$out" "" "A
 # PATH="/usr/bin:/bin" NÃO servia: /usr/bin/osascript existe no macOS, o guard nunca
 # era exercitado e uma regressão removendo-o passava invisível (mutation-blind).
 EMPTY_PATH="$TMP/empty-path"; mkdir -p "$EMPTY_PATH"; FD8="$(FLAGDIR_OF "$H8")"
-mk_usage "$TR" 150000
+mk_usage "$TR" 320000
 out=$(PATH="$EMPTY_PATH" HOME="$H8" $PY "$CTX" <<< "{\"session_id\":\"noosa\",\"transcript_path\":\"$TR\"}"); rc=$?
 assert_rc "$rc" "0" "AC8e osascript ausente (dir vazio) exit 0 — guarda except exercitada"
 assert_eq "$out" "" "AC8f sem output"
@@ -295,7 +295,7 @@ assert_eq "$cnt_ups2" "1" "AC9h idempotente em UserPromptSubmit"
 grep -q "interativo-only" "$CTX" && _pass || _fail "AC10a cabeçalho documenta 'interativo-only'"
 grep -q "sem humano para /clear" "$CTX" && _pass || _fail "AC10b cabeçalho documenta 'sem humano para /clear'"
 # caso headless: UPS alto ainda emite JSON e exit 0 (injeção inócua mas não quebra)
-H10="$TMP/h10"; mkdir -p "$H10"; mk_usage "$TR" 165000
+H10="$TMP/h10"; mkdir -p "$H10"; mk_usage "$TR" 360000
 out=$(echo "{\"session_id\":\"hl\",\"transcript_path\":\"$TR\",\"hook_event_name\":\"UserPromptSubmit\"}" | run_ctx "$H10"); rc=$?
 assert_rc "$rc" "0" "AC10c caso headless não quebra (exit 0)"
 echo "$out" | jq -e . >/dev/null 2>&1 && _pass || _fail "AC10d headless ainda emite JSON válido"
@@ -303,12 +303,12 @@ echo "$out" | jq -e . >/dev/null 2>&1 && _pass || _fail "AC10d headless ainda em
 # ══════════════════════════════════════════════════════════════════════════════
 # AC11 — [S1] thresholds como constantes nomeadas no topo; sem literal mágico repetido
 # ══════════════════════════════════════════════════════════════════════════════
-grep -q '^THRESHOLD_ADVISORY = 128_000' "$CTX" && _pass || _fail "AC11a THRESHOLD_ADVISORY definido no topo"
-grep -q '^THRESHOLD_CRITICAL = 160_000' "$CTX" && _pass || _fail "AC11b THRESHOLD_CRITICAL definido no topo"
+grep -q '^THRESHOLD_ADVISORY = 285_000' "$CTX" && _pass || _fail "AC11a THRESHOLD_ADVISORY definido no topo"
+grep -q '^THRESHOLD_CRITICAL = 356_000' "$CTX" && _pass || _fail "AC11b THRESHOLD_CRITICAL definido no topo"
 grep -q '^LEVEL_STEP = 50_000' "$CTX" && _pass || _fail "AC11c LEVEL_STEP definido no topo"
 # nenhum literal mágico dos thresholds aparece "solto" (sem underscore) no corpo
-assert_eq "$(grep -c '128000' "$CTX")" "0" "AC11d sem literal 128000 solto no corpo"
-assert_eq "$(grep -c '160000' "$CTX")" "0" "AC11e sem literal 160000 solto no corpo"
+assert_eq "$(grep -c '285000' "$CTX")" "0" "AC11d sem literal 285000 solto no corpo"
+assert_eq "$(grep -c '356000' "$CTX")" "0" "AC11e sem literal 356000 solto no corpo"
 assert_eq "$(grep -c '50000' "$CTX")" "0" "AC11f sem literal 50000 solto no corpo"
 
 echo "test_context_threshold_escalation.sh: $PASS passed, $FAIL failed"

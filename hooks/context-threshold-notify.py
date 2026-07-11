@@ -32,8 +32,8 @@ import time
 from pathlib import Path
 
 # Thresholds (constantes nomeadas — sem literais mágicos repetidos no corpo).
-THRESHOLD_ADVISORY = 128_000   # tier advisory e base dos níveis de escalonamento do Stop
-THRESHOLD_CRITICAL = 160_000   # tier crítico do UserPromptSubmit ("AGORA")
+THRESHOLD_ADVISORY = 285_000   # tier advisory e base dos níveis de escalonamento do Stop
+THRESHOLD_CRITICAL = 356_000   # tier crítico do UserPromptSubmit ("AGORA")
 LEVEL_STEP = 50_000            # degrau de re-notificação escalonada do Stop
 _CHUNK = 65_536               # bloco do leitor seek-from-end
 
