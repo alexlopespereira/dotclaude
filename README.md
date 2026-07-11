@@ -391,8 +391,6 @@ After installation, these slash commands are available in any Claude Code projec
 | `/morning` | Parallel workflow (Boris) | Daily routine — sync-all + launch tabs |
 | `/commit-push-pr` | Git workflow | Creates ephemeral branch, commits, pushes, opens PR (auto-merge default; soft-merge on unprotected repos) |
 | `/force-merge` | Git workflow | Merges an open PR now (soft / `--wait` / `--admin`), then syncs the pool |
-| `/create-worktree` *(legacy)* | Git workflow | Creates isolated git worktree at `~/Projects/worktrees/` |
-| `/delete-worktree` *(legacy)* | Git workflow | Removes worktree after merge (with safety checks) |
 | `/prd-convert` | Implementation | Converts an approved plan into prd.json (Ralph format) |
 | `/ralph-adversarial` | Implementation | Runs the Ralph loop with Codex code review (`--parallel[=N]` dispatches stories concurrently across pool slots) |
 | `/graphify-init` | Knowledge graph | Bootstraps Graphify in a repo (build + hooks + .gitignore + local commit) |
@@ -484,7 +482,6 @@ After installation, these slash commands are available in any Claude Code projec
 **Isolation management is explicit and user-owned.** This command does **not** create or release slots/worktrees. Choose your isolation model before invoking:
 
 - **Recommended (Boris parallel checkouts):** run `/checkout-use <repo> <slot>` and `cd` into `~/Projects/checkouts/<repo>-<slot>`. After PR merges, run `/sync` (or `/checkout-sync-all <repo>`) to update all slots.
-- **Legacy (worktree):** `/create-worktree <slug>` then `cd` into the worktree. After merge, `/delete-worktree`.
 - **None:** run directly in the main checkout.
 
 **What happens when you run it:**
@@ -527,61 +524,6 @@ Phase 7   — PR #128 merged
 Phase 9   — Reflect: DoD baseline recorded
 
 > /sync                              # propagate merged main to all slots
-```
-
----
-
-### `/create-worktree <slug> [base-branch]`
-
-**Purpose:** Creates an isolated git worktree so feature work never pollutes the main checkout.
-
-**What happens when you run it:**
-
-1. Validates the slug (`^[a-z0-9][a-z0-9-]*$`) and that the base branch exists
-2. Fetches `origin/<base>` (default `main`) to ensure the worktree starts from the latest remote state
-3. Creates `~/Projects/worktrees/<repo-name>-<slug>` with a new branch `<slug>`
-4. Reports the path so subsequent work (`cd`, `git -C`, file operations) targets it
-
-**Layout convention:** all worktrees live under `~/Projects/worktrees/` and are named `<repo-name>-<slug>` to disambiguate across repos.
-
-**Guardrails:** refuses to overwrite an existing worktree path (use `/delete-worktree` first). Never creates a worktree on top of uncommitted changes in the source branch without warning.
-
-**Example:**
-```
-> /create-worktree fix-auth-bug
-
-Worktree created:
-  path:   /Users/you/Projects/worktrees/myapp-fix-auth-bug
-  branch: fix-auth-bug
-  base:   main
-```
-
----
-
-### `/delete-worktree [path-or-slug] [--force]`
-
-**Purpose:** Removes a worktree after the work has been merged. Runs safety checks before deleting anything.
-
-**What happens when you run it:**
-
-1. Resolves the target — explicit path, slug (mapped to `~/Projects/worktrees/<repo>-<slug>`), or the current working directory if it's inside `~/Projects/worktrees/`
-2. Verifies the path is a real worktree via `git worktree list` — refuses to touch the main repo
-3. **Safety checks** (skipped only with `--force`):
-   - No uncommitted changes in the worktree
-   - Branch is merged — verified via `gh pr list --state all` (preferred) or `git merge-base --is-ancestor` as fallback
-4. Runs `git worktree remove` + `git worktree prune`
-5. Deletes the local branch with `git branch -d` (safe delete — refuses unmerged work)
-
-**Guardrails:** never deletes the main repository. Never force-deletes a branch that wasn't merged, even with `--force` — the flag only bypasses the safety checks, not the branch-safety of `git branch -d`.
-
-**Example:**
-```
-> /delete-worktree fix-auth-bug
-
-Worktree removed:
-  path:   /Users/you/Projects/worktrees/myapp-fix-auth-bug
-  branch: fix-auth-bug (local deleted)
-  merged: true
 ```
 
 ---
@@ -889,7 +831,7 @@ dotclaude/
 │   ├── adversarial-research.md  research-status.md  research-synthesize.md
 │   ├── checkout-init.md  checkout-launch.md  checkout-use.md
 │   ├── checkout-status.md  checkout-sync-all.md  sync.md  morning.md
-│   ├── commit-push-pr.md  commit-push-pr-push.md  create-worktree.md  delete-worktree.md
+│   ├── commit-push-pr.md  commit-push-pr-push.md
 │   ├── prd-convert.md  ralph-adversarial.md  graphify-init.md
 │   ├── supply-chain-audit.md  browser-status.md  browser-logout-all.md
 │   └── handoff-continue.md  export-report.md
@@ -994,7 +936,7 @@ The protocols here aren't arbitrary ceremony — each one addresses a specific, 
 | Self-review of own code misses introduced bugs | Ralph loop: Claude implements, Codex (different provider) reviews each commit |
 | Long implementations drift from the plan | Fresh context per story + `ac_trace` in every commit forces traceability |
 | Agents pass their own tests (which they wrote) | TDD RED-before-GREEN + pre-commit hook + test-runner subagent |
-| Autonomous loops contaminate the working checkout | Boris parallel checkouts — 5 slots on `main` local, ephemeral branch only at push (`/create-worktree` remains as a legacy isolation fallback) |
+| Autonomous loops contaminate the working checkout | Boris parallel checkouts — 5 slots on `main` local, ephemeral branch only at push |
 | Playwright MCP floods context with a11y trees | CLI-first policy in the `testing` skill; MCP only for explicit cases |
 | Docs drift from code as the repo evolves | Graphify AST-derived knowledge graph (`graphify-out/`), refreshed by zero-LLM git hooks |
 | Agents write green-but-vacuous tests | DoD → `/test-spec` Gherkin specs → `[bN]` TDD-chain IDs → `/reflect` retrospective |
