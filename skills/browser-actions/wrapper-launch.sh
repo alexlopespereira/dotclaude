@@ -21,8 +21,19 @@
 # (chrome-profile-<slot>-pid<PID>), removido no exit. Custo: sem cookies
 # herdados nessa 2ª sessão; ganho: playwright funciona em paralelo, sem
 # "Connection closed". O caso comum (1 sessão/slot) mantém o profile persistente.
-# Trap limpa em SIGINT/TERM/HUP. SIGKILL deixa órfão — acquire_lock detecta
-# via kill -0 no PID gravado.
+#
+# Ciclo de vida / sinais (corrigido 2026-07-12 — ver test_wrapper_launch_signals.sh):
+# o MCP roda em BACKGROUND + `wait`, não em foreground. Motivo: bash ADIA traps
+# enquanto um comando foreground não retorna, então um SIGTERM dirigido ao wrapper
+# ficava pendente pra sempre (o npx nunca recebia o sinal — kill por PID não atinge
+# o grupo). O supervisor escalava pra SIGKILL, o trap NUNCA rodava, e npx/node/chrome
+# eram reparentados ao init: 234 profiles órfãos + Chromes zumbis segurando conexões
+# gvfs até estourar o limite de 1024 FDs do gvfsd (que então inundou o syslog com
+# "Too many open files" — 9,2G num único ciclo de rotação).
+# Agora: filho em sessão/grupo próprio (setsid), cleanup mata o GRUPO inteiro
+# (npx → sh → node → chrome) com TERM e escala pra KILL. SIGKILL no wrapper segue
+# inmascarável por definição — daí o GC de startup abaixo, que varre profiles
+# efêmeros cujo PID já morreu.
 #
 # Invocado pelo MCP em ~/.claude.json (escopo user):
 #   playwright -> /Users/dev/.claude/skills/browser-actions/wrapper-launch.sh
@@ -47,6 +58,26 @@ PROFILE_DIR="$PROFILE_BASE"
 LOCK_DIR="$PROFILE_DIR/.lock"
 PID_FILE="$LOCK_DIR/pid"
 mkdir -p "$PROFILE_DIR"
+
+# GC de startup — varre profiles efêmeros cujo PID dono já morreu.
+# SIGKILL não roda trap, então SEM esta varredura todo kill -9 vira lixo
+# permanente em disco (foi assim que 234 profiles/1,2G se acumularam).
+# Global (todos os slots), não só o atual: um slot que nunca mais subir jamais
+# limparia os próprios órfãos. Só remove com PID comprovadamente morto — se o
+# PID foi reciclado por outro processo vivo, preserva (erra pro lado seguro).
+gc_stale_profiles() {
+  local stale spid
+  for stale in "$HOME"/.claude/chrome-profile-*-pid*; do
+    [ -d "$stale" ] || continue
+    spid="${stale##*-pid}"
+    case "$spid" in ''|*[!0-9]*) continue ;; esac
+    kill -0 "$spid" 2>/dev/null || rm -rf "$stale" 2>/dev/null || true
+  done
+}
+gc_stale_profiles
+
+# Seam de teste: roda só o GC e sai (não sobe o MCP).
+[ "${WRAPPER_GC_ONLY:-0}" = "1" ] && exit 0
 
 # acquire_lock <lock_dir> — 0 = adquirido (cria o dir), 1 = dono vivo segurando.
 # Órfãos (PID morto) são limpos e o lock readquirido (best-effort, race-prone).
@@ -91,12 +122,50 @@ fi
 
 echo $$ > "$PID_FILE"
 
+CHILD=""
+CHILD_PGID=""
+MY_PGID="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ' || true)"
+CLEANED=0
+
+# Fallback pra quando o filho não conseguiu grupo próprio: derruba a árvore
+# de descendentes de baixo pra cima (npx → sh → node → chrome).
+kill_tree() {
+  local p="$1" sig="$2" c
+  for c in $(pgrep -P "$p" 2>/dev/null || true); do kill_tree "$c" "$sig"; done
+  kill "-$sig" "$p" 2>/dev/null || true
+}
+
+# Mata a árvore do MCP e só então limpa o disco. A ordem importa: o Chromium
+# recria arquivos no --user-data-dir enquanto vivo, então remover o profile
+# antes de matá-lo deixa um diretório-stub renascido (era a origem dos órfãos
+# de 16K que conviviam com os de 400M).
+terminate_child() {
+  [ -n "$CHILD" ] || return 0
+  if [ -n "$CHILD_PGID" ] && [ "$CHILD_PGID" != "$MY_PGID" ]; then
+    kill -TERM "-$CHILD_PGID" 2>/dev/null || true
+    for _ in $(seq 1 20); do
+      kill -0 "-$CHILD_PGID" 2>/dev/null || return 0
+      sleep 0.25
+    done
+    kill -KILL "-$CHILD_PGID" 2>/dev/null || true
+  else
+    kill_tree "$CHILD" TERM
+    sleep 1
+    kill_tree "$CHILD" KILL
+  fi
+}
+
 cleanup() {
+  [ "$CLEANED" = "1" ] && return 0
+  CLEANED=1
+  terminate_child
   rm -rf "$LOCK_DIR" 2>/dev/null || true
   # Profile efêmero é descartável: remove inteiro pra não acumular lixo.
   if [ "$EPHEMERAL" = "1" ]; then rm -rf "$PROFILE_DIR" 2>/dev/null || true; fi
 }
-trap cleanup EXIT INT TERM HUP
+on_signal() { cleanup; exit 143; }
+trap cleanup EXIT
+trap on_signal INT TERM HUP
 
 # Seam de OS pra testabilidade: default $(uname), override via WRAPPER_OS.
 WRAPPER_OS="${WRAPPER_OS:-$(uname)}"
@@ -163,11 +232,36 @@ JSON
 fi
 
 # Não usa exec — wrapper precisa continuar vivo pra trap rodar e limpar lock.
-# Sinais propagam ao filho automaticamente (mesmo grupo de processo).
+#
+# BACKGROUND + wait, não foreground: bash só roda um trap depois que o comando
+# em foreground retorna, então em foreground o SIGTERM do supervisor ficava
+# pendente indefinidamente e o wrapper parecia "ignorar" o sinal. Com `wait`,
+# o trap dispara na hora. (NÃO reverta pra foreground — test_wrapper_launch_signals.sh
+# T1/T2/T3 falham.)
+#
+# setsid: põe o MCP em sessão/grupo próprio, pra o cleanup poder derrubar o
+# grupo INTEIRO (npx → sh → node → chrome). Sem isso, kill no PID do npx deixa
+# o Chromium vivo e reparentado ao init.
+#
+# <&3: stdin explícito. Bash redireciona stdin de job em background pra
+# /dev/null quando job control está off (não-interativo, que é o caso aqui) —
+# e o MCP fala o protocolo por stdio, então isso o mataria na largada. O
+# redirect explícito sobrepõe o default.
+#
 # Expansão guardada (${arr[@]+...}) pra não disparar "unbound variable" sob
 # `set -u` quando EXTRA_FLAGS está vazio no bash 3.2 do macOS.
-npx -y @playwright/mcp@latest \
+exec 3<&0
+setsid npx -y @playwright/mcp@latest \
   --user-data-dir "$PROFILE_DIR" \
   $BROWSER_FLAG \
   ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} \
-  "$@"
+  "$@" <&3 &
+CHILD=$!
+CHILD_PGID="$(ps -o pgid= -p "$CHILD" 2>/dev/null | tr -d ' ' || true)"
+
+# `wait` retorna 128+sinal quando um trap interrompe; sob `set -e` isso encerraria
+# o script antes do trap EXIT concluir. O `|| true` preserva o fluxo; o código real
+# do MCP é recuperado logo abaixo.
+RC=0
+wait "$CHILD" || RC=$?
+exit "$RC"
