@@ -34,6 +34,10 @@
 # (npx → sh → node → chrome) com TERM e escala pra KILL. SIGKILL no wrapper segue
 # inmascarável por definição — daí o GC de startup abaixo, que varre profiles
 # efêmeros cujo PID já morreu.
+# setsid é util-linux: existe no Linux (VMs/CI), NÃO no macOS — a 1ª versão do
+# #115 o chamava incondicionalmente e o launch morria com rc=127 no laptop.
+# Sem setsid, o filho fica no grupo do wrapper e o cleanup desce a árvore de
+# descendentes com kill_tree (mesmo efeito, sem depender do grupo próprio).
 #
 # Invocado pelo MCP em ~/.claude.json (escopo user):
 #   playwright -> /Users/dev/.claude/skills/browser-actions/wrapper-launch.sh
@@ -144,6 +148,12 @@ terminate_child() {
   if [ -n "$CHILD_PGID" ] && [ "$CHILD_PGID" != "$MY_PGID" ]; then
     kill -TERM "-$CHILD_PGID" 2>/dev/null || true
     for _ in $(seq 1 20); do
+      # Reap explícito do filho direto: zumbi conta como "vivo" pro kill -0 e o
+      # wrapper (parado dentro do trap) não reapa sozinho — sem isto o loop
+      # queimava os 5s inteiros em todo shutdown (visto na VM1, 2026-07-12).
+      case "$(ps -o stat= -p "$CHILD" 2>/dev/null | tr -d ' ')" in
+        ''|Z*) wait "$CHILD" 2>/dev/null || true ;;
+      esac
       kill -0 "-$CHILD_PGID" 2>/dev/null || return 0
       sleep 0.25
     done
@@ -158,6 +168,11 @@ terminate_child() {
 cleanup() {
   [ "$CLEANED" = "1" ] && return 0
   CLEANED=1
+  # Mascara sinais durante o cleanup: um TERM que chegasse AQUI disparava
+  # on_signal, que via CLEANED=1 retornava na hora e dava exit 143 ANTES dos
+  # rm abaixo — o perfil efêmero vazava com .lock/pid intacto (vazamento T2/T5
+  # do test_wrapper_launch_signals.sh, reproduzido na VM1 em 2026-07-12).
+  trap '' INT TERM HUP
   terminate_child
   rm -rf "$LOCK_DIR" 2>/dev/null || true
   # Profile efêmero é descartável: remove inteiro pra não acumular lixo.
@@ -178,6 +193,13 @@ WRAPPER_OS="${WRAPPER_OS:-$(uname)}"
 # só no Linux. Sem o gate, rodar o detector num macOS com Chrome.app marcaria
 # `chrome` mesmo num cenário Linux simulado.
 chrome_present() {
+  # Seam de teste: WRAPPER_CHROME=1|0 força presença/ausência. O runner
+  # ubuntu-latest tem /usr/bin/google-chrome REAL e asserts sobre `command -v`
+  # não podem esconder binário filtrando PATH (usrmerge — ver CONTEXT.md).
+  case "${WRAPPER_CHROME:-}" in
+    1) return 0 ;;
+    0) return 1 ;;
+  esac
   if [ "$WRAPPER_OS" = "Darwin" ]; then
     [ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]
   else
@@ -241,7 +263,10 @@ fi
 #
 # setsid: põe o MCP em sessão/grupo próprio, pra o cleanup poder derrubar o
 # grupo INTEIRO (npx → sh → node → chrome). Sem isso, kill no PID do npx deixa
-# o Chromium vivo e reparentado ao init.
+# o Chromium vivo e reparentado ao init. CONDICIONAL: macOS não tem setsid
+# (util-linux) — aí o filho fica no grupo do wrapper e o cleanup usa o
+# fallback kill_tree. Seam: WRAPPER_SETSID=0 força o fallback (testável no
+# Linux, onde setsid existe).
 #
 # <&3: stdin explícito. Bash redireciona stdin de job em background pra
 # /dev/null quando job control está off (não-interativo, que é o caso aqui) —
@@ -250,8 +275,13 @@ fi
 #
 # Expansão guardada (${arr[@]+...}) pra não disparar "unbound variable" sob
 # `set -u` quando EXTRA_FLAGS está vazio no bash 3.2 do macOS.
+SETSID_CMD=()
+if [ "${WRAPPER_SETSID:-1}" != "0" ] && command -v setsid >/dev/null 2>&1; then
+  SETSID_CMD=(setsid)
+fi
+
 exec 3<&0
-setsid npx -y @playwright/mcp@latest \
+${SETSID_CMD[@]+"${SETSID_CMD[@]}"} npx -y @playwright/mcp@latest \
   --user-data-dir "$PROFILE_DIR" \
   $BROWSER_FLAG \
   ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} \
