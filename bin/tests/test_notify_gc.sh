@@ -37,8 +37,13 @@ BINDIR="$TMP/bin"; mkdir -p "$BINDIR"
 printf '#!/bin/bash\nexit 0\n' > "$BINDIR/osascript"; chmod +x "$BINDIR/osascript"
 export PATH="$BINDIR:$PATH"
 
-old_ts() { # mtime de N dias atrás no formato do touch -t (CCYYMMDDhhmm)
-  date -v-"$1"d +%Y%m%d%H%M
+# Dual de data compartilhado (testlib) — evita 3ª cópia divergente do idiom
+# (review holístico #7). UTC vs local desloca ≤3h; thresholds são em dias.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/testlib.sh"
+old_ts() { _days_ago_iso "$1" %Y%m%d%H%M; } # formato do touch -t (CCYYMMDDhhmm)
+
+mtime_epoch() { # mtime epoch (número) — GNU `stat -f` suja o stdout, por isso -c primeiro
+  stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0
 }
 
 # ── AC3: stop-notify GC ───────────────────────────────────────────────────────
@@ -55,12 +60,12 @@ assert_exists  "$CACHE/novo-hoje"  "AC3d arquivo de hoje preservado"
 assert_exists  "$CACHE/.last-gc"   "AC3e marcador criado"
 
 # marcador fresco → NÃO varre de novo: planta velho, re-roda, velho sobrevive
-MARK_BEFORE=$(stat -f %m "$CACHE/.last-gc")
+MARK_BEFORE=$(mtime_epoch "$CACHE/.last-gc")
 touch -t "$(old_ts 40)" "$CACHE/velho-plantado"
 printf '{"session_id":"s2"}' | HOME="$H" bash "$STOP"; rc=$?
 assert_rc "$rc" "0" "AC3f 2ª chamada exit 0"
 assert_exists "$CACHE/velho-plantado" "AC3g marcador fresco: sem re-varredura"
-assert_eq "$(stat -f %m "$CACHE/.last-gc")" "$MARK_BEFORE" "AC3h marcador não re-tocado no mesmo dia"
+assert_eq "$(mtime_epoch "$CACHE/.last-gc")" "$MARK_BEFORE" "AC3h marcador não re-tocado no mesmo dia"
 
 # AC5: debounce preservado — 2ª chamada com mesmo session_id <30s sai cedo (exit 0)
 printf '{"session_id":"s1"}' | HOME="$H" bash "$STOP"; assert_rc "$?" "0" "AC5a debounce segue exit 0"

@@ -46,6 +46,12 @@ athink()  { printf '{"type":"assistant","message":{"role":"assistant","content":
 aside()   { printf '{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"%s"}]}}\n' "$1" >> "$T"; }
 
 # ── Runner: OUT/RC/ERR/AUDIT globais; EXTRA_ENV injeta seams (sem espaços) ───
+# Isolamento do mode-file: TODA invocação carrega AUTONOMY_GUARD_MODE_FILE
+# apontando pra path inexistente do $TMP — o default do hook
+# (~/.claude/cache/autonomy/mode) NUNCA é lido, senão um host/VM com 'block'
+# gravado quebra os casos advisory (baseline VM1: 1b/1e/1f/2b/2d/4c). Como
+# duplicata posterior vence no env(1), um MODE_FILE explícito em EXTRA_ENV
+# (caso 19) sobrescreve o default sem tratamento especial.
 EXTRA_ENV=""
 run_hook() { # <case> [payload — default: session sess-<case> + transcript $T]
   local c="$1" payload="${2:-}"
@@ -53,7 +59,11 @@ run_hook() { # <case> [payload — default: session sess-<case> + transcript $T]
   [ -n "$payload" ] || payload="{\"session_id\":\"sess-$c\",\"transcript_path\":\"$T\",\"stop_hook_active\":false}"
   # EXTRA_ENV é lista de VAR=valor sem espaços — expansão sem aspas proposital
   # shellcheck disable=SC2086
-  OUT="$(printf '%s' "$payload" | env AUTONOMY_GUARD_AUDIT="$AUDIT" $EXTRA_ENV bash "$HOOK" 2>"$ERR")"
+  # AUTONOMY_GUARD_MODE= (vazia, falsy em resolve_mode) neutraliza herança do
+  # shell chamador — a env var tem precedência sobre o MODE_FILE, então sem
+  # isso um host com AUTONOMY_GUARD_MODE=block exportado quebra os casos
+  # advisory (review holístico #1, reproduzido). Duplicata em EXTRA_ENV vence.
+  OUT="$(printf '%s' "$payload" | env AUTONOMY_GUARD_AUDIT="$AUDIT" AUTONOMY_GUARD_MODE_FILE="$TMP/nonexistent-mode" AUTONOMY_GUARD_MODE= $EXTRA_ENV bash "$HOOK" 2>"$ERR")"
   RC=$?
 }
 audit_lines() { [ -f "$AUDIT" ] && wc -l < "$AUDIT" | tr -d ' ' || echo 0; }

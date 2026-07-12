@@ -20,7 +20,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 GATE="$REPO_ROOT/bin/gate-e3.sh"
 FCS="$REPO_ROOT/commands/full-cycle-simple.md"
 
-TMP="$(mktemp -d -t gate_e3_test)"
+TMP="$(mktemp -d -t gate_e3.XXXXXX)"
 trap 'rm -rf "$TMP"' EXIT
 
 PASS=0; FAIL=0; FAILED=""

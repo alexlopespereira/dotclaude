@@ -65,6 +65,11 @@ MOCK_EOF
   chmod +x "$MOCK_DIR/gh"
 }
 
+# Neutraliza herança do ambiente chamador (review US-03 iter2): um
+# CHECKOUT_INIT_GH exportado no shell externo vazaria pros cenários 1-3, que
+# exercitam o default `gh` via PATH mockado. Cenário 4 re-exporta localmente.
+unset CHECKOUT_INIT_GH
+
 # Run only the config block from checkout-init.sh in isolation.
 # Inject CHECKOUT_BASE + REPO_NAME via env, source the block.
 run_config_block() {
@@ -124,47 +129,21 @@ teardown_workspace
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Test 4: gh CLI ausente → log warning, continua (rc=0)
-# Estratégia: shadow `gh` com um stub que exit 127 (command-not-found-style)
-# E faz `command -v gh` retornar falso. O jeito mais simples é criar um
-# diretório de mocks com um shim "gh" que NÃO é executável (assim
-# `command -v` o ignora) — mas isso depende do PATH não ter outro gh real
-# antes. Solução robusta: tornar o teste chamar o bloco isolando PATH para
-# excluir o real gh, mantendo /usr/bin e /bin.
+# Estratégia: seam CHECKOUT_INIT_GH apontando pra path inexistente — simula
+# ausência sem manipular PATH. Filtrar diretórios do PATH é incompatível com
+# usrmerge (no Ubuntu gh pode morar em /usr/bin junto de awk/sed/git; remover
+# o dir removeria utilitários essenciais do próprio bloco).
 setup_workspace
-# Construir PATH sem o diretório do gh real
-GH_REAL=$(command -v gh)
-GH_DIR=$(dirname "$GH_REAL")
-# Filtrar GH_DIR do PATH atual
-NEW_PATH=$(echo "$PATH" | tr ':' '\n' | grep -v -F -x "$GH_DIR" | tr '\n' ':' | sed 's/:$//')
-# Confirma que gh ficou inacessível neste PATH
-if PATH="$NEW_PATH" command -v gh >/dev/null 2>&1; then
-  _fail "(4) setup: gh ainda no PATH após filtrar — múltiplas instalações?"
-else
-  _pass
-fi
-OUT=$(
-  PATH="$NEW_PATH" \
-    CHECKOUT_BASE="$CHECKOUT_BASE" \
-    REPO_NAME="$REPO_NAME" \
-    bash "$WORKSPACE/config-block.sh" 2>&1
-)
-RC=$?
-# Precisamos gerar config-block.sh primeiro
-awk '
-  /^# Configurar repo no GitHub/{p=1}
-  /^# Instalar dependências/{p=0}
-  p
-' "$INIT_SCRIPT" > "$WORKSPACE/config-block.sh"
-# Rerun com o block agora gerado
-OUT=$(
-  PATH="$NEW_PATH" \
-    CHECKOUT_BASE="$CHECKOUT_BASE" \
-    REPO_NAME="$REPO_NAME" \
-    bash "$WORKSPACE/config-block.sh" 2>&1
-)
-RC=$?
+# Stub-veneno: uma regressão que reintroduza `gh` bare fora do seam bateria
+# no gh REAL autenticado do PATH (chamada de rede viva na suíte unitária) —
+# o veneno devolve 127 por construção (review holístico #4).
+printf '#!/bin/bash\nexit 127\n' > "$MOCK_DIR/gh"; chmod +x "$MOCK_DIR/gh"
+export CHECKOUT_INIT_GH=/nonexistent/gh
+OUT=$(run_config_block); RC=$?
 assert_rc "$RC" 0 "(4) gh ausente rc=0 (graceful)"
 assert_contains "$OUT" "gh CLI ausente" "(4) warning explica gh ausente"
+assert_not_contains "$OUT" "habilitados em" "(4) NÃO emite mensagem de sucesso"
+unset CHECKOUT_INIT_GH
 teardown_workspace
 
 # ─── Final report ──────────────────────────────────────────────────────────

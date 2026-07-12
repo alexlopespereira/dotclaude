@@ -25,18 +25,20 @@ setup() {
   MOCK_DIR="$WORKSPACE/mocks"
   SLOT_DIR="$WORKSPACE/slot"
   mkdir -p "$MOCK_DIR" "$SLOT_DIR/graphify-out"
-  # PATH sem uv/pip reais — só os mocks que escrevermos
-  REAL_PATH="$PATH"
-  CLEAN_PATH=$(echo "$PATH" | tr ':' '\n' \
-    | while read -r d; do
-        [ -x "$d/uv" ] || [ -x "$d/pip" ] || echo "$d"
-      done | tr '\n' ':' | sed 's/:$//')
-  TEST_PATH="$MOCK_DIR:$CLEAN_PATH"
+  # Stubs default FALHOS de uv e pip (exit 1, stdout vazio) — mock_uv/mock_pip
+  # sobrescrevem por cenário. MOCK_DIR vem primeiro no PATH, então nenhum
+  # cenário cai no uv/pip REAIS do host. Não filtrar dirs do PATH pra "sumir"
+  # com binários: sob usrmerge (Ubuntu) pip mora em /usr/bin junto de
+  # awk/sed — remover o dir quebraria os próprios helpers da lib.
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$MOCK_DIR/uv"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$MOCK_DIR/pip"
+  chmod +x "$MOCK_DIR/uv" "$MOCK_DIR/pip"
+  TEST_PATH="$MOCK_DIR:$PATH"
 }
 
 teardown() {
   [ -n "${WORKSPACE:-}" ] && rm -rf "$WORKSPACE"
-  unset WORKSPACE MOCK_DIR SLOT_DIR REAL_PATH CLEAN_PATH TEST_PATH
+  unset WORKSPACE MOCK_DIR SLOT_DIR TEST_PATH
 }
 
 mock_uv() {
@@ -87,7 +89,11 @@ assert_eq "$OUT" "0.7.10" "(T1) uv tool list → '0.7.10'"
 teardown
 
 # ═══════════════════════════════════════════════════════════════════════════
-# T2: fallback para `pip show graphifyy` quando uv não está no PATH
+# T2: fallback para `pip show graphifyy` quando uv indisponível
+# 'uv indisponível' cobre ausente-E-falhando — observavelmente idênticos:
+# toda leitura da lib é `cmd 2>/dev/null | pipeline`, então uv ausente e uv
+# que falha (stub default do setup: exit 1, stdout vazio) produzem ambos
+# v="" e caem no fallback pip.
 # ═══════════════════════════════════════════════════════════════════════════
 setup
 mock_pip "0.6.5"
@@ -156,7 +162,7 @@ teardown
 # T8: silente quando versão local indetectável (uv/pip somem)
 # ═══════════════════════════════════════════════════════════════════════════
 setup
-# Sem mocks de uv/pip
+# Sem mock_uv/mock_pip — valem os stubs default falhos do setup()
 echo "0.7.8" > "$SLOT_DIR/graphify-out/.graphify_version"
 OUT=$(PATH="$TEST_PATH" _graphify_drift_check "$SLOT_DIR")
 assert_empty "$OUT" "(T8) local indetectável → silente (não falso-positivo)"

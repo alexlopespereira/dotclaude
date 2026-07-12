@@ -1,17 +1,17 @@
 # tests.yml — roda a suíte bin/tests/ em cada PR.
 #
-# Billing: o repo é PRIVADO — minutos macOS pagam multiplicador 10× sobre o
-# Linux, arredondados por job. Por isso NÃO há trigger push na main: o evento
-# pull_request já testa o merge ref, então o run pós-merge seria duplicado e
-# pagaria o multiplicador de novo. O bloco concurrency cancela o run anterior
-# quando chega push novo no mesmo PR, em vez de pagar os dois até o fim.
+# Billing: o repo é PRIVADO — minutos Linux pagam multiplicador 1×; macOS
+# pagava 10× por job. A migração P0 do plano de cota (concluída) portou a
+# suíte pra idioms GNU-first com fallback BSD, então o job bin-tests roda em
+# ubuntu-latest. NÃO há trigger push na main: o evento pull_request já testa
+# o merge ref, então o run pós-merge seria duplicado e pagaria em dobro.
+# O bloco concurrency cancela o run anterior quando chega push novo no mesmo
+# PR, em vez de pagar os dois até o fim.
 # Sem paths: filter de propósito — a suíte valida conteúdo de skills/,
 # commands/ e agents/; filtrar por path criaria merges falso-verdes.
 #
-# Runner macOS ainda necessário: as suítes usam idioms BSD (`stat -f %m`,
-# `date -v-40d`, `touch -t`) e os hooks sob teste rodam primariamente no
-# laptop macOS. Migrar o job pra runner Linux (neutralizando os idioms BSD)
-# é fatia P0 pendente do plano de cota.
+# A cobertura BSD/macOS segue garantida fora do CI: a suíte roda no laptop
+# macOS antes de cada commit (Fase 6 dos ciclos + gate local do Ralph).
 #
 # Fecha o dod_gap recorrente apontado pelos baselines /reflect: a suíte
 # só rodava localmente (Fase 6 dos ciclos), nunca no CI.
@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   bin-tests:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4

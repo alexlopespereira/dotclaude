@@ -36,6 +36,14 @@ _Avoid_: custo do runner, preço do minuto
 Cada job é faturado com arredondamento **para cima** ao minuto inteiro — um job de 10s custa 1 minuto (×multiplicador). Torna workflows de polling frequente e jobs curtos separados desproporcionalmente caros.
 _Avoid_: billing rounding
 
+**usrmerge**:
+Layout do Ubuntu moderno (incl. VMs UTM e runner `ubuntu-latest`) em que `/bin` é symlink para `usr/bin` — todo binário aparece em "dois" diretórios do PATH. Quebra duas suposições comuns em testes: "remover o dir do 1º `command -v X` faz X sumir" (o 2º alias do mesmo dir ainda resolve) e "dir que contém pip/gh é descartável" (`/usr/bin` também contém awk/sed/coreutils).
+_Avoid_: bin symlink, merged /usr
+
+**stat -f (GNU vs BSD)**:
+Flag com semântica divergente: no BSD/macOS `stat -f <fmt>` formata metadados do arquivo (`%m` = mtime); no GNU `stat -f` significa `--file-system` e imprime o status do filesystem — sai ≠0 com formato BSD, mas **suja o stdout** antes de falhar, contaminando capturas `$(... || echo 0)`. Idiom portável do repo: dual GNU-first `stat -c %Y f 2>/dev/null || stat -f %m f 2>/dev/null || echo 0` (BSD `stat -c` falha limpo; a ordem inversa não é segura).
+_Avoid_: stat portátil, stat cross-platform
+
 ## Relationships
 
 - **Graphify** substituiu **llm-wiki** — migração e trade-offs em [ADR 0001](docs/adr/0001-adopt-graphify-sunset-llm-wiki.md).

@@ -6,8 +6,8 @@
 # falha (gate de CI), exit 0 só com tudo verde.
 #
 # QUANDO USAR: localmente antes de commit (`bin/tests/run-all.sh`) e no CI
-# (.github/workflows/tests.yml — runner macOS: as suítes usam idioms BSD
-# como `stat -f` e `date -v`).
+# (.github/workflows/tests.yml — runner ubuntu-latest: as suítes são portáveis,
+# idioms GNU-first com fallback BSD, e rodam nos 2 OSes).
 #
 # Encerramento: roda até o fim mesmo com falhas (relata todas), sem args.
 

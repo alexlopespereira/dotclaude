@@ -26,7 +26,9 @@ mkdir -p "$CACHE_DIR"
 GC_MARK="$CACHE_DIR/.last-gc"
 NEED_GC=1
 if [ -f "$GC_MARK" ]; then
-  GC_LAST=$(stat -f %m "$GC_MARK" 2>/dev/null || echo 0)
+  # Dual GNU-first: no Linux, `stat -f` interpreta %m como filesystem info e
+  # SUJA o stdout (quebrava debounce/GC nas VMs) — por isso `stat -c` primeiro.
+  GC_LAST=$(stat -c %Y "$GC_MARK" 2>/dev/null || stat -f %m "$GC_MARK" 2>/dev/null || echo 0)
   [ $(( $(date +%s) - GC_LAST )) -lt 86400 ] && NEED_GC=0
 fi
 if [ "$NEED_GC" = 1 ]; then
@@ -37,7 +39,7 @@ fi
 FLAG="$CACHE_DIR/$SESSION_ID"
 
 if [ -f "$FLAG" ]; then
-  LAST=$(stat -f %m "$FLAG" 2>/dev/null || echo 0)
+  LAST=$(stat -c %Y "$FLAG" 2>/dev/null || stat -f %m "$FLAG" 2>/dev/null || echo 0)
   NOW=$(date +%s)
   DELTA=$(( NOW - LAST ))
   [ "$DELTA" -lt 30 ] && exit 0

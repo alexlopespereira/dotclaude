@@ -38,8 +38,11 @@ sc_audit_log_rotate_if_needed() {
   local max_bytes="${SC_AUDIT_MAX_BYTES:-10485760}"  # 10 MiB
   [ -f "$active" ] || return 0
   local size
-  # GNU stat uses -c%s; BSD stat uses -f%z. Try both.
-  size=$(stat -f%z "$active" 2>/dev/null || stat -c%s "$active" 2>/dev/null)
+  # Dual GNU-first (doutrina do CONTEXT.md, "stat -f GNU vs BSD"): BSD stat -c
+  # falha limpo; a ordem inversa só funcionava por acidente de parsing da flag
+  # colada -f%z — a forma espaçada faria o GNU imprimir filesystem-status e
+  # corromper a comparação numérica (review holístico #2).
+  size=$(stat -c%s "$active" 2>/dev/null || stat -f%z "$active" 2>/dev/null)
   [ -z "$size" ] && return 0
   [ "$size" -lt "$max_bytes" ] && return 0
   sc_audit_rotate "$active"

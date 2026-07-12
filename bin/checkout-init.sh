@@ -99,14 +99,17 @@ fi
 # Idempotente: PATCH no/ops se já estava true. Falha graciosa: se sem permissão
 # admin (repo de outro owner) ou gh ausente, log warning e continua.
 # Detecção de permissão antes de patch: gh api repos/X --jq .permissions.admin.
-if command -v gh >/dev/null 2>&1; then
+# Seam de teste (padrão do repo: PRWATCH_GH, VM_PROV_SSH): CHECKOUT_INIT_GH
+# aponta o binário gh — ex.: /nonexistent/gh simula ausência sem filtrar PATH.
+CHECKOUT_INIT_GH="${CHECKOUT_INIT_GH:-gh}"
+if command -v "$CHECKOUT_INIT_GH" >/dev/null 2>&1; then
   REMOTE_NWO=$(git -C "$CHECKOUT_BASE/${REPO_NAME}-1" remote get-url origin 2>/dev/null \
     | sed -E 's#^git@github\.com:##; s#^https?://github\.com/##; s#\.git$##' \
     | head -1)
   if [ -n "$REMOTE_NWO" ] && [[ "$REMOTE_NWO" =~ ^[A-Za-z0-9._/-]+$ ]]; then
-    IS_ADMIN=$(gh api "repos/$REMOTE_NWO" --jq '.permissions.admin // false' 2>/dev/null || echo "false")
+    IS_ADMIN=$("$CHECKOUT_INIT_GH" api "repos/$REMOTE_NWO" --jq '.permissions.admin // false' 2>/dev/null || echo "false")
     if [ "$IS_ADMIN" = "true" ]; then
-      if gh api -X PATCH "repos/$REMOTE_NWO" \
+      if "$CHECKOUT_INIT_GH" api -X PATCH "repos/$REMOTE_NWO" \
             -F allow_auto_merge=true \
             -F delete_branch_on_merge=true >/dev/null 2>&1; then
         echo "✓ Repo config: allow_auto_merge + delete_branch_on_merge habilitados em $REMOTE_NWO"

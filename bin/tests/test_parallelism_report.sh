@@ -66,6 +66,13 @@ agg_field() { # <jsonl_output> <campo> → valor do objeto AGGREGATE
   printf '%s\n' "$1" | jq -rs '.[] | select(.project=="AGGREGATE") | .'"$2"'' 2>/dev/null
 }
 
+snapshot_tree() { # <dir> → 1 linha por arquivo: nome + mtime + size
+  # Dual GNU-first: GNU `stat -f` interpreta o arg como filesystem e devolve
+  # contadores (assert de não-mutação virava vácuo/flake no Linux).
+  (cd "$1" && find . -type f -exec sh -c \
+    'stat -c "%n %Y %s" "$1" 2>/dev/null || stat -f "%N %m %z" "$1" 2>/dev/null' _ {} \; | sort)
+}
+
 echo "=== parallelism-report tests ==="
 
 # =============================================================================
@@ -178,9 +185,9 @@ assert_grep "$OUT" "since|project|format|sidechain" "AC5j help documenta flags"
 # =============================================================================
 R6="$TMP/ac6"; mkdir -p "$R6/proj-r"
 { tu_line msgA false a1; tu_line msgA false a2; } > "$R6/proj-r/s.jsonl"
-SNAP_BEFORE=$(cd "$R6" && find . -type f -exec stat -f '%N %m %z' {} \; 2>/dev/null | sort)
+SNAP_BEFORE=$(snapshot_tree "$R6")
 OUT=$(PR_TRANSCRIPT_DIR="$R6" bash "$PR" --since 9999 2>&1); rc=$?
-SNAP_AFTER=$(cd "$R6" && find . -type f -exec stat -f '%N %m %z' {} \; 2>/dev/null | sort)
+SNAP_AFTER=$(snapshot_tree "$R6")
 # capture-proof: assert POSITIVO de que o script produziu relatório...
 assert_grep "$OUT" "AGGREGATE|TOTAL|proj-r" "AC6a script produziu output (prova que rodou)"
 # ...co-presente com assert de AUSÊNCIA de qualquer write (snapshot idêntico).
