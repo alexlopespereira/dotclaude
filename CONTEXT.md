@@ -28,6 +28,14 @@ _Avoid_: graph data, dump
 Artefato em `graphify-out/` — viewer interativo standalone do grafo.
 _Avoid_: viewer, dashboard
 
+**Multiplicador de minutos (Actions billing)**:
+Fator que converte minutos de wall-time em minutos faturados da cota do GitHub Actions em repos **privados**: Linux 1×, Windows 2×, macOS **10×**. Repos públicos não consomem cota. O dotclaude é privado — premissa de gratuidade no runner macOS é falsa (causa do estouro de cota de 2026-07).
+_Avoid_: custo do runner, preço do minuto
+
+**Arredondamento por job (Actions billing)**:
+Cada job é faturado com arredondamento **para cima** ao minuto inteiro — um job de 10s custa 1 minuto (×multiplicador). Torna workflows de polling frequente e jobs curtos separados desproporcionalmente caros.
+_Avoid_: billing rounding
+
 ## Relationships
 
 - **Graphify** substituiu **llm-wiki** — migração e trade-offs em [ADR 0001](docs/adr/0001-adopt-graphify-sunset-llm-wiki.md).
