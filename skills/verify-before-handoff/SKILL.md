@@ -68,6 +68,18 @@ Sinais genéricos (efeito externo mutante):
 - **Tool MCP** cujo nome casa o verbo `send | create | delete | deploy | publish`.
 - **Bash HTTP mutante externo:** `curl`/`http`/`wget` com `-X POST|PUT|DELETE|PATCH` (ou
   `--data`/`--upload`) contra domínio **externo**.
+- **CLI de efeito externo não-HTTP:** execução de Apex anônimo contra org viva
+  (`sf apex run` / `sfdx force:apex:execute`) ou verbo de envio/batch explícito no corpo
+  (`Database.executeBatch`, `Messaging.sendEmail`). A org alvo entra na assinatura (prod/sandbox
+  promovem separado). Fecha o gap medido no incidente survey-egressos (abaixo): disparo de e-mail
+  em massa que **não** é cliente HTTP e escapava do classificador Bash.
+
+Quando o efeito externo é um **e-mail com link** (ou qualquer artefato que leva o destinatário a uma
+URL), o piso de evidência inclui o **smoke test do caminho do destinatário**, feito nas duas vias:
+**curl** (status HTTP + header `alt-svc` — pega infra tipo Cloudflare/HTTP-3/QUIC na frente da
+origem) **e** **Playwright** (carregar de verdade no browser — pega o que o curl não negocia, como
+falha de 1º connect QUIC). Teste E2E que **mocka** a rota (`route.fulfill`) valida a lógica do form,
+**não** substitui o smoke real do caminho público (DNS→CDN→origem).
 
 Detalhamento (regex, fixtures, tiers soft/hard, auto-promoção por `audit.jsonl`):
 `references/hot-paths-catalog.md`.
@@ -89,6 +101,16 @@ artefato-realizado como piso, em vez de exigir a cadeia completa em todo caso.
   e-mail e pediu ao usuário para olhar — o corpo chegou **em branco**. Verificar a intenção
   ("disparei") não é verificar o resultado ("o que chegou tem corpo?"). Sempre **abra/leia o
   artefato realizado**, mesmo quando "não deu erro". Ausência de erro **não** é evidência funcional.
+- **Link quebrado em disparo de massa (incidente survey-egressos, 2026-07-16).** Batch Apex
+  (`sf apex run` → `Database.executeBatch`) enviou 4.777 e-mails com link para
+  `www.exemplo-loja.com.br/pages/pesquisa-egressos?t=…`; o link falhava intermitentemente
+  (`ERR_CONNECTION_FAILED` no 1º acesso) por **Cloudflare/HTTP-3/QUIC na frente do Shopify** —
+  risco **já documentado** na memória do projeto, com a mitigação (desligar HTTP/3) conhecida. A
+  verificação pré-envio foi 100% do lado que despacha (tokens, template, `job Completed / 0 erros`)
+  e **zero** do lado do destinatário: o link público nunca foi aberto (curl nem browser), e os E2E
+  mockavam a rota. Lições fixadas no classificador acima: (1) `sf apex run`/`executeBatch` agora é
+  caminho quente; (2) e-mail-com-link exige smoke curl **e** Playwright do caminho público; (3)
+  antes de disparo irreversível por um domínio, **revise as memórias de risco desse domínio**.
 - **Falso-positivo do classificador soft.** O tier soft dispara em **todo** POST externo-mutante,
   inclusive POSTs inofensivos (telemetria, health-ping, append de log). Risco: fadiga de reminder →
   o modelo passa a ignorar o sinal. Por isso o soft só **sugere** (texto curto, não bloqueia); só o

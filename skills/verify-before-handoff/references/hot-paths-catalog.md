@@ -32,11 +32,30 @@ Nome da tool casa (case-insensitive) um destes verbos:
 - método `-X POST|PUT|DELETE|PATCH`, ou payload (`--data`, `-d`, `--upload-file`, `-T`);
 - host não-loopback (não `localhost`/`127.0.0.1`/`0.0.0.0`).
 
+### 3. CLI de efeito externo não-HTTP
+
+Disparo de efeito externo que **não** passa por cliente HTTP (escapava do sinal 2). Padrões:
+
+- `sf apex run` / `sfdx force:apex:execute` → Apex anônimo contra org viva = efeito arbitrário
+  (e-mail, DML). Assinatura `cli:sf-apex-run[:<org>]`;
+- `Database.executeBatch` no corpo → batch Apex (envio em massa). Assinatura `cli:apex-executeBatch`;
+- `Messaging.sendEmail`/`sendSingleEmailMessage` no corpo → envio direto. Assinatura `cli:apex-sendEmail`.
+
+A org alvo (`--target-org`/`-o`/`-u`) entra na assinatura → **prod e sandbox promovem soft→hard
+separadamente** (o hot recorrente que importa é o de produção). Origem: incidente survey-egressos
+2026-07-16 (`sf apex run` → `Database.executeBatch` disparou 4.777 e-mails, passou como cold).
+
+**E-mail com link → smoke test nas duas vias.** Quando o efeito é e-mail que leva a uma URL, o piso
+de evidência inclui abrir o caminho do destinatário via **curl** (status + header `alt-svc`, pega
+CDN/HTTP-3/QUIC) **e** **Playwright** (carregar real, pega falha de 1º connect). E2E que mocka a
+rota (`route.fulfill`) valida o form, não substitui o smoke do caminho público DNS→CDN→origem.
+
 ## Não-hot (cold) — exemplos
 
 - `Read`, `Glob`, `Grep`, `git status`, `git log` (leitura);
 - `curl -X GET` / `curl` sem método mutante (leitura);
-- POST/PUT contra `localhost` (dev local, não efeito externo observável pelo usuário).
+- POST/PUT contra `localhost` (dev local, não efeito externo observável pelo usuário);
+- `sf data query` / SOQL / `sf org list` (leitura SF — não dispara o sinal 3).
 
 ## Tiers (gradiente soft → hard, espelha supply-chain cooldown→block)
 
@@ -56,3 +75,7 @@ Intervenção humana = **1 constante** (threshold N). Tudo o mais cresce sozinho
 | `git status` | cold |
 | `*__create_draft` (tool MCP) | hot |
 | `Read` (tool) | cold |
+| `sf apex run --target-org acme-prod --file x.apex` | hot (`cli:sf-apex-run:acme-prod`) |
+| `… Database.executeBatch(new …Batch(), 100) … \| sf apex run` | hot (`cli:apex-executeBatch`) |
+| `… Messaging.sendEmail(msgs); … \| sf apex run -o prod` | hot (`cli:apex-sendEmail:prod`) |
+| `sf data query --query "SELECT Id FROM Contact" -o prod` | cold |

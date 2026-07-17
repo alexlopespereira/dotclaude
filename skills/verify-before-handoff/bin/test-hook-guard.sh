@@ -78,6 +78,50 @@ out="$(run_hook "$WORK/a3e.jsonl" 2 '{"tool_name":"Bash","tool_input":{"command"
 [[ "$RC" -eq 0 ]] || fail "AC3(bonus): hook crashou (rc=$RC) — cold não exercitado"
 [[ -z "$out" ]] || fail "AC3(bonus): POST localhost deveria ser cold"
 
+# ── AC3-cli: CLIs de efeito externo NÃO-HTTP ──────────────────────────────────
+# Gap medido (incidente survey-egressos 2026-07-16): `sf apex run` com
+# `Database.executeBatch` disparou 4.777 e-mails mas NÃO é cliente HTTP → o
+# classify_bash o deixava passar como cold. Estende p/ execução de Apex anônimo
+# contra org viva + verbos de envio/batch explícitos no corpo Apex.
+# (f) 'sf apex run' contra org → hot (Apex anônimo = efeito externo arbitrário)
+out="$(run_hook "$WORK/a3f.jsonl" 2 '{"tool_name":"Bash","tool_input":{"command":"sf apex run --target-org acme-prod --file /tmp/send.apex"}}')"
+[[ -n "$out" ]] || fail "AC3(cli-f): 'sf apex run' deveria ser hot (output vazio)"
+[[ -s "$WORK/a3f.jsonl" ]] || fail "AC3(cli-f): hot deveria anexar ao audit"
+# (g) 'Database.executeBatch(...)' inline → hot (verbo de batch explícito)
+out="$(run_hook "$WORK/a3g.jsonl" 2 '{"tool_name":"Bash","tool_input":{"command":"echo '\''Database.executeBatch(new SurveyInviteEmailBatch(cid, owea), 100);'\'' | sf apex run"}}')"
+[[ -n "$out" ]] || fail "AC3(cli-g): 'Database.executeBatch' deveria ser hot"
+# (h) 'Messaging.sendEmail' inline → hot
+out="$(run_hook "$WORK/a3h.jsonl" 2 '{"tool_name":"Bash","tool_input":{"command":"echo '\''Messaging.sendEmail(msgs);'\'' | sf apex run -o prod"}}')"
+[[ -n "$out" ]] || fail "AC3(cli-h): 'Messaging.sendEmail' deveria ser hot"
+# (i) 'sf data query' (SOQL/leitura) → cold — NÃO over-firar em todo comando sf
+out="$(run_hook "$WORK/a3i.jsonl" 2 '{"tool_name":"Bash","tool_input":{"command":"sf data query --query \"SELECT Id FROM Contact\" -o prod"}}')"
+[[ "$RC" -eq 0 ]] || fail "AC3(cli-i): hook crashou (rc=$RC) — cold não exercitado"
+[[ -z "$out" ]] || fail "AC3(cli-i): 'sf data query' deveria ser cold (output: $out)"
+[[ ! -s "$WORK/a3i.jsonl" ]] || fail "AC3(cli-i): cold não deveria anexar ao audit"
+# (j) signature carrega rótulo 'cli:' (+ org quando extraível) p/ auto-promoção por org
+run_hook "$WORK/a3j.jsonl" 2 '{"tool_name":"Bash","tool_input":{"command":"sf apex run --target-org acme-prod --file /tmp/x.apex"}}' >/dev/null
+sig="$(tail -1 "$WORK/a3j.jsonl" | jq -r '.signature')"
+echo "$sig" | grep -q '^cli:' || fail "AC3(cli-j): signature deveria começar com 'cli:', veio '$sig'"
+echo "$sig" | grep -q 'acme-prod' || fail "AC3(cli-j): signature deveria conter a org alvo, veio '$sig'"
+
+# ── AC3-fp: falso-positivo do classify_bash (client + URL em linhas distintas) ─
+# Regressão: um comando que só CONTÉM a palavra 'curl' e uma URL externa em
+# LINHAS SEPARADAS (heredoc/echo/prose — ex. cat de PR body com o link boilerplate
+# "Generated with Claude Code https://claude.com/...") NÃO é requisição de rede.
+# Antes disparava bash:POST:claude.com (client e host casados no blob inteiro).
+# (k) heredoc: 'curl' numa linha, 'https://claude.com' em outra → cold
+fp_cmd="$(printf 'cat > /tmp/x <<EOF\nrode o smoke com curl (status + alt-svc)\n--data de exemplo, veja o PR\nGenerated with Claude Code https://claude.com/claude-code\nEOF')"
+out="$(run_hook "$WORK/a3k.jsonl" 2 "$(jq -cn --arg c "$fp_cmd" '{tool_name:"Bash",tool_input:{command:$c}}')")"
+[[ "$RC" -eq 0 ]] || fail "AC3(fp-k): hook crashou (rc=$RC)"
+[[ -z "$out" ]] || fail "AC3(fp-k): curl+URL em linhas distintas deveria ser cold (FP). Output: $out"
+[[ ! -s "$WORK/a3k.jsonl" ]] || fail "AC3(fp-k): FP não deveria anexar ao audit"
+# (l) curl real multi-linha (line-continuation \) POST externo → hot (não regredir)
+ml_cmd="$(printf 'curl -X POST \\\n  --data @payload.json \\\n  https://api.externa/webhook')"
+out="$(run_hook "$WORK/a3l.jsonl" 2 "$(jq -cn --arg c "$ml_cmd" '{tool_name:"Bash",tool_input:{command:$c}}')")"
+[[ -n "$out" ]] || fail "AC3(fp-l): curl multi-linha (continuação \\) POST externo deveria ser hot"
+sig="$(tail -1 "$WORK/a3l.jsonl" | jq -r '.signature')"
+[[ "$sig" == "bash:POST:api.externa" ]] || fail "AC3(fp-l): signature esperada bash:POST:api.externa, veio '$sig'"
+
 # ── AC4: append em audit.jsonl = 1 linha JSON válida c/ ts,tool,signature,tier,decision ──
 a4="$WORK/a4.jsonl"
 run_hook "$a4" 2 '{"tool_name":"mcp__gmail__send_message","tool_input":{}}' >/dev/null

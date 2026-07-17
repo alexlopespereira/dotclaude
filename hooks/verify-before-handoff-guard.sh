@@ -92,26 +92,70 @@ def extract_external_hosts(cmd):
     return hosts
 
 
-def classify_bash(cmd):
-    """Bash → (is_hot, signature). Hot = cliente HTTP + mutação + host externo."""
-    low = cmd.lower()
+# CLIs de efeito externo NÃO-HTTP (gap medido no incidente survey-egressos
+# 2026-07-16): `sf apex run` com `Database.executeBatch` disparou 4.777 e-mails,
+# mas NÃO é cliente HTTP → escapava do classify_bash como cold. Genérico, não
+# survey-específico: execução de Apex anônimo contra org viva (efeito arbitrário:
+# e-mail, DML) + verbos de envio/batch explícitos no corpo Apex (qualquer via).
+CLI_EFFECT_PATTERNS = (
+    (r"\bsf(dx)?\s+(force:)?apex\s+run\b", "sf-apex-run"),
+    (r"\bsf(dx)?\s+force:apex:execute\b", "sf-apex-run"),
+    (r"\bDatabase\.executeBatch\b", "apex-executeBatch"),
+    (r"\bMessaging\.send(Single)?Email(Message)?\b", "apex-sendEmail"),
+)
+
+
+def classify_cli_effect(cmd):
+    """Bash não-HTTP → (is_hot, signature) p/ CLIs de efeito externo. Sinal =
+    execução de Apex anônimo contra org viva ou verbo de envio/batch explícito.
+    A org alvo (--target-org/-o/-u) entra na assinatura → prod e sandbox promovem
+    separado (o hot recorrente que importa é o de produção)."""
+    for pat, label in CLI_EFFECT_PATTERNS:
+        if re.search(pat, cmd, re.I):
+            org = ""
+            m = re.search(r"(?:--target-org|-o|-u)\s+['\"]?([A-Za-z0-9._@-]+)", cmd)
+            if m:
+                org = ":" + m.group(1).lower()
+            return True, "cli:%s%s" % (label, org)
+    return False, ""
+
+
+def _line_is_hot(line):
+    """Uma linha lógica → (is_hot, signature). Hot só quando cliente HTTP, método
+    mutante E host externo coexistem NA MESMA linha — não espalhados pelo blob."""
+    low = line.lower()
     client = re.search(r"\b(curl|wget|xh)\b", low) or re.search(r"\bhttps?\b(?!://)", low)
     if not client:
         return False, ""
     method = None
-    m = re.search(r"-X\s*['\"]?(POST|PUT|DELETE|PATCH)", cmd, re.I)
+    m = re.search(r"-X\s*['\"]?(POST|PUT|DELETE|PATCH)", line, re.I)
     if m:
         method = m.group(1).upper()
-    elif re.search(r"\b(POST|PUT|DELETE|PATCH)\b", cmd):  # httpie style verb token
-        method = re.search(r"\b(POST|PUT|DELETE|PATCH)\b", cmd).group(1).upper()
-    elif any(re.search(f, cmd) for f in PAYLOAD_FLAGS):
+    elif re.search(r"\b(POST|PUT|DELETE|PATCH)\b", line):  # httpie style verb token
+        method = re.search(r"\b(POST|PUT|DELETE|PATCH)\b", line).group(1).upper()
+    elif any(re.search(f, line) for f in PAYLOAD_FLAGS):
         method = "POST"
     if method is None:
         return False, ""
-    hosts = extract_external_hosts(cmd)
+    hosts = extract_external_hosts(line)
     if not hosts:
         return False, ""
     return True, "bash:%s:%s" % (method, hosts[0])
+
+
+def classify_bash(cmd):
+    """Bash → (is_hot, signature). Hot = cliente HTTP + mutação + host externo NA
+    MESMA linha lógica. Escopo por linha (após juntar continuações `\\`) evita o
+    falso-positivo em que a palavra 'curl' e uma URL externa apenas COEXISTEM no
+    comando em linhas distintas — heredoc/echo/prose, ex. `cat` de um corpo de PR
+    com o link boilerplate 'Generated with Claude Code https://claude.com/...'
+    (medido: disparava bash:POST:claude.com sem nenhuma requisição de rede)."""
+    joined = re.sub(r"\\\n", " ", cmd)  # curl multi-linha vira 1 linha lógica
+    for line in joined.split("\n"):
+        is_hot, sig = _line_is_hot(line)
+        if is_hot:
+            return True, sig
+    return False, ""
 
 
 def classify(tool, tool_input):
@@ -122,12 +166,15 @@ def classify(tool, tool_input):
         for v in VERBS:
             if v in name:
                 return True, tool
-    # 2. Bash HTTP mutante externo
+    # 2. Bash HTTP mutante externo; 3. CLI de efeito externo não-HTTP
     if tool == "Bash":
         cmd = ""
         if isinstance(tool_input, dict):
             cmd = str(tool_input.get("command") or "")
-        return classify_bash(cmd)
+        is_hot, sig = classify_bash(cmd)
+        if is_hot:
+            return True, sig
+        return classify_cli_effect(cmd)
     return False, ""
 
 
@@ -200,8 +247,11 @@ def main():
     soft_msg = (
         "[verify-before-handoff] Ação de efeito externo detectada (%s). Antes de "
         "declarar concluído OU pedir ao usuário pra olhar: OBSERVE o resultado "
-        "realizado (abra o e-mail enviado, faça GET do recurso criado, leia o "
-        "arquivo). Ausência de erro NÃO é evidência funcional. Skill: "
+        "realizado — abra o e-mail enviado; se ele leva a um LINK/página, faça o "
+        "smoke test do caminho do destinatário com curl (status + header alt-svc) "
+        "E Playwright (carregar de verdade), não só do lado que despacha; faça GET "
+        "do recurso criado; leia o arquivo. Ausência de erro NÃO é evidência "
+        "funcional (job Completed / 0 erros mede o despacho, não o clique). Skill: "
         "verify-before-handoff." % signature
     )
     hard_msg = (
