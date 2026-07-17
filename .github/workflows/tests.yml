@@ -50,4 +50,4 @@ jobs:
         run: |
           shellcheck --severity=warning \
             bin/*.sh bin/lib/*.sh hooks/*.sh \
-            vm1.sh vm2.sh vm-morning.sh vm-paste.sh sync.sh
+            vm1.sh vm2.sh vm-morning.sh vm-paste.sh vm-secret.sh sync.sh

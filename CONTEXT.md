@@ -44,6 +44,10 @@ _Avoid_: bin symlink, merged /usr
 Flag com semântica divergente: no BSD/macOS `stat -f <fmt>` formata metadados do arquivo (`%m` = mtime); no GNU `stat -f` significa `--file-system` e imprime o status do filesystem — sai ≠0 com formato BSD, mas **suja o stdout** antes de falhar, contaminando capturas `$(... || echo 0)`. Idiom portável do repo: dual GNU-first `stat -c %Y f 2>/dev/null || stat -f %m f 2>/dev/null || echo 0` (BSD `stat -c` falha limpo; a ordem inversa não é segura).
 _Avoid_: stat portátil, stat cross-platform
 
+**~/Projects/.env (arquivo padronizado de secrets da VM)**:
+Arquivo único de secrets nas VMs UTM, lido pelo launcher (`claude-sessions.sh`) e pelo `~/.bashrc` — é dele que sai, p.ex., `GH_TOKEN` (mapeado de `GH_PAT_TOKEN`). Destino canônico quando se injeta uma credencial numa VM: `vm-secret.sh` faz upsert `KEY=valor` (chmod 600) aqui, então a chave fica disponível às sessões Claude da VM. Não confundir com o `./.env` local que `secret-capture.sh`/browser-secrets grava no cwd do host.
+_Avoid_: arquivo padronizado de secret, .env da VM, VM secrets file
+
 ## Relationships
 
 - **Graphify** substituiu **llm-wiki** — migração e trade-offs em [ADR 0001](docs/adr/0001-adopt-graphify-sunset-llm-wiki.md).
