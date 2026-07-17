@@ -37,6 +37,17 @@ Aplique o **modo inline** da biblioteca `domain-docs` durante o grilling — lei
 ## Fase 3 — Síntese
 
 Se o veredicto for APROVADO ou APROVADO COM RESSALVAS:
+- **Reconcilie o CORPO do plano com o veredito (obrigatório antes de qualquer conversão).**
+  O parecer da Fase 2 fica no rodapé (sob `---`) e o `prd-convert` lê **só o
+  corpo** — logo, uma decisão condenada que continue no corpo vira user story
+  executável. Para **cada finding de severidade Crítica/Alta**, edite o corpo
+  (tabela de Decisões técnicas / fatias): **remova ou corrija a decisão
+  condenada** de modo que o corpo passe a descrever a solução final, não a
+  proposta rejeitada. Ressalvas residuais (validação a fazer) viram ACs, mas a
+  decisão em si tem de sair do corpo. Depois de reconciliar, carimbe
+  `<!-- plan-reconciled: <verdict-slug> -->` no topo do corpo. Esse marcador é o
+  que o gate `plan-verdict-gate.sh` exige para liberar a conversão. Se APROVADO
+  **limpo** (sem findings Crítica/Alta), não há o que reconciliar — pule este passo.
 - **Materialize os ADRs propostos** (gate de materialização do `/full-planning-cycle` na biblioteca `domain-docs`): a seção `## ADRs propostos` do plano vira arquivo(s) em `docs/adr/` e os termos cunhados pela solução entram no `CONTEXT.md`, resolvendo a numeração na hora. Se **APROVADO COM RESSALVAS**, **incorpore as ressalvas no texto do ADR primeiro** — o ADR registra a decisão final, não a proposta. Emita o marcador `<!-- adr-materialized -->` na seção `## ADRs propostos` do plano. (Regras de formato na biblioteca — não duplique aqui.)
 - Liste as ações imediatas para a Próxima Fatia.
 - Sugira: "Plano aprovado. Para executar implementação completa (prd.json + Ralph), use `/full-cycle`. Para converter manualmente, use `/prd-convert`."

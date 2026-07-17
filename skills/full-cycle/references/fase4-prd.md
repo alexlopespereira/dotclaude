@@ -14,6 +14,13 @@
    (`~/.claude/skills/domain-docs/SKILL.md`) — não reproduza o formato aqui.
    Plano sem seção `## ADRs propostos` → nada a materializar, siga.
 1. Leia `~/.claude/skills/prd/SKILL.md`.
+1.5. **Gate de veredito (backstop — antes de gerar o PRD):** rode
+   `bash ~/.claude/skills/ralph-adversarial/lib/plan-verdict-gate.sh <plano>`.
+   Exit != 0 → **PARE**: o corpo do plano ainda não reflete o veredito
+   adversário final (REPROVADO, ou APROVADO COM RESSALVAS sem
+   `<!-- plan-reconciled -->`). A Fase 3 deveria ter reconciliado o corpo
+   (ver `fase2-3-adversarial.md`); se não reconciliou, reconcilie agora e só
+   então converta. Ver skill `prd` seção "Gate de veredito".
 2. Converta o plano em `prd.json` no cwd atual seguindo a skill `prd`:
    - 1 fatia = 1 user story
    - AC testáveis

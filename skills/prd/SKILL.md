@@ -15,6 +15,31 @@ Arquivo de plano em `.claude/plans/[nome].md` contendo:
 - Suposições a validar
 - Próxima Fatia (e fatias subsequentes, se houver)
 
+## Gate de veredito (passo 0 — obrigatório, antes de gerar qualquer story)
+
+A conversão lê **apenas o CORPO** do plano (Decisões técnicas + fatias). O ciclo
+de revisão adversária é **aditivo**: anexa o parecer no rodapé (sob `---`) e vira
+ressalvas em ACs, mas **não reescreve o corpo**. Logo, uma decisão condenada pelo
+Revisor pode sobreviver no corpo e virar user story executável — o caso que
+motivou este gate foi um plano cujo corpo mantinha "criar CMDT default false"
+(condenado nos Ciclos 1–2) que, convertido, secaria uma fila de produção.
+
+Antes de converter, rode o backstop determinístico:
+
+```bash
+bash ~/.claude/skills/ralph-adversarial/lib/plan-verdict-gate.sh <caminho-do-plano>
+```
+
+- **Exit 0** → o corpo reflete o veredito final (APROVADO limpo, ou APROVADO COM
+  RESSALVAS já reconciliado, ou plano nunca revisado). Prossiga.
+- **Exit 1 REPROVADO** → **PARE**; nunca converta plano reprovado. Escale para humano.
+- **Exit 1 RESSALVAS sem reconciliação** → **PARE**; o corpo ainda diverge do
+  veredito. Reconcilie: para cada finding Crítica/Alta, **edite/remova no CORPO**
+  a decisão condenada; carimbe `<!-- plan-reconciled: <verdict-slug> -->` no topo
+  do corpo; rode o gate de novo. Só então converta.
+
+O corpo é a fonte-da-verdade que vira PRD; o parecer no rodapé é trilha de auditoria.
+
 ## Saída
 Arquivo `prd.json` na raiz do repositório com este formato:
 

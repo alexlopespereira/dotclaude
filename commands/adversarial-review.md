@@ -120,3 +120,25 @@ Produza o parecer usando o **Template: Revisão Adversária** da skill react-fey
 - **Recomendação** — específica
 
 **MENTALIDADE:** Pergunte-se "Em que cenário este plano falha?" e "O que o Planejador não considerou?"
+
+## Reconciliação do corpo (obrigatória quando há findings Crítica/Alta)
+
+O parecer acima é **aditivo** — ele descreve o que está errado, mas **não
+reescreve o plano**. O `prd-convert` lê **só o corpo** do plano (Decisões
+técnicas + fatias), não o parecer. Se você anexar o parecer e parar, uma
+decisão condenada continua no corpo e vira user story executável (incidente-fonte:
+uma story "CMDT default false" que secaria uma fila de produção).
+
+Portanto, quando o veredito for **REPROVADO** ou **APROVADO COM RESSALVAS** com
+findings de severidade **Crítica/Alta**:
+
+1. **Edite o CORPO do plano** — para cada finding Crítica/Alta, remova/corrija a
+   decisão condenada na tabela de Decisões técnicas / nas fatias, de modo que o
+   corpo descreva a solução final, não a proposta rejeitada.
+2. **Carimbe** `<!-- plan-reconciled: <verdict-slug> -->` no topo do corpo.
+3. O gate `plan-verdict-gate.sh` (rodado pelo `/prd-convert`) recusa converter
+   sem esse marcador — é o backstop determinístico que impede o corpo defasado
+   de virar PRD.
+
+Se o veredito for **APROVADO limpo** (sem findings Crítica/Alta), o corpo já
+descreve a solução final — nada a reconciliar.

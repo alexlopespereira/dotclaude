@@ -194,6 +194,15 @@ Regra de transbordo pra não prender conhecimento no store do System Intent (a �
 ## Regras do Fluxo
 
 1. **Máximo 3 ciclos** de revisão. Após 3, escalar para o humano com resumo das divergências.
+1.5. **Reconcilie o CORPO, não só o rodapé.** O parecer é anexado sob `---` e é
+   **aditivo** — não reescreve o plano. O consumidor a jusante (`prd-convert`) lê
+   **só o corpo**. Logo, todo finding de severidade **Crítica/Alta** exige
+   **editar o corpo** (Decisões técnicas / fatias) para remover ou corrigir a
+   decisão condenada; só depois carimbe `<!-- plan-reconciled: <verdict-slug> -->`
+   no topo do corpo. Sem essa reconciliação, uma decisão rejeitada sobrevive no
+   corpo e vira user story executável (backstop determinístico:
+   `skills/ralph-adversarial/lib/plan-verdict-gate.sh` recusa converter sem o
+   marcador). APROVADO limpo (sem Crítica/Alta) → nada a reconciliar.
 2. **Nenhum código de produção antes da aprovação** (ou aprovação com ressalvas).
 3. **O humano tem autoridade final** e pode intervir em qualquer ponto.
 4. **Adversariedade é colaboração:** o objetivo é tornar o plano mais robusto, não destruí-lo.

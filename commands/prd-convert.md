@@ -14,6 +14,17 @@ Converte um plano em prd.json para execução no Ralph Adversarial.
 
 3. Leia o plano completo.
 
+3.5. **Gate de veredito adversário (backstop — rode ANTES de gerar qualquer story):**
+   ```bash
+   bash ~/.claude/skills/ralph-adversarial/lib/plan-verdict-gate.sh <caminho-do-plano>
+   ```
+   O gate recusa converter um plano cujo CORPO ainda não reflete o veredito
+   adversário final (o parecer no rodapé não reescreve o corpo; prd-convert lê o
+   corpo). Exit != 0 → **PARE**: REPROVADO escala para humano; APROVADO COM
+   RESSALVAS sem `<!-- plan-reconciled -->` exige reconciliar o corpo primeiro
+   (remover/corrigir cada finding Crítica/Alta) e re-stampar. Só prossiga com
+   exit 0. Ver skill `prd` seção "Gate de veredito".
+
 4. Converta seguindo as regras da skill prd:
    - 1 fatia = 1 user story
    - AC testáveis (não "funciona corretamente")

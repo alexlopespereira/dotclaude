@@ -32,7 +32,15 @@
 - **Antes de escalar para humano:** sugira `/reflect --on-failure 3 --context-file <path-do-parecer>` para entender qual critério DoD teria evitado a reprovação.
 
 **Se APROVADO COM RESSALVAS:**
-- Liste as ressalvas bloqueantes (severidade Crítica/Alta) — recomendar correção durante implementação como ACs adicionais.
+- **Reconcilie o CORPO do plano com o veredito ANTES da Fase 4 (obrigatório).** O
+  parecer fica no rodapé e o `prd-convert` lê só o corpo — uma decisão condenada
+  que sobreviva no corpo vira user story executável (incidente-fonte: uma story
+  "CMDT default false" que secaria uma fila de produção). Para **cada finding
+  Crítica/Alta**, edite a tabela de Decisões técnicas / fatias no corpo:
+  **remova/corrija a decisão condenada** para o corpo passar a descrever a
+  solução final. Ressalvas residuais viram ACs adicionais, mas a decisão sai do
+  corpo. Depois carimbe `<!-- plan-reconciled: <verdict-slug> -->` no topo do
+  corpo — é o que o gate `plan-verdict-gate.sh` (Fase 4, passo 1.5) exige.
 - Prossiga automaticamente para Fase 4 (Princípio 11: transição interna não pede confirmação). Humano interrompe via Ctrl-C se quiser revisar antes.
 
-**Se APROVADO:** prossiga para Fase 4.
+**Se APROVADO** (limpo, sem findings Crítica/Alta): nada a reconciliar — prossiga para Fase 4.
