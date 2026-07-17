@@ -128,6 +128,58 @@ if best is not None:
 '
 }
 
+# extract_review_evidence — extrai as evidences dos findings do transcript do
+# reviewer, newline-separated (consumido por emit_progress_event). Três caminhos,
+# nesta ordem, parando no primeiro não-vazio:
+#   (1) JSON estruturado: `.findings[].evidence` do bloco isolado por
+#       extract_verdict_json (respeita a isolação anti-bleed de 2026-05-25);
+#   (2) fallback grep `"evidence":` sobre o MESMO bloco JSON isolado;
+#   (3) PROSA: o Codex frequentemente lista findings como "arquivo.ext:linha —
+#       descrição" (o formato que a rubrica pede) SEM array findings JSON — os
+#       caminhos 1/2 então voltam vazios e o worker seguinte recebia "evidência
+#       vazia" (bug da sessão gcontacts-sf-sync, 2026-07-16, quase deixou passar
+#       data-loss). Captura essas linhas, mas ANTES remove as linhas de evento do
+#       `cat progress.txt` poluído (pipe-delimited, `| REVIEW_/ESCAL/...`) que o
+#       reviewer imprime no início — senão re-injetaria evidence velha/cross-story
+#       (mesma poluição que a isolação do caminho JSON já evita).
+# Em todos os caminhos filtra o exemplo didático da rubrica (CODE_REVIEW.md:56).
+# Lê stdin (ou $1). Máx 3 evidences.
+_RUBRIC_EXAMPLE='user_id concatenado em SQL'
+extract_review_evidence() {
+    local input verdict_json evidences
+    if [ $# -gt 0 ]; then input="$*"; else input=$(cat); fi
+
+    verdict_json=$(extract_verdict_json "$input")
+
+    # (1) JSON estruturado .findings[].evidence
+    evidences=$(printf '%s' "$verdict_json" \
+        | jq -r '.findings[]?.evidence // empty' 2>/dev/null \
+        | grep -v "$_RUBRIC_EXAMPLE" \
+        | head -3)
+
+    # (2) fallback grep sobre o bloco JSON isolado (Codex <0.120 / JSON malformado)
+    if [ -z "$evidences" ] && [ -n "$verdict_json" ]; then
+        evidences=$(printf '%s' "$verdict_json" \
+            | grep -o '"evidence":[^,]*' \
+            | grep -v "$_RUBRIC_EXAMPLE" \
+            | head -3)
+    fi
+
+    # (3) findings em prosa "arquivo.ext:linha". Remove antes as linhas de evento
+    #     do progress.txt poluído (evita bleed cross-story), depois dedup.
+    if [ -z "$evidences" ]; then
+        evidences=$(printf '%s' "$input" \
+            | grep -avE '\| (REVIEW_|ESCAL|FALHA_|HANG|API_|PREFLIGHT|CODEX_|COVERAGE)' \
+            | grep -aE '[[:alnum:]_./-]+\.[[:alnum:]]+:[0-9]+' \
+            | grep -v "$_RUBRIC_EXAMPLE" \
+            | sed 's/^[[:space:]]*//' \
+            | awk 'NF && !seen[$0]++' \
+            | head -3)
+    fi
+
+    printf '%s' "$evidences"
+}
+
 # emit_progress_event — dual-output writer para progress.txt + progress.jsonl.
 #
 # Uso:

@@ -46,9 +46,9 @@ for pat in \
     'is_framework_file' \
     '--allow-dirty' \
     'RALPH_FRAMEWORK_PATHSPEC_EXCLUDES' \
-    ':(exclude)progress.txt'
+    ':(exclude)progress*.txt'
 do
-    grep -q -- "$pat" "$RALPH_SH" \
+    grep -qF -- "$pat" "$RALPH_SH" \
         || { echo "FAIL (drift): pattern '$pat' ausente em ralph-adversarial.sh"; exit 1; }
 done
 
@@ -131,6 +131,7 @@ cat > "$R2/prd.json" <<'EOF'
                      "acceptanceCriteria": ["AC1: stub"] } ] }
 EOF
 echo "log" > "$R2/progress-US-X.jsonl"
+echo "serial" > "$R2/progress.jsonl"   # bare (output do run serial): glob progress*.jsonl
 echo "delta" > "$R2/agents-delta-US-X.md"
 SHIM_PATH="" run_ralph "$R2" "$W2"
 [ -s "$W2.agentlog" ] || _fail "AC2-agent" "pré-flight bloqueou árvore só-framework (agente não lançado)"
@@ -153,9 +154,8 @@ echo "delta" > "$R4/progress-US-X.jsonl"        # framework (NÃO deve entrar)
 # Espelho de RALPH_FRAMEWORK_PATHSPEC_EXCLUDES (sincronia via sentinels acima).
 EXCLUDES=(
     ':(exclude)prd.json'
-    ':(exclude)progress.txt'
-    ':(exclude)progress-*.txt'
-    ':(exclude)progress-*.jsonl'
+    ':(exclude)progress*.txt'
+    ':(exclude)progress*.jsonl'
     ':(exclude)agents-delta-*.md'
     ':(exclude).claude'
     ':(exclude)graphify-out'

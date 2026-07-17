@@ -517,18 +517,21 @@ set_api_timeout_count() {
 # is_framework_file e os pathspecs de RALPH_FRAMEWORK_PATHSPEC_EXCLUDES.
 RALPH_FRAMEWORK_PATHSPEC_EXCLUDES=(
     ':(exclude)prd.json'
-    ':(exclude)progress.txt'
-    ':(exclude)progress-*.txt'
-    ':(exclude)progress-*.jsonl'
+    ':(exclude)progress*.txt'
+    ':(exclude)progress*.jsonl'
     ':(exclude)agents-delta-*.md'
     ':(exclude).claude'
     ':(exclude)graphify-out'
 )
 
+# Globs progress*.{txt,jsonl} cobrem tanto os per-story do worker paralelo
+# (progress-US-02.txt) quanto os outputs do run serial (progress.txt E o bare
+# progress.jsonl). O glob antigo progress-*.jsonl (com hífen) NÃO cobria
+# progress.jsonl bare, que então sujava a árvore e abortava o pré-flight.
 is_framework_file() {
     case "$1" in
-        prd.json|progress.txt)            return 0 ;;
-        progress-*.txt|progress-*.jsonl)  return 0 ;;
+        prd.json)                         return 0 ;;
+        progress*.txt|progress*.jsonl)    return 0 ;;
         agents-delta-*.md)                return 0 ;;
         .claude|.claude/*)                return 0 ;;
         graphify-out|graphify-out/*)      return 0 ;;
@@ -559,8 +562,8 @@ preflight_clean_tree() {
     printf '  %s\n' "${dirty_user[@]}" >&2
     echo "" >&2
     echo "run_serial aborta o pré-flight para não varrer WIP do usuário (incidente 2026-06-10)." >&2
-    echo "Framework files (sujeira legítima): prd.json, progress.txt, progress-*.txt," >&2
-    echo "  progress-*.jsonl, agents-delta-*.md, .claude/, graphify-out/." >&2
+    echo "Framework files (sujeira legítima): prd.json, progress*.txt," >&2
+    echo "  progress*.jsonl, agents-delta-*.md, .claude/, graphify-out/." >&2
     echo "Para pular o pré-flight assumindo responsabilidade: --allow-dirty." >&2
     return 1
 }
@@ -817,31 +820,16 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
             ;;
         BLOCK|REQUEST_CHANGES)
             echo "  Story $STORY_ID REJEITADA — feedback salvo em progress.txt"
-            # Extrai evidence dos findings reais. Path preferido: jq sobre JSON
-            # estruturado (Codex <0.120). Fallback: regex sobre markdown.
-            # Em AMBOS aplica filtro contra o exemplo didático da rubrica
-            # (CODE_REVIEW.md:56 — "user_id concatenado em SQL sem parâmetro")
-            # que o Codex frequentemente regurgita literalmente, tanto na
-            # array findings JSON quanto citado em prosa. Sem o filtro,
-            # poluía progress.txt em todas iterações com finding inexistente.
-            # Coleta newline-separated (NÃO pipe-concat) para emit_progress_event
-            # preservar array nativo em progress.jsonl. O concat com '|' acontece
-            # em emit_progress_event apenas no path progress.txt (compat byte-a-byte).
-            # Isola o bloco JSON do veredicto ANTES de extrair evidence. Sem isso,
-            # o fallback grep raspava o transcript INTEIRO — incluindo o `cat
-            # progress.txt` que o reviewer imprime no início — re-injetando
-            # evidência velha/cross-story em progress.txt (fix 2026-05-25).
-            VERDICT_JSON=$(extract_verdict_json "$REVIEW_RESULT")
-            EVIDENCES_NL=$(printf '%s' "$VERDICT_JSON" \
-                | jq -r '.findings[]?.evidence // empty' 2>/dev/null \
-                | grep -v 'user_id concatenado em SQL' \
-                | head -3)
-            if [ -z "$EVIDENCES_NL" ] && [ -n "$VERDICT_JSON" ]; then
-                EVIDENCES_NL=$(printf '%s' "$VERDICT_JSON" \
-                    | grep -o '"evidence":[^,]*' \
-                    | grep -v 'user_id concatenado em SQL' \
-                    | head -3)
-            fi
+            # Extrai evidence dos findings reais via extract_review_evidence
+            # (parse-verdict.sh): JSON estruturado → fallback grep sobre o bloco
+            # JSON isolado → PROSA "arquivo:linha — desc" (o Codex costuma emitir
+            # REQUEST_CHANGES em prosa, sem array findings JSON; sem o 3º caminho
+            # a evidence chegava VAZIA ao worker seguinte). Isola o bloco do
+            # veredicto e remove o `cat progress.txt` poluído para não re-injetar
+            # evidência velha/cross-story (fix 2026-05-25). Newline-separated:
+            # emit_progress_event preserva array nativo em progress.jsonl e faz o
+            # concat '|' só no path progress.txt (compat byte-a-byte).
+            EVIDENCES_NL=$(extract_review_evidence "$REVIEW_RESULT")
             emit_progress_event "REVIEW_$VERDICT" "$STORY_ID" "$VERDICT" "$EVIDENCES_NL"
             set_retry_count "$STORY_ID" "$((CURRENT_RETRIES + 1))"
             ;;

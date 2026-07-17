@@ -19,7 +19,8 @@
 # Adversarial — NUNCA devem ser versionados; ver IMPL_PROMPT.md):
 #   - .DS_Store          (macOS junk)
 #   - .claude/           (research outputs locais, planos de sessão)
-#   - progress-*.txt     (delta files do worker — capturados via stash)
+#   - progress*.txt      (delta files do worker + outputs do run serial)
+#   - progress*.jsonl    (progress.jsonl do run serial + per-story .jsonl)
 #   - agents-delta-*.md  (delta files do worker — capturados via stash)
 #   - .ralph/            (stash dir do orquestrador)
 #   - .ralph-review-*/   (worktrees efêmeros do reviewer Codex)
@@ -52,7 +53,8 @@ TARGET=$(git -C "$TARGET" rev-parse --show-toplevel)
 PATTERNS=(
     ".DS_Store"
     ".claude/"
-    "progress-*.txt"
+    "progress*.txt"
+    "progress*.jsonl"
     "agents-delta-*.md"
     ".ralph/"
     ".ralph-review-*/"
