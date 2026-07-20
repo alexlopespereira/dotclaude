@@ -89,32 +89,7 @@ The full cycle (`/full-cycle`) runs both agents in sequence. For external valida
 
 > **Why it matters:** Self-review doesn't work — the same model that produced a flawed plan will approve it. Adversarial review forces genuine challenge. Cross-provider review (Claude vs. Codex) eliminates the shared blind spots that same-model review preserves.
 
-### Bonus: Adversarial Deep Research (3 Providers)
-
-For research tasks that demand high reliability, `/adversarial-research` orchestrates three independent AI providers in an adversarial pipeline:
-
-```
-   TOPIC
-     │
-     ▼
-  GEMINI DEEP RESEARCH ──── Elaborates (80-160 web searches)
-     │
-     ▼
-  PERPLEXITY SONAR DR ───── Fact-checks claims, finds counter-evidence
-     │
-     ▼
-  OPENAI + WEB SEARCH ───── Reviews logic, methodology, and bias
-     │
-     ▼
-  All three disagree? ──── Gemini corrects → reviewers re-check (max 3 cycles)
-     │
-     ▼
-  SYNTHESIS with confidence map
-```
-
-Each provider has a structural advantage at its role: Gemini excels at broad research, Perplexity at citation verification, and OpenAI at logical reasoning. Using three different providers prevents correlated hallucination.
-
-### Bonus: Ralph Adversarial Implementation Loop
+### 4. Ralph Adversarial Implementation Loop
 
 Once a plan is approved by `/full-cycle`, the `/ralph-adversarial` loop carries it to production code without sacrificing rigor. It's the [Ralph pattern](https://ghuntley.com/ralph/) — one story per iteration with a fresh context window — extended with **cross-agent code review**: Claude Code implements, Codex reviews.
 
