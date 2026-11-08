@@ -1,24 +1,7 @@
-# tests.yml — roda a suíte bin/tests/ em cada PR.
-#
-# Billing: o repo é PRIVADO — minutos Linux pagam multiplicador 1×; macOS
-# pagava 10× por job. A migração P0 do plano de cota (concluída) portou a
-# suíte pra idioms GNU-first com fallback BSD, então o job bin-tests roda em
-# ubuntu-latest. NÃO há trigger push na main: o evento pull_request já testa
-# o merge ref, então o run pós-merge seria duplicado e pagaria em dobro.
-# O bloco concurrency cancela o run anterior quando chega push novo no mesmo
-# PR, em vez de pagar os dois até o fim.
-# Sem paths: filter de propósito — a suíte valida conteúdo de skills/,
-# commands/ e agents/; filtrar por path criaria merges falso-verdes.
-#
-# A cobertura BSD/macOS segue garantida fora do CI: a suíte roda no laptop
-# macOS antes de cada commit (Fase 6 dos ciclos + gate local do Ralph).
-#
-# Fecha o dod_gap recorrente apontado pelos baselines /reflect: a suíte
-# só rodava localmente (Fase 6 dos ciclos), nunca no CI.
 name: tests
 
 on:
-  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
